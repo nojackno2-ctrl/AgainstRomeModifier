@@ -71,48 +71,26 @@ pub struct ReadyToTestUi {
     pub cached_readiness: Option<TestReadinessReport>,
     pub last_copied_instructions: Option<String>,
     pub show_instructions_preview: bool,
+    pub show_clean_subsystems: bool,
+    cache_key: String,
+    cached_preview: String,
+    pub recompute_count: usize,
 }
 
 impl EditorApp {
     /// 評估目前地圖的實機測試就緒狀態（只讀取記憶體候選資料，不寫入檔案）。
     pub fn evaluate_test_readiness(&mut self) -> TestReadinessReport {
         let report = self.design_check_report();
-        let (design_errors, design_warnings, has_design_report, has_wave_not_hostile, wave_destination_missing) =
-            match &report {
-                crate::design_check_ui::DesignCheckReport::Checked {
-                    map_issues,
-                    design_issues,
-                    ..
-                } => {
-                    let map_errs = map_issues
-                        .iter()
-                        .filter(|i| i.severity == against_rome_maps::diagnostics::MapIssueSeverity::Error)
-                        .count();
-                    let map_warns = map_issues
-                        .iter()
-                        .filter(|i| i.severity == against_rome_maps::diagnostics::MapIssueSeverity::Warning)
-                        .count();
-                    let design_errs = design_issues
-                        .iter()
-                        .filter(|i| i.severity == against_rome_maps::design_validator::DesignIssueSeverity::Error)
-                        .count();
-                    let design_warns = design_issues
-                        .iter()
-                        .filter(|i| i.severity == against_rome_maps::design_validator::DesignIssueSeverity::Warning)
-                        .count();
-                    let not_hostile = design_issues.iter().any(|i| i.code == "wave-not-hostile");
-                    let missing_dest = design_issues.iter().filter(|i| i.code == "wave-no-destination").count();
-                    (
-                        map_errs + design_errs,
-                        map_warns + design_warns,
-                        true,
-                        not_hostile,
-                        missing_dest,
-                    )
-                }
-                crate::design_check_ui::DesignCheckReport::Unavailable(_) => (0, 0, false, false, 0),
-            };
-
+        let design_errors = report.error_count();
+        let design_warnings = report.warning_count();
+        let (has_design_report, has_wave_not_hostile, wave_destination_missing) = match &report {
+            crate::design_check_ui::DesignCheckReport::Checked { design_issues, .. } => (
+                true,
+                design_issues.iter().any(|i| i.code == "wave-not-hostile"),
+                design_issues.iter().filter(|i| i.code == "wave-no-destination").count(),
+            ),
+            crate::design_check_ui::DesignCheckReport::Unavailable(_) => (false, false, 0),
+        };
         self.autoload_scenario_if_needed();
         let balance = self.compute_balance_summary();
         let has_victory = balance.objectives.has_victory;
@@ -135,7 +113,7 @@ impl EditorApp {
         let has_critical_blocker =
             design_errors > 0 || save_blockers_count > 0 || unsaved_changes || !has_design_report;
         let has_gameplay_warning =
-            !has_victory || !has_defeat || has_wave_not_hostile || wave_destination_missing > 0;
+            design_warnings > 0;
 
         let is_ready = !has_critical_blocker && !has_gameplay_warning;
         let is_warning_only = !has_critical_blocker && has_gameplay_warning;
@@ -176,12 +154,12 @@ impl EditorApp {
             },
             journal_steps: terrain_steps,
             details_en: if terrain_dirty {
-                format!("Heightmap or collision modified ({terrain_steps} undo steps)")
+                format!("Heightmap or collision modified ({terrain_steps} undo history steps, including saved)")
             } else {
                 "Unmodified".into()
             },
             details_zh: if terrain_dirty {
-                format!("高度圖或通行圖已更動（{terrain_steps} 步歷程）")
+                format!("高度圖或通行圖已更動（{terrain_steps} 步可復原歷程，含已存檔）")
             } else {
                 "未更動".into()
             },
@@ -201,12 +179,12 @@ impl EditorApp {
             },
             journal_steps: texture_steps,
             details_en: if textures_dirty {
-                format!("Surface textures modified ({texture_steps} undo steps)")
+                format!("Surface textures modified ({texture_steps} undo history steps, including saved)")
             } else {
                 "Unmodified".into()
             },
             details_zh: if textures_dirty {
-                format!("地表材質貼圖已更動（{texture_steps} 步歷程）")
+                format!("地表材質貼圖已更動（{texture_steps} 步可復原歷程，含已存檔）")
             } else {
                 "未更動".into()
             },
@@ -226,12 +204,12 @@ impl EditorApp {
             },
             journal_steps: placement_steps,
             details_en: if placement_dirty {
-                format!("DATA world objects modified ({placement_steps} undo steps)")
+                format!("DATA world objects modified ({placement_steps} undo history steps, including saved)")
             } else {
                 "Unmodified".into()
             },
             details_zh: if placement_dirty {
-                format!("DATA 世界物件已更動（{placement_steps} 步歷程）")
+                format!("DATA 世界物件已更動（{placement_steps} 步可復原歷程，含已存檔）")
             } else {
                 "未更動".into()
             },
@@ -251,12 +229,12 @@ impl EditorApp {
             },
             journal_steps: nature_steps,
             details_en: if nature_dirty {
-                format!("Flora density or tree placement modified ({nature_steps} undo steps)")
+                format!("Flora density or tree placement modified ({nature_steps} undo history steps, including saved)")
             } else {
                 "Unmodified".into()
             },
             details_zh: if nature_dirty {
-                format!("植被密度或樹木已更動（{nature_steps} 步歷程）")
+                format!("植被密度或樹木已更動（{nature_steps} 步可復原歷程，含已存檔）")
             } else {
                 "未更動".into()
             },
@@ -282,14 +260,14 @@ impl EditorApp {
             details_en: if scenario_draft {
                 "Scenario Event Graph has unapplied changes".into()
             } else if scenario_dirty {
-                format!("Scripted events or unit spawns modified ({scenario_steps} undo steps)")
+                format!("Scripted events or unit spawns modified ({scenario_steps} undo history steps, including saved)")
             } else {
                 "Unmodified".into()
             },
             details_zh: if scenario_draft {
                 "劇本事件圖存在未套用草稿".into()
             } else if scenario_dirty {
-                format!("腳本事件或部隊生成點已更動（{scenario_steps} 步歷程）")
+                format!("腳本事件或部隊生成點已更動（{scenario_steps} 步可復原歷程，含已存檔）")
             } else {
                 "未更動".into()
             },
@@ -333,12 +311,12 @@ impl EditorApp {
             },
             journal_steps: scene_steps,
             details_en: if scene_dirty {
-                format!("Sun lighting direction or color modified ({scene_steps} undo steps)")
+                format!("Sun lighting direction or color modified ({scene_steps} undo history steps, including saved)")
             } else {
                 "Unmodified".into()
             },
             details_zh: if scene_dirty {
-                format!("太陽方向或光照色彩已更動（{scene_steps} 步歷程）")
+                format!("太陽方向或光照色彩已更動（{scene_steps} 步可復原歷程，含已存檔）")
             } else {
                 "未更動".into()
             },
@@ -419,6 +397,19 @@ impl EditorApp {
             },
         });
 
+        for (id, name_en, name_zh, dirty) in [
+            ("maps", "Map Catalog", "地圖目錄", self.maps.is_dirty()),
+            ("packaging", "Packaging", "封裝設定", self.packaging.is_dirty()),
+            ("toolbox", "Toolbox", "工具箱", self.toolbox.is_dirty()),
+        ] {
+            list.push(SubsystemChange {
+                id, name_en, name_zh,
+                state: if dirty { SubsystemState::PendingDraft } else { SubsystemState::Clean },
+                journal_steps: 0,
+                details_en: if dirty { "Pending draft" } else { "Unmodified" }.into(),
+                details_zh: if dirty { "尚未處理的草稿" } else { "未更動" }.into(),
+            });
+        }
         list
     }
 
@@ -449,22 +440,11 @@ impl EditorApp {
                     Path::new(trimmed)
                         .file_name()
                         .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_else(|| trimmed.to_string())
+                        .unwrap_or_else(|| "UNTITLED_MAP".to_string())
                 }
             });
 
-        let map_path = self
-            .loaded_map_path
-            .as_ref()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|| {
-                let trimmed = self.map_path_input.trim();
-                if trimmed.is_empty() {
-                    "MAPS/CUSTOM_TEST".to_string()
-                } else {
-                    trimmed.to_string()
-                }
-            });
+        let map_path = format!("MAPS/{map_name}");
 
         // 檢查 C：區域觸發條件
         let area_conditions: Vec<(String, i32, i32, i32, i32)> = doc
@@ -493,7 +473,7 @@ impl EditorApp {
                 if readiness.unsaved_changes {
                     out.push_str("- [ ] ⚠ 注意：編輯器存在未儲存變更，測試前請務必執行 Safe Save (Ctrl+S)\n");
                 } else {
-                    out.push_str("- [ ] 編輯器安全儲存 (Safe Save) 完成，且「設計檢查」無重大錯誤 (Errors: 0)\n");
+                    out.push_str("- [ ] 測試前執行 Safe Save，並確認「設計檢查」無重大錯誤\n");
                 }
                 out.push('\n');
 
@@ -523,22 +503,22 @@ impl EditorApp {
                     }
                     out.push_str("- [ ] 進入遊戲，確認各波敵軍於排定時間依序出現\n");
                     out.push_str("- [ ] 確認每波敵軍顯示紅色（敵對）血條、朝目標移動並發動攻擊\n");
-                    out.push_str("- [ ] 記錄：通過／失敗、實際觀察時間、問題描述\n");
+                    out.push_str("- [ ] 記錄：通過／失敗、實際觀察時間、截圖路徑、問題描述\n");
                 }
                 out.push('\n');
 
-                out.push_str("## 檢查 B：勝負條件\n");
+                out.push_str("## 檢查 B：勝負條件\n- [ ] 勝利與失敗請分別重新開局測試\n");
                 if readiness.has_victory {
                     out.push_str("- [ ] 勝利條件測試：滿足勝利目標時，任務正常結算並判定為「勝利」\n");
                 } else {
-                    out.push_str("- [ ] ⚠ 警告：本地圖尚未設定勝利條件 (Victory Action)，請於劇本面板補齊！\n");
+                    out.push_str("- [ ] ⚠ 警告：本地圖尚未設定勝利條件 (Victory Action)。\n");
                 }
                 if readiness.has_defeat {
                     out.push_str("- [ ] 失敗條件測試：滿足失敗目標時（如主屋被毀），任務正常結算並判定為「失敗」\n");
                 } else {
-                    out.push_str("- [ ] ⚠ 警告：本地圖尚未設定失敗條件 (Defeat Action)，請於劇本面板補齊！\n");
+                    out.push_str("- [ ] ⚠ 警告：本地圖尚未設定失敗條件 (Defeat Action)。\n");
                 }
-                out.push_str("- [ ] 記錄：通過／失敗、觀察時間\n\n");
+                out.push_str("- [ ] 記錄：通過／失敗、觀察時間、截圖路徑\n\n");
 
                 out.push_str("## 檢查 C：區域條件\n");
                 if area_conditions.is_empty() {
@@ -554,7 +534,7 @@ impl EditorApp {
                             name, min_x, min_z, max_x, max_z
                         ));
                     }
-                    out.push_str("- [ ] 記錄：通過／失敗\n");
+                    out.push_str("- [ ] 記錄：通過／失敗、觀察時間、截圖路徑\n");
                 }
                 out.push('\n');
 
@@ -562,7 +542,7 @@ impl EditorApp {
                 out.push_str("- [ ] 於編輯器執行 Safe Save，關閉編輯器後重新載入地圖，確認所有設定完整保留\n");
                 out.push_str("- [ ] 啟動遊戲主程式，於自製對戰地圖選單確認可見該地圖\n");
                 out.push_str("- [ ] 點擊開始遊戲，確認順利進入地圖無崩潰、開局鏡頭與起始聚落正常\n");
-                out.push_str("- [ ] 記錄：通過／失敗\n\n");
+                out.push_str("- [ ] 記錄：通過／失敗、觀察時間、截圖路徑\n\n");
 
                 out.push_str("## 收尾\n");
                 out.push_str("- [ ] 測試結束後，使用 `%TEMP%` 備份還原測試地圖\n\n");
@@ -590,7 +570,7 @@ impl EditorApp {
                 if readiness.unsaved_changes {
                     out.push_str("- [ ] ⚠ Notice: editor has unsaved changes; please execute Safe Save (Ctrl+S) before testing.\n");
                 } else {
-                    out.push_str("- [ ] Editor Safe Save completed with zero Design Check errors (Errors: 0).\n");
+                    out.push_str("- [ ] Before testing, execute Safe Save and confirm zero Design Check errors.\n");
                 }
                 out.push('\n');
 
@@ -620,22 +600,22 @@ impl EditorApp {
                     }
                     out.push_str("- [ ] Launch game and verify each enemy wave spawns on schedule\n");
                     out.push_str("- [ ] Confirm enemy units show red health bars, march towards target, and engage in battle\n");
-                    out.push_str("- [ ] Record: Pass / Fail, observed time, issue details\n");
+                    out.push_str("- [ ] Record: Pass / Fail, observed time, screenshot path, issue details\n");
                 }
                 out.push('\n');
 
-                out.push_str("## Check B: Win/Loss Objectives\n");
+                out.push_str("## Check B: Win/Loss Objectives\n- [ ] Test victory and defeat in separate fresh matches\n");
                 if readiness.has_victory {
                     out.push_str("- [ ] Victory condition test: mission ends in Victory when objective is met\n");
                 } else {
-                    out.push_str("- [ ] ⚠ Warning: no Victory Action configured on this map; please add one in Scenario panel!\n");
+                    out.push_str("- [ ] ⚠ Warning: no Victory Action configured on this map; review the Scenario panel.\n");
                 }
                 if readiness.has_defeat {
                     out.push_str("- [ ] Defeat condition test: mission ends in Defeat when loss objective is met\n");
                 } else {
-                    out.push_str("- [ ] ⚠ Warning: no Defeat Action configured on this map; please add one in Scenario panel!\n");
+                    out.push_str("- [ ] ⚠ Warning: no Defeat Action configured on this map; review the Scenario panel.\n");
                 }
-                out.push_str("- [ ] Record: Pass / Fail, observed time\n\n");
+                out.push_str("- [ ] Record: Pass / Fail, observed time, screenshot path\n\n");
 
                 out.push_str("## Check C: Area Conditions\n");
                 if area_conditions.is_empty() {
@@ -651,7 +631,7 @@ impl EditorApp {
                             name, min_x, min_z, max_x, max_z
                         ));
                     }
-                    out.push_str("- [ ] Record: Pass / Fail\n");
+                    out.push_str("- [ ] Record: Pass / Fail, observed time, screenshot path\n");
                 }
                 out.push('\n');
 
@@ -659,7 +639,7 @@ impl EditorApp {
                 out.push_str("- [ ] Execute Safe Save in editor, restart editor and reopen map, confirm all settings are preserved\n");
                 out.push_str("- [ ] Launch game client, verify map appears in skirmish map selection\n");
                 out.push_str("- [ ] Start match, confirm smooth launch without crash, camera and starting settlement are normal\n");
-                out.push_str("- [ ] Record: Pass / Fail\n\n");
+                out.push_str("- [ ] Record: Pass / Fail, observed time, screenshot path\n\n");
 
                 out.push_str("## Cleanup\n");
                 out.push_str("- [ ] After testing, restore map folder from `%TEMP%` backup\n\n");
@@ -710,8 +690,22 @@ impl EditorApp {
         let mut trigger_fix_hostility = false;
         let mut trigger_copy_instructions = false;
 
-        let report = self.evaluate_test_readiness();
-        self.ready_to_test.cached_readiness = Some(report.clone());
+        // 快取是檢查快照；磁碟外部異動或無歷程的草稿變更可手動重新整理。
+        use crate::undo_journal::UndoTarget;
+        let tokens: Vec<_> = [SubsystemId::Terrain, SubsystemId::Materials, SubsystemId::Placement,
+            SubsystemId::Nature, SubsystemId::Spawns, SubsystemId::Scenario, SubsystemId::Scene,
+            SubsystemId::Auxiliary].iter().map(|id| self.token(*id)).collect();
+        let key = format!("{:?}|{}|{:?}|{:?}|{:?}|{}|{}", self.loaded_map_path,
+            self.map_path_input, lang, tokens, self.subsystem_change_summary(),
+            self.scenario.is_loaded(), self.placement.is_loaded());
+        if self.ready_to_test.cached_readiness.is_none() || self.ready_to_test.cache_key != key {
+            let report = self.evaluate_test_readiness();
+            self.ready_to_test.cached_readiness = Some(report);
+            self.ready_to_test.cache_key = key;
+            self.ready_to_test.cached_preview.clear();
+            self.ready_to_test.recompute_count += 1;
+        }
+        let report = self.ready_to_test.cached_readiness.clone().expect("已建立檢查快取");
         let changes = self.subsystem_change_summary();
         let modified_count = changes
             .iter()
@@ -728,6 +722,10 @@ impl EditorApp {
         .resizable(true)
         .show(ctx, |ui| {
             ScrollArea::vertical().show(ui, |ui| {
+                if ui.button(tr(lang, "Refresh checks", "重新整理檢查")).clicked() {
+                    self.ready_to_test.cached_readiness = None;
+                }
+                ui.label(tr(lang, "Check snapshot; refresh after external file or draft changes.", "檢查快照；外部檔案或草稿內容異動後請重新整理。"));
                 // 1. 總體就緒評級狀態橫幅
                 ui.group(|ui| {
                     ui.horizontal(|ui| {
@@ -767,14 +765,14 @@ impl EditorApp {
                     let summary_desc = if report.is_ready {
                         tl(
                             is_en,
-                            "設計檢查無重大錯誤、勝負條件具備、波次正常且無未存檔變更。",
-                            "Design check is clean, win/loss objectives exist, waves configured, and changes saved.",
+                            "設計檢查無錯誤或警告、無存檔阻擋且無未存檔變更。",
+                            "Design Check has no errors or warnings; no save blockers or unsaved changes.",
                         )
                     } else if report.is_warning_only {
                         tl(
                             is_en,
-                            "存檔與檔案結構已無阻擋，但建議檢查缺少之勝負目標或波次目的地。",
-                            "Save integrity is valid, but check missing win/loss objectives or wave destinations.",
+                            "目前無阻擋項目；請檢視設計檢查警告。",
+                            "No current blockers; review Design Check warnings.",
                         )
                     } else {
                         tl(
@@ -1047,7 +1045,9 @@ impl EditorApp {
                     }
                 });
 
-                if modified_count == 0 {
+                ui.checkbox(&mut self.ready_to_test.show_clean_subsystems,
+                    tr(lang, "Show unchanged subsystems", "顯示未更動子系統"));
+                if modified_count == 0 && !self.ready_to_test.show_clean_subsystems {
                     ui.label(tl(
                         is_en,
                         "✔ 所有子系統皆已儲存，無未提交草稿或修改。",
@@ -1061,12 +1061,12 @@ impl EditorApp {
                         .show(ui, |ui| {
                             ui.strong(tr(lang, "Subsystem", "子系統"));
                             ui.strong(tr(lang, "Status", "狀態"));
-                            ui.strong(tr(lang, "Undo Steps", "歷程步數"));
+                            ui.strong(tr(lang, "Undo History (includes saved)", "可復原歷程（含已存檔）"));
                             ui.strong(tr(lang, "Details", "說明"));
                             ui.end_row();
 
                             for item in &changes {
-                                if item.state == SubsystemState::Clean {
+                                if !self.ready_to_test.show_clean_subsystems && item.state == SubsystemState::Clean {
                                     continue;
                                 }
                                 let (status_text, status_color) = match item.state {
@@ -1125,7 +1125,10 @@ impl EditorApp {
 
                 if self.ready_to_test.show_instructions_preview {
                     ui.add_space(4.0);
-                    let preview_text = self.generate_test_instructions(lang);
+                    if self.ready_to_test.cached_preview.is_empty() {
+                        self.ready_to_test.cached_preview = self.generate_test_instructions(lang);
+                    }
+                    let preview_text = self.ready_to_test.cached_preview.clone();
                     egui::Frame::group(ui.style()).show(ui, |ui| {
                         ScrollArea::vertical()
                             .max_height(200.0)
@@ -1208,7 +1211,7 @@ mod tests {
         assert_eq!(report.total_waves, 0);
 
         let changes = app.subsystem_change_summary();
-        assert_eq!(changes.len(), 10);
+        assert_eq!(changes.len(), 13);
         // 預設乾淨狀態，所有子系統皆為 Clean
         assert_eq!(app.count_modified_subsystems(), 0);
     }

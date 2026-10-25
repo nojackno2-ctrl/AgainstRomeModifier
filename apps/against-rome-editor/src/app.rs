@@ -148,7 +148,7 @@ pub struct EditorApp {
         PathBuf,
         Vec<against_rome_maps::design_validator::MapDesignIssue>,
     )>,
-    toolbox: ToolboxUi,
+    pub(crate) toolbox: ToolboxUi,
     navigation: NavigationUi,
     pub(crate) height_step: f32,
     pub(crate) placement: PlacementUi,

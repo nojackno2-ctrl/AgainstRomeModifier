@@ -1,3 +1,6 @@
+## 2026-10-26 Codex：批次 #26（已完成驗證，環境失敗另列）
+- 審查 908c575：就緒面板重用 Design Check 計數／嚴重性與 Safe Save 阻擋，快取檢查及預覽；補齊地圖／封裝／工具箱草稿，歷程明示含已存檔。指引移除個人絕對路徑與虛假的已儲存宣稱，補齊分局驗證及時間／截圖紀錄；新增「顯示未更動子系統」與指南。按鈕沿用既有修復與 Safe Save 確認入口。首輪 2 項測試資料／歷程假設錯誤已修正；re_workspace 暫存因既有 Against_Rome.exe 觸發防寫入，改用 repo/TEMP，不變更保護。
+- 驗證：cargo check／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 均 exit 0；cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target：287 組，2645 passed／4 failed／25 ignored（exit 101），日誌 re_workspace/codex-batch-26-test.log；僅提權環境／repo 暫存的 install_resource_discovery.rs:55、111、128、162 祖先資源探索斷言失敗。新增回歸所在 ready_to_test_preflight 8 passed，ui_literal_sweep／guide_shortcuts 各 1 passed，git diff --check 通過。未 stage／commit；AGENTS.md／README.md 既有變更保留，遊戲目錄唯讀，GUI 未驗證。
 ## 2026-10-26 Agy：自主批次 #25 實機測試前檢核面板、子系統變更摘要與一鍵複製測試指引（已驗證）
 - 1. 實機測試前檢核面板（Ready to Test Checklist，apps/against-rome-editor/src/ready_to_test_ui.rs）：重用現有 Design Check 報告、勝負目標檢查（無勝利／無失敗）、進攻波次完整性（無敵對關係／無目的地）、未儲存修改與 Safe Save 阻擋狀態，集中於單一整合檢核清單，並提供跳轉／修復按鈕直達對應面板；於工具列與視窗狀態註冊記憶（editor_settings.rs）。
 - 2. 子系統變更追蹤摘要（subsystem_change_summary，apps/against-rome-editor/src/ready_to_test_ui.rs:41-96，apps/against-rome-editor/src/undo_journal.rs:91-103）：依據各子系統既有 dirty flags 與 UndoJournal 復原堆疊次數，列出自上次儲存以來的變更清單（草稿／已修改／已儲存／歷史步數），清楚掌握地圖編輯歷程。

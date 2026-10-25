@@ -247,3 +247,102 @@ fn test_ready_to_test_window_headless_bilingual_renders_cleanly() {
     });
     assert!(app.ready_to_test.open);
 }
+
+#[test]
+fn readiness_matches_design_check_and_does_not_claim_a_save() {
+    let mut app = EditorApp::default();
+    app.map_path_input = r"C:\Users\PrivateDesigner\Maps\ENDL_005".into();
+    let design = app.design_check_report();
+    let report = app.evaluate_test_readiness();
+    assert_eq!(report.design_errors, design.error_count());
+    assert_eq!(report.design_warnings, design.warning_count());
+    for lang in [AppLanguage::English, AppLanguage::TraditionalChinese] {
+        let text = app.generate_test_instructions(lang);
+        assert!(text.contains("MAPS/ENDL_005"));
+        assert!(!text.contains("PrivateDesigner"));
+        assert!(!text.contains("Safe Save completed"));
+        assert!(!text.contains("Errors: 0"));
+        assert!(text.contains("%TEMP%"));
+    }
+}
+
+#[test]
+fn readiness_and_preview_cache_reuse_and_edit_undo_redo_invalidation() {
+    let fixture = TempMapFixture::new("cache");
+    let mut app = EditorApp::default();
+    app.scenario.load_session(&fixture.path).unwrap();
+    app.ready_to_test.open = true;
+    app.ready_to_test.show_instructions_preview = true;
+    let ctx = egui::Context::default();
+    let frame = |app: &mut EditorApp| { let _ = ctx.run(Default::default(), |ctx| app.show_ready_to_test(ctx)); };
+    frame(&mut app);
+    let initial = app.ready_to_test.recompute_count;
+    frame(&mut app);
+    assert_eq!(app.ready_to_test.recompute_count, initial);
+    app.scenario.add_events(&[Event { name: "快取回歸".into(), actions: vec![Action { kind: 1, text: "測試".into(), ..Default::default() }], ..Default::default() }]).unwrap();
+    frame(&mut app);
+    assert_eq!(app.ready_to_test.recompute_count, initial + 1);
+    assert_eq!(app.subsystem_change_summary().iter().find(|s| s.id == "scenario").unwrap().state, SubsystemState::UnsavedChanges);
+    assert!(app.scenario.undo_events());
+    frame(&mut app);
+    assert_eq!(app.subsystem_change_summary().iter().find(|s| s.id == "scenario").unwrap().state, SubsystemState::Clean);
+    assert!(app.scenario.redo_events());
+    frame(&mut app);
+    assert_eq!(app.subsystem_change_summary().iter().find(|s| s.id == "scenario").unwrap().state, SubsystemState::UnsavedChanges);
+    assert_eq!(app.ready_to_test.recompute_count, initial + 3);
+    frame(&mut app);
+    assert_eq!(app.ready_to_test.recompute_count, initial + 3);
+    app.ready_to_test.show_clean_subsystems = true;
+    frame(&mut app);
+    assert_eq!(app.ready_to_test.recompute_count, initial + 3);
+    app.packaging.mark_dirty();
+    assert_eq!(app.subsystem_change_summary().iter().find(|s| s.id == "packaging").unwrap().state, SubsystemState::PendingDraft);
+}
+#[test]
+fn subsystem_summary_tracks_saved_baseline_through_undo_redo() {
+    let fixture = TempMapFixture::new("saved_summary");
+    let mut app = EditorApp::default();
+    app.scenario.load_session(&fixture.path).unwrap();
+    app.scenario.add_events(&[Event {
+        name: "儲存基準測試".into(),
+        actions: vec![Action { kind: 1, text: "測試".into(), ..Default::default() }],
+        ..Default::default()
+    }]).unwrap();
+    let state = |app: &EditorApp| app.subsystem_change_summary().into_iter().find(|s| s.id == "scenario").unwrap().state;
+    assert_eq!(state(&app), SubsystemState::UnsavedChanges);
+    for (relative, bytes) in app.scenario.stage_transaction_files(&fixture.path).unwrap() {
+        let target = fixture.path.join(relative);
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        std::fs::write(target, bytes).unwrap();
+    }
+    app.scenario.commit_baseline(&fixture.path).unwrap();
+    assert_eq!(state(&app), SubsystemState::Clean);
+    // 儲存會重載劇本並建立新的歷程邊界；在新基準上測試復原至乾淨狀態。
+    app.scenario.add_events(&[Event {
+        name: "儲存後編輯".into(),
+        actions: vec![Action { kind: 1, text: "測試".into(), ..Default::default() }],
+        ..Default::default()
+    }]).unwrap();
+    assert_eq!(state(&app), SubsystemState::UnsavedChanges);
+    assert!(app.scenario.undo_events());
+    assert_eq!(state(&app), SubsystemState::Clean);
+    assert!(app.scenario.redo_events());
+    assert_eq!(state(&app), SubsystemState::UnsavedChanges);
+}
+#[test]
+fn readiness_includes_existing_scenario_preflight_error() {
+    let fixture = TempMapFixture::new("preflight_error");
+    let document = against_rome_scenario::ScenarioDocument {
+        spawns: vec![Spawn { id: uuid::Uuid::new_v4(), alias: "UNKNOWN_PENDING_ALIAS".into(), ..Default::default() }],
+        ..Default::default()
+    };
+    std::fs::write(fixture.path.join("arm_scenario.json"), serde_json::to_vec(&document).unwrap()).unwrap();
+    let mut app = EditorApp::default();
+    app.map_path_input = fixture.path.display().to_string();
+    let design = app.design_check_report();
+    assert!(matches!(&design, against_rome_editor_app::design_check_ui::DesignCheckReport::Checked { preflight_error: Some(_), .. }), "{design:?}");
+    let readiness = app.evaluate_test_readiness();
+    assert_eq!(readiness.design_errors, design.error_count());
+    assert_eq!(readiness.design_warnings, design.warning_count());
+    assert!(!readiness.is_ready);
+}
