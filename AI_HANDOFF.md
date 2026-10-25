@@ -1,3 +1,6 @@
+## 2026-10-25 Codex：批次 #5 審查修正（已驗證）
+- Codex 在完整測試期間因模型容量不足（"Selected model is at capacity"）中斷；修正與測試已寫完。Claude 重跑 `cargo test --workspace --locked --offline --no-fail-fast`：exit 0，**2,565 passed／0 failed／25 ignored**（`re_workspace/codex-batch-5-claude-test.log`）。
+- 已審查指定五筆提交；修正全域快捷鍵穿透確認視窗／精靈／事件圖（含復原重做），以及 SDL Delete 略過原廠地圖唯讀防護；各補無視窗回歸測試。cargo check --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 通過；完整測試進行中，日誌 re_workspace/codex-batch-5-test.log。未 stage／commit；遊戲唯讀；AGENTS.md／README.md 既有修改保留。
 ## 2026-10-25 Codex：自主批次 #4（編輯器通過；四項已知環境失敗）
 - 新增左側「最近開啟」八筆清單（編輯器專用 v1、失效路徑清理、保留切換確認）、Spawn 中心對稱位置複製（隊伍／方向不變、取樣高度、單步復原）、劇本／Spawn 雙語空狀態指引；指南已更新。缺口依據原 app.rs:1138、spawn_placement.rs:325、scenario_ui.rs:1501。首輪修正測試對 boden.ini 拒絕載入的錯誤假設，並將最近清單移離頂列，避免語言鍵遭浮動視窗遮住。
 - 驗證：cargo check／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 均結束碼 0；指定 cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target 完成 283 組、2559 passed／4 failed／25 ignored（結束碼 101）；編輯器 721 passed／0 failed／6 ignored，新增五項皆通過。日誌 re_workspace/codex-batch-4-{check,test,build}.log。

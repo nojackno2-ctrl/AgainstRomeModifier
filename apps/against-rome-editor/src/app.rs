@@ -4352,6 +4352,7 @@ impl EditorApp {
 
     /// Dispatches one shortcut. Mutating actions are refused on retail maps like the C# editor.
     pub fn handle_shortcut_action(&mut self, action: ShortcutAction) {
+        if self.shortcuts_blocked() { return; }
         let lang = self.lang();
         let read_only = self.current_map_is_original();
         let read_only_msg = tr(
@@ -4377,6 +4378,10 @@ impl EditorApp {
                 }
             }
             ShortcutAction::Delete if self.scene.scene_pick_active() && self.scene.selected_ref().is_some() => {
+                if read_only {
+                    self.set_status(read_only_msg.into(), true);
+                    return;
+                }
                 if let Err(err) = self.scene.toggle_delete_selected() {
                     self.scene.status = err;
                 }
@@ -10427,6 +10432,56 @@ angle=0.00
         assert_eq!(app.session.as_ref().unwrap().heights(), TerrainSession::create_blank(257, 32).heights());
     }
     #[test]
+    fn global_shortcuts_do_not_escape_dialogs_or_event_graph() {
+        for context in 0..6 {
+            let mut app = EditorApp::default();
+            app.ambience.mark_dirty();
+            app.design_check.open = false;
+            match context {
+                0 => app.pending_action = Some(PendingAction::Blank(193)),
+                1 => app.terrain_confirm = Some(TerrainBulkAction::Reset),
+                2 => app.skirmish_wizard.open = true,
+                3 => app.event_graph.open = true,
+                4 => app.event_graph.pending_close = true,
+                _ => app.pending_save_warnings = Some((PathBuf::new(), vec![])),
+            }
+            let tool = app.active_tool;
+            let radius = app.brush_radius;
+            let ctx = egui::Context::default();
+            gui_frame(&mut app, &ctx, vec![]);
+            gui_frame(&mut app, &ctx, [egui::Key::Num9, egui::Key::CloseBracket, egui::Key::F5]
+                .into_iter().map(|key| egui::Event::Key {
+                    key, physical_key: None, pressed: true, repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }).collect());
+            assert_eq!(app.active_tool, tool, "情境 {context}");
+            assert_eq!(app.brush_radius, radius, "情境 {context}");
+            assert!(!app.design_check.open, "情境 {context}");
+        }
+    }
+
+    #[test]
+    fn scene_delete_shortcut_preserves_original_map_edits_and_history() {
+        let (mut app, dir) = scene_app("shortcut_original");
+        app.scene.open = true;
+        app.scene.move_mode = true;
+        app.scene.select(Some(0));
+        assert!(app.scene.scene_pick_active());
+        app.map_path_input = "C:/Game/MAPS/ENDL_002".into();
+        app.loaded_map_path = Some(PathBuf::from(&app.map_path_input));
+        let before = app.scene.removals().to_vec();
+        app.handle_shortcut_action(ShortcutAction::Delete);
+        assert_eq!(app.scene.removals().len(), before.len());
+        assert!(!app.scene.is_dirty());
+        assert!(app.status_is_error);
+        app.map_path_input = dir.display().to_string();
+        app.loaded_map_path = Some(dir.clone());
+        app.handle_shortcut_action(ShortcutAction::Delete);
+        assert!(app.scene.is_dirty());
+        assert_eq!(app.scene.removals().len(), before.len() + 1);
+        std::fs::remove_dir_all(dir.parent().unwrap().parent().unwrap()).unwrap();
+    }
+    #[test]
     fn shortcut_mapping_is_pure_and_matches_csharp() {
         use egui::Key::*;
         let f = |k, c, s, a, t| shortcut_action(k, c, s, a, t);
@@ -10576,6 +10631,13 @@ impl eframe::App for EditorApp {
 }
 
 impl EditorApp {
+    /// 對話框及事件圖開啟期間不讓全域快捷鍵穿透至地圖。
+    fn shortcuts_blocked(&self) -> bool {
+        self.pending_action.is_some() || self.pending_save_warnings.is_some()
+            || self.terrain_confirm.is_some() || self.recovery.offer.is_some()
+            || self.skirmish_wizard.open || self.event_graph.open || self.event_graph.pending_close
+    }
+
     /// One full editor frame. `eframe::App::update` delegates here; tests drive it headlessly
     /// with an `egui::Context` (no window or `eframe::Frame` needed).
     pub fn ui_frame(&mut self, ctx: &egui::Context) {
@@ -10631,7 +10693,7 @@ impl EditorApp {
         }
         self.collect_pilot_receipts();
         // 快捷鍵處理
-        if !ctx.wants_keyboard_input() {
+        if !ctx.wants_keyboard_input() && !self.shortcuts_blocked() {
             if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Z)) {
                 self.navigate_journal(ctx.input(|i| i.modifiers.shift));
             } else if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Y)) {
