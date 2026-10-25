@@ -319,6 +319,8 @@ pub struct DesignCheckUi {
     pub show_errors: bool,
     /// Whether to show warnings in the issue list (default: true).
     pub show_warnings: bool,
+    /// 依問題代碼與雙語說明搜尋，保留原始列索引。
+    pub search: String,
     /// Whether to automatically re-run Design Check after a successful Safe Save (default: false).
     pub rerun_after_save: bool,
     /// 與配置面板相同的可注入選檔器介面。
@@ -336,6 +338,7 @@ impl Default for DesignCheckUi {
             event_request: None,
             show_errors: true,
             show_warnings: true,
+            search: String::new(),
             rerun_after_save: false,
             report_picker: Box::new(|kind| {
                 let crate::layout_io::LayoutDialogKind::Save { suggested_name } = kind else { return None };
@@ -359,11 +362,18 @@ impl DesignCheckUi {
         }
     }
 
-    /// Filters rows according to `show_errors` and `show_warnings`, returning (original_index, &row).
+    /// 依層級與搜尋文字篩選，回傳原始索引以維持定位與選取。
     pub fn filtered_rows<'a>(&self, rows: &'a [IssueRow]) -> Vec<(usize, &'a IssueRow)> {
+        let query = self.search.trim().to_lowercase();
         rows.iter()
             .enumerate()
-            .filter(|(_, r)| self.is_severity_visible(r.severity))
+            .filter(|(_, r)| {
+                self.is_severity_visible(r.severity)
+                    && (query.is_empty()
+                        || [&r.code, &r.chinese, &r.english]
+                            .iter()
+                            .any(|text| text.to_lowercase().contains(&query)))
+            })
             .collect()
     }
 }
@@ -735,6 +745,13 @@ impl EditorApp {
                                     _ => format!("警告 ({warning_count})"),
                                 };
                                 ui.checkbox(&mut self.design_check.show_warnings, warn_label);
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label(tr(lang, "Search issues", "搜尋問題"));
+                                ui.text_edit_singleline(&mut self.design_check.search);
+                                if ui.small_button(tr(lang, "Clear search", "清除搜尋")).clicked() {
+                                    self.design_check.search.clear();
+                                }
                             });
                             let filtered = self.design_check.filtered_rows(&rows);
                             if filtered.is_empty() && !rows.is_empty() {
