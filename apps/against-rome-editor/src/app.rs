@@ -12158,6 +12158,39 @@ mod step3a_history_tests {
     }
 
     #[test]
+    fn batch9_bulk_events_interleave_with_terrain_in_unified_journal() {
+        let (mut app, root, _) = fixture("batch9_bulk_journal", &[]);
+        event_edit(&mut app);
+        event_edit(&mut app);
+        app.collect_pilot_receipts();
+        app.undo_journal.clear();
+        let before = snapshot(&app);
+        assert_eq!(app.scenario.set_events_enabled(&[0, 1, 1, 999], false).unwrap(), 2);
+        let bulk = snapshot(&app);
+        let token = app.scenario.history_token();
+        assert_eq!(app.scenario.set_events_enabled(&[0, 1], false).unwrap(), 0);
+        assert_eq!(app.scenario.history_token(), token);
+        terrain_edit(&mut app, 41);
+        let after = snapshot(&app);
+        app.collect_pilot_receipts();
+        let mut journal = std::mem::take(&mut app.undo_journal);
+        let mut target = RealTarget { app: &mut app, calls: vec![] };
+        assert!(journal.undo(&mut target));
+        assert_eq!(snapshot(target.app), bulk);
+        assert!(journal.undo(&mut target));
+        assert_eq!(snapshot(target.app), before);
+        assert!(!journal.undo(&mut target));
+        assert!(journal.consistent_tokens(|id| target.token(id)));
+        assert!(journal.redo(&mut target));
+        assert_eq!(snapshot(target.app), bulk);
+        assert!(journal.redo(&mut target));
+        assert_eq!(snapshot(target.app), after);
+        assert!(!journal.redo(&mut target));
+        assert!(journal.consistent_tokens(|id| target.token(id)));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn terrain_spawn_event_nature_chronological_undo_redo() {
         use SubsystemId::{Nature, Scenario, Spawns, Terrain};
         let (mut app, root, _) = fixture("step3a_chronological", &[]);

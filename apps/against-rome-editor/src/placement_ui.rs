@@ -933,36 +933,24 @@ impl PlacementUi {
         }
     }
 
-    /// Selects all objects sharing the type_id of any currently selected object.
+    /// 選取全地圖同類型物件；與全選一樣保留 DATA 子物件。
     pub fn select_all_of_type(&mut self) -> usize {
-        let Some(store) = &self.store else { return 0; };
-        let selected_types: std::collections::HashSet<u16> = self
-            .selection
-            .iter()
-            .filter_map(|&(slot, uid)| store.objects().iter().find(|o| o.slot == slot && o.uid == uid).map(|o| o.type_id))
-            .collect();
-        if selected_types.is_empty() {
-            return 0;
-        }
-        let matching: Vec<(usize, u32)> = store
-            .objects()
-            .iter()
-            .filter(|o| selected_types.contains(&o.type_id))
-            .map(|o| (o.slot, o.uid))
-            .collect();
-        let count = matching.len();
-        self.selection = matching;
-        if let Some(&first) = self.selection.first() {
-            self.selected = Some(first);
-        }
-        count
+        let objects = self.objects();
+        let selected_types: std::collections::HashSet<u16> = self.selected_families()
+            .iter().filter_map(|key| objects.iter().find(|o| (o.slot, o.uid) == *key).map(|o| o.type_id)).collect();
+        if selected_types.is_empty() { return 0; }
+        let matching: Vec<_> = objects.iter().filter(|o| selected_types.contains(&o.type_id))
+            .map(|o| (o.slot, o.uid)).collect();
+        self.select_objects(&matching);
+        matching.len()
     }
 
-    /// Returns the world (X, Z) coordinates of the single selected object, if exactly one is selected.
+    /// 僅在單選時提供座標，避免多選時誤複製最後選取的物件。
     pub fn selected_coordinates(&self) -> Option<(f32, f32)> {
-        let (slot, uid) = self.selected?;
-        let store = self.store.as_ref()?;
-        store.objects().iter().find(|o| o.slot == slot && o.uid == uid).map(|o| (o.position[0], o.position[2]))
+        let keys = self.selected_families();
+        if keys.len() != 1 { return None; }
+        self.objects().iter().find(|o| (o.slot, o.uid) == keys[0])
+            .map(|o| (o.position[0], o.position[2]))
     }
     fn request_load(&mut self) -> Result<()> {
         explicit_map(&self.map_input)?;
@@ -1708,7 +1696,7 @@ impl PlacementUi {
                     if let Some(limits) = self.category_limits(o.type_id as i32) {
                         ui.label(format!("類別限制：{limits}（單位數量存於 SDL，不在 DATA）"));
                     }
-                    if ui.button("Copy X/Z / 複製 X/Z")
+                    if ui.add_enabled(self.selected_coordinates().is_some(), egui::Button::new("Copy X/Z / 複製 X/Z"))
                         .on_hover_text("複製選取物件的世界座標 (X, Z) 至剪貼簿 / Copy world X and Z coordinates of the selected object to clipboard")
                         .clicked()
                     {
@@ -3252,6 +3240,48 @@ mod tests {
             let t = ui.store.as_ref().unwrap().objects().iter().find(|o| o.slot == slot && o.uid == uid).unwrap().type_id;
             assert_eq!(t, first_type);
         }
+    }
+
+    #[test]
+    fn batch9_type_selection_matches_all_for_data_children() {
+        let temp = Temp::new();
+        fixture(&temp.0);
+        let path = temp.0.join("DATA/objects.dat");
+        let mut bytes = fs::read(&path).unwrap();
+        let parent = 16 + 3 * 79 + 3 * COLUMNS[..13].iter().sum::<usize>() + COLUMNS[13];
+        bytes[parent..parent + 2].copy_from_slice(&0u16.to_le_bytes());
+        for slot in [1, 2] {
+            bytes[16 + slot * 79 + 75..16 + slot * 79 + 77].copy_from_slice(&1u16.to_le_bytes());
+        }
+        fs::write(path, bytes).unwrap();
+        let mut ui = PlacementUi::default();
+        ui.load_now(&temp.0.display().to_string()).unwrap();
+        assert_eq!(ui.objects()[1].parent, Some(0));
+        ui.select_all();
+        let all = ui.selected_objects();
+        ui.select_object(Some((1, 2)));
+        assert_eq!(ui.select_all_of_type(), 2);
+        assert_eq!(ui.selected_objects(), vec![(1, 2), (2, 3)]);
+        assert!(all.contains(&(1, 2)));
+        assert!(!ui.is_dirty());
+    }
+
+    #[test]
+    fn batch9_type_selection_cancels_delete_and_coordinates_require_single() {
+        let temp = Temp::new();
+        fixture(&temp.0);
+        let mut ui = PlacementUi::default();
+        ui.load_now(&temp.0.display().to_string()).unwrap();
+        ui.select_objects(&[(0, 1), (1, 2)]);
+        assert_eq!(ui.selected_coordinates(), None);
+        ui.pending = Some(Pending::Remove { families: vec![(0, 1)] });
+        ui.filter = "no visible matches".into();
+        assert_eq!(ui.select_all_of_type(), 3);
+        assert!(ui.pending.is_none());
+        assert_eq!(ui.selected_objects(), vec![(0, 1), (1, 2), (2, 3)]);
+        assert!(!ui.is_dirty());
+        ui.select_object(Some((0, 1)));
+        assert_eq!(ui.selected_coordinates(), Some((0., 0.)));
     }
 
     #[test]

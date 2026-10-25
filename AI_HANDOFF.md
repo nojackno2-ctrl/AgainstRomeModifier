@@ -1,3 +1,7 @@
+## 2026-10-25 Codex：批次 #9（編輯器通過；四項既有環境失敗）
+- 審查 cf1b92b，修正 DATA 多選誤複製單一座標、同類型選取未取消待確認刪除（placement_ui.rs:937、949）；同類型與全選均包含 DATA 子物件、跨全地圖。新增雙語「僅停用事件／清除篩選」（scenario_ui.rs:1493、1496），保留排序、不新增快捷鍵或復原步驟；五項回歸涵蓋篩選快照、唯讀來源、family 與交錯 journal／receipt／token（app.rs:12161）。指南已更新。
+- 依序 cargo check／test／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target（test 加 --no-fail-fast）：check／build exit 0；完整 283 組，2574 passed／4 failed／25 ignored（exit 101），編輯器 736 passed／0 failed／6 ignored。日誌 re_workspace/codex-batch-9-{check,test,build}.log；四失敗僅 install_resource_discovery::{app_local_trace_works_without_third_party,ancestor_and_third_party_override_never_implicitly_supply_trace,dgvoodoo_remains_available_when_trace_is_missing,executable_at_source_root_does_not_use_tracked_cpp_payload}（:55／111／162／128），提權工作區暫存祖先 ThirdParty／trace 資源汙染。首輪新測試誤認 fixture type_id，已修正重跑；保留 test-first.log 與 codex-batch-9-fixtures。未 stage／commit，AGENTS.md／README.md 既有修改保留；遊戲唯讀，GUI 未驗收。
+
 ## 2026-10-25 Agy：自主批次 #8 設計者工作流程三項優化（已驗證）
 - 1. 劇本事件批次啟用／停用（scenario_ui.rs:1469-1485 原清單僅顯示篩選筆數，無批次切換，需逐一勾選:1786）：新增 `set_events_enabled(&mut self, indices: &[usize], enabled: bool)`，於事件瀏覽器提供「啟用全部／啟用篩選」(Enable all / filtered) 與「停用全部／停用篩選」(Disable all / filtered) 雙語按鈕與 hover 說明，整批共享單一步驟復原（Ctrl+Z）。
 - 2. 放置物件快速「選取同類型」(spawn_placement_ui.rs:1277-1295、placement_ui.rs:1631-1637 原操作僅有 Edit/Duplicate/Delete/All，無同類型選取）：新增 `select_all_of_type()`，一鍵選取畫布與地圖上所有符合目前選取物件類型的放置物件（支援腳本生成與 DATA 物件），便於整批調整隊伍、方向或刪除。

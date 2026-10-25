@@ -195,13 +195,19 @@ struct EventBrowser {
     team: Option<i32>,
     kind: Option<i32>,
     enabled_only: bool,
+    disabled_only: bool,
     time_order: bool,
 }
 impl EventBrowser {
+    /// 清除篩選但保留排序，方便停用篩選結果後重新查看全部。
+    fn clear_filters(&mut self) {
+        let time_order = self.time_order;
+        *self = Self { time_order, ..Default::default() };
+    }
     fn indices(&self, events: &[Event]) -> Vec<usize> {
         let query = self.search.trim().to_lowercase();
         let mut indices: Vec<_> = events.iter().enumerate().filter(|(_, e)| {
-            (!self.enabled_only || e.enabled)
+            (!self.enabled_only || e.enabled) && (!self.disabled_only || !e.enabled)
                 && self.team.is_none_or(|team| e.actions.iter().any(|a| a.team == team || a.other_team == team))
                 && self.kind.is_none_or(|kind| e.actions.iter().any(|a| a.kind == kind))
                 && (query.is_empty() || e.name.to_lowercase().contains(&query)
@@ -1481,7 +1487,15 @@ impl ScenarioUi {
                     ui.selectable_value(&mut browser.kind, None, tl(en, "任意", "Any"));
                     for kind in 0..=4 { ui.selectable_value(&mut browser.kind, Some(kind), action_kind_label(kind, en)); }
                 });
-            ui.checkbox(&mut browser.enabled_only, tl(en, "僅啟用事件", "Enabled only"));
+            if ui.checkbox(&mut browser.enabled_only, tl(en, "僅啟用事件", "Enabled only")).changed() {
+                browser.disabled_only = false;
+            }
+            if ui.checkbox(&mut browser.disabled_only, tl(en, "僅停用事件", "Disabled only")).changed() {
+                browser.enabled_only = false;
+            }
+            if ui.button(tl(en, "清除篩選", "Clear filters")).clicked() {
+                browser.clear_filters();
+            }
             ui.label(tl(en, "排序", "Order"));
             ui.selectable_value(&mut browser.time_order, false, tl(en, "原始順序", "Original order"));
             ui.selectable_value(&mut browser.time_order, true, tl(en, "時間", "Time"));
@@ -2352,7 +2366,7 @@ mod tests {
         for (kind, expected) in [(0, vec![0]), (1, vec![1]), (2, vec![1]), (3, vec![2]), (4, vec![3])] {
             assert_eq!(EventBrowser { kind: Some(kind), ..Default::default() }.indices(&events), expected);
         }
-        let mut filter = EventBrowser { search: "GER_INF01".into(), team: Some(5), kind: Some(2), enabled_only: true, time_order: true };
+        let mut filter = EventBrowser { search: "GER_INF01".into(), team: Some(5), kind: Some(2), enabled_only: true, time_order: true, ..Default::default() };
         // 各篩選套用於事件；隊伍與種類可由不同動作符合。
         assert_eq!(filter.indices(&events), vec![1]);
         filter.team = Some(7);
@@ -2361,6 +2375,49 @@ mod tests {
         assert!(filter.indices(&events).is_empty());
         assert!(EventBrowser::default().indices(&[]).is_empty());
     }
+    #[test]
+    fn batch9_filtered_bulk_disable_uses_snapshot_and_one_receipt() {
+        let mut ui = ScenarioUi::default();
+        ui.document.events = browser_events();
+        ui.events = ScenarioEventSession::with_events(ui.document.events.clone());
+        ui.source = Some(Source { path: PathBuf::from("original/SCRIPT/ak_level.bci"), bytes: vec![1, 2, 3] });
+        ui.browser.enabled_only = true;
+        let indices = ui.browser.indices(&ui.document.events);
+        let before = ui.document.events.clone();
+        assert_eq!(ui.set_events_enabled(&indices, false).unwrap(), indices.len());
+        assert_eq!(ui.take_history_receipts().len(), 1);
+        assert!(ui.browser.indices(&ui.document.events).is_empty());
+        assert_eq!(ui.set_events_enabled(&[], true).unwrap(), 0);
+        assert!(ui.take_history_receipts().is_empty());
+        for (i, event) in ui.document.events.iter().enumerate() {
+            if !indices.contains(&i) {
+                assert_eq!(serde_json::to_vec(event).unwrap(), serde_json::to_vec(&before[i]).unwrap());
+            }
+        }
+        assert!(ui.undo_events());
+        assert_eq!(serde_json::to_vec(&ui.document.events).unwrap(), serde_json::to_vec(&before).unwrap());
+        assert_eq!(ui.source.as_ref().unwrap().bytes, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn batch9_disabled_filter_and_clear_preserve_order_and_document() {
+        let events = browser_events();
+        let before = serde_json::to_vec(&events).unwrap();
+        let mut browser = EventBrowser { disabled_only: true, time_order: true, ..Default::default() };
+        let indices = browser.indices(&events);
+        assert!(!indices.is_empty());
+        assert!(indices.iter().all(|&i| !events[i].enabled));
+        browser.search = "missing".into();
+        browser.team = Some(7);
+        browser.kind = Some(4);
+        assert!(browser.indices(&events).is_empty());
+        browser.clear_filters();
+        assert!(browser.time_order);
+        assert!(!browser.enabled_only && !browser.disabled_only);
+        assert_eq!(browser.indices(&events), EventBrowser { time_order: true, ..Default::default() }.indices(&events));
+        assert_eq!(serde_json::to_vec(&events).unwrap(), before);
+    }
+
     #[test]
     fn event_browser_bilingual_summaries() {
         let mut events = browser_events();
