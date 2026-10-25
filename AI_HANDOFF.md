@@ -1,3 +1,9 @@
+## 2026-10-26 Agy：批次 #21 模組套件與差異效能、3D 原生視角及工具箱三大面板純英文文字全域雙語在地化（已驗證）
+- 1. 模組套件與版本比對／預算分析工作室（packaging_ui.rs 原 18 處純英文 UI 字串）：在地化「地圖版本比對引擎」與「地圖資源預算與效能分析器」兩大分頁標題、基準快照說明、比對按鈕、存檔基準資料夾輸入、覆蓋狀態（✔ 已比對 / ⚠ 無法使用）、分析器評級、物件槽位、光源叢集、繪製呼叫、尋路瓶頸等純文字輸出；新增 `chinese_ui_has_no_untranslated_literals` 無視窗回歸測試。
+- 2. 3D 原生視角工具列與 HUD（viewport_3d.rs 原 19 處純英文 UI 字串）：引入 `english: bool` 與 `tl()` 雙語 helper，在地化工具列標題（3D 原生視角 / 3D Viewport）、重設鏡頭、聚焦選取、正交／透視切換、網格／水面／物件／標記開關、著色模式（浮雕／高度／碰撞／材質貼圖）、LOD 精細度、物件與圖塊座標狀態；在地化底部 HUD 操作說明；新增 `chinese_ui_has_no_untranslated_literals` 無視窗回歸測試。
+- 3. 工具箱面板（toolbox.rs 原 10 處純英文 UI 字串）：引入 `english: bool` 與 `tl()` 雙語 helper，在地化視窗標題、分頁切換、檢查 EXE、啟用／停用核取方塊、預覽補丁、遊戲根目錄與備份根目錄標籤、掃描存檔與備份、驗證選取存檔／備份按鈕、各項操作預覽按鈕（備份、還原、刪除存檔、刪除備份、修復 AI）；新增 `chinese_ui_has_no_untranslated_literals` 無視窗回歸測試；在 `app.rs` 同步語言狀態與測試定位對應。
+- 驗證：執行 `cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/agy-target` 完成 283 組測試套件，**2,632 passed／0 failed／25 ignored**（exit 0，日誌 `re_workspace/agy-batch-21-test.log`），編輯器庫單元測試 790 passed／0 failed／6 ignored（新增 3 項無視窗單元測試均通過）。嚴格遵守唯讀遊戲目錄與不主動 git commit/push 規則，未 stage/commit，保留 AGENTS.md/README.md 既有變更。
+
 ## 2026-10-26 Codex：批次 #20（編輯器通過；四項既有環境失敗）
 - 審查 9fecc02：未見資料鍵值／檔名誤譯；修正 environment_ui 聚落選取文字漏譯及旋轉對稱誤譯。在地化英文呼叫最多的 ambience_ui（16）、placement_ui（12），新增三項無視窗雙語／資料不變回歸。初驗的測試編譯、英文定位與音效類別漏譯已修正；既有 re_workspace 執行檔污染暫存，改用工作區 target 暫存重驗並清理。
 - 依序 cargo check／test／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target（test 加 --no-fail-fast）：check／build exit 0；test exit 101，283 組、2625 passed／4 failed／25 ignored；編輯器 787／0／6。install_resource_discovery.rs:55、111、128、162 與 batch 18 提升環境失敗相同。日誌 re_workspace/codex-batch-20-{check,test,build,focused,test-polluted,test-before-label-fix}.log；git diff --check 通過。遊戲唯讀；AGENTS.md／README.md 既有變更保留；未 stage／commit；GUI 未手動驗收。

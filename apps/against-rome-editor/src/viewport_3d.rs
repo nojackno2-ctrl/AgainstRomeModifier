@@ -19,6 +19,15 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+#[inline]
+pub(crate) fn tl(english: bool, zh: &'static str, en: &'static str) -> &'static str {
+    if english {
+        en
+    } else {
+        zh
+    }
+}
+
 
 use against_rome_placement::WorldObject;
 use against_rome_scene::{
@@ -194,6 +203,7 @@ pub struct Viewport3d {
     pub drag_started_on_object: bool,
     pub is_dragging_terrain: bool,
     pub last_rect: Option<Rect>,
+    pub english: bool,
 }
 
 impl std::fmt::Debug for Viewport3d {
@@ -228,6 +238,7 @@ impl std::fmt::Debug for Viewport3d {
             .field("drag_started_on_object", &self.drag_started_on_object)
             .field("is_dragging_terrain", &self.is_dragging_terrain)
             .field("last_rect", &self.last_rect)
+            .field("english", &self.english)
             .finish()
     }
 }
@@ -278,6 +289,7 @@ impl Viewport3d {
             tile_textures: None,
             is_panning: false,
             is_rotating: false,
+            english: false,
             rotate_start: None,
             last_pointer: None,
             drag_started_on_object: false,
@@ -1261,18 +1273,25 @@ impl Viewport3d {
         selected_object: Option<(usize, u32)>,
     ) {
         ui.horizontal_wrapped(|ui| {
-            ui.heading("3D Viewport");
+            ui.heading(tl(self.english, "3D 原生視角", "3D Viewport"));
             ui.separator();
 
             let dimension = ((session.vertex_size.saturating_sub(1)) / 4).max(1) as f32;
-            if ui.button("Reset Camera").clicked() {
+            if ui.button(tl(self.english, "重設鏡頭", "Reset Camera")).clicked() {
                 self.reset_camera(dimension);
             }
 
             let frame_enabled = selected_object.is_some();
             if ui
-                .add_enabled(frame_enabled, egui::Button::new("Frame (F) / 聚焦 (F)"))
-                .on_hover_text("Center 3D camera on selected object (Shortcut: F) / 將 3D 鏡頭置中對準目前選取的物件（快捷鍵：F）")
+                .add_enabled(
+                    frame_enabled,
+                    egui::Button::new(tl(self.english, "聚焦選取 (F)", "Frame (F)")),
+                )
+                .on_hover_text(tl(
+                    self.english,
+                    "將 3D 鏡頭置中對準目前選取的物件（快捷鍵：F）",
+                    "Center 3D camera on selected object (Shortcut: F)",
+                ))
                 .clicked()
             {
                 self.frame_selection(objects, selected_object);
@@ -1280,55 +1299,99 @@ impl Viewport3d {
 
             // Orthographic vs Perspective toggle
             let ortho_label = if self.camera.orthographic {
-                "Proj: Ortho"
+                tl(self.english, "投影：正交", "Proj: Ortho")
             } else {
-                "Proj: Persp"
+                tl(self.english, "投影：透視", "Proj: Persp")
             };
             if ui.button(ortho_label).clicked() {
                 self.camera.orthographic = !self.camera.orthographic;
             }
 
             // Grid overlay toggle
-            ui.toggle_value(&mut self.show_grid, "Grid");
+            ui.toggle_value(&mut self.show_grid, tl(self.english, "網格", "Grid"));
 
             // Water toggle
-            ui.toggle_value(&mut self.show_water, "Water");
+            ui.toggle_value(&mut self.show_water, tl(self.english, "水面", "Water"));
 
             // Objects & Markers toggles
             ui.separator();
-            ui.toggle_value(&mut self.show_objects, "Objects");
-            ui.toggle_value(&mut self.show_markers, "Markers");
+            ui.toggle_value(&mut self.show_objects, tl(self.english, "物件", "Objects"));
+            ui.toggle_value(&mut self.show_markers, tl(self.english, "標記", "Markers"));
 
             // Shading mode selection
             ui.separator();
-            ui.label("Shading:");
-            ui.selectable_value(&mut self.shading_mode, ShadingMode::Relief, "Relief");
-            ui.selectable_value(&mut self.shading_mode, ShadingMode::Heightmap, "Height");
-            ui.selectable_value(&mut self.shading_mode, ShadingMode::Collision, "Collision");
-            ui.selectable_value(&mut self.shading_mode, ShadingMode::Textured, "Textured");
+            ui.label(tl(self.english, "著色模式：", "Shading:"));
+            ui.selectable_value(
+                &mut self.shading_mode,
+                ShadingMode::Relief,
+                tl(self.english, "浮雕", "Relief"),
+            );
+            ui.selectable_value(
+                &mut self.shading_mode,
+                ShadingMode::Heightmap,
+                tl(self.english, "高度", "Height"),
+            );
+            ui.selectable_value(
+                &mut self.shading_mode,
+                ShadingMode::Collision,
+                tl(self.english, "碰撞", "Collision"),
+            );
+            ui.selectable_value(
+                &mut self.shading_mode,
+                ShadingMode::Textured,
+                tl(self.english, "材質貼圖", "Textured"),
+            );
 
             // LOD Mesh Step selection
             ui.separator();
-            ui.label("LOD:");
-            ui.selectable_value(&mut self.mesh_lod_step, 1, "1 (Fine)");
-            ui.selectable_value(&mut self.mesh_lod_step, 2, "2 (Med)");
-            ui.selectable_value(&mut self.mesh_lod_step, 4, "4 (Fast)");
+            ui.label(tl(self.english, "精細度：", "LOD:"));
+            ui.selectable_value(
+                &mut self.mesh_lod_step,
+                1,
+                tl(self.english, "1 (精細)", "1 (Fine)"),
+            );
+            ui.selectable_value(
+                &mut self.mesh_lod_step,
+                2,
+                tl(self.english, "2 (中等)", "2 (Med)"),
+            );
+            ui.selectable_value(
+                &mut self.mesh_lod_step,
+                4,
+                tl(self.english, "4 (快速)", "4 (Fast)"),
+            );
 
             // Object count status
             ui.separator();
-            ui.label(format!("Objects: {}", objects.len()));
+            ui.label(if self.english {
+                format!("Objects: {}", objects.len())
+            } else {
+                format!("物件數：{}", objects.len())
+            });
             if let Some(sel) = selected_object {
-                ui.label(format!("Selected: [slot={}, uid={}]", sel.0, sel.1));
+                ui.label(if self.english {
+                    format!("Selected: [slot={}, uid={}]", sel.0, sel.1)
+                } else {
+                    format!("已選取：[槽位={}, UID={}]", sel.0, sel.1)
+                });
             }
 
             if let Some((tx, ty)) = self.hover_tile {
                 let h = self.hover_world.map(|w| w.y).unwrap_or(0.0);
-                ui.label(format!("Tile: ({tx}, {ty}) Y: {h:.2}"));
+                ui.label(if self.english {
+                    format!("Tile: ({tx}, {ty}) Y: {h:.2}")
+                } else {
+                    format!("圖塊：({tx}, {ty}) 高度：{h:.2}")
+                });
             }
 
             if let Some(ref atlas) = self.floor_atlas {
                 ui.separator();
-                ui.label(format!("Atlas: {} tiles", atlas.count()));
+                ui.label(if self.english {
+                    format!("Atlas: {} tiles", atlas.count())
+                } else {
+                    format!("圖集：{} 個圖塊", atlas.count())
+                });
             }
         });
     }
@@ -1343,31 +1406,52 @@ impl Viewport3d {
     ) {
         let hud_pos = Pos2::new(rect.min.x + 8.0, rect.max.y - 42.0);
         let sel_str = if let Some(sel) = selected_object {
-            format!(" | Selected: Slot {}, UID {}", sel.0, sel.1)
+            if self.english {
+                format!(" | Selected: Slot {}, UID {}", sel.0, sel.1)
+            } else {
+                format!(" | 選取：槽位 {}, UID {}", sel.0, sel.1)
+            }
         } else {
             String::new()
         };
         let hov_str = if let Some(hov) = self.hover_object {
-            format!(" | Hover: Slot {}, UID {}", hov.0, hov.1)
+            if self.english {
+                format!(" | Hover: Slot {}, UID {}", hov.0, hov.1)
+            } else {
+                format!(" | 暫留：槽位 {}, UID {}", hov.0, hov.1)
+            }
         } else {
             String::new()
         };
         let atlas_str = if self.floor_atlas.is_some() {
             if self.floor_atlas_texture.is_some() {
-                " | Atlas: Textured"
+                if self.english { " | Atlas: Textured" } else { " | 圖集：已貼圖" }
             } else {
-                " | Atlas: Fallback"
+                if self.english { " | Atlas: Fallback" } else { " | 圖集：備用" }
             }
         } else {
             ""
         };
+        let controls_str = if self.english {
+            "Controls: Right-drag: Orbit | Middle/Alt-drag: Pan | Wheel: Zoom | Click: Paint / Pick Object"
+        } else {
+            "操作指南：右鍵拖曳：旋轉視角 | 中鍵/Alt+左鍵拖曳：平移 | 滾輪：縮放 | 左鍵點選：繪製／選取物件"
+        };
+        let objects_label = if self.english { "Objects:" } else { "物件數：" };
+        let notice = if self.english {
+            Self::NON_PARITY_NOTICE
+        } else {
+            "3D 地形視角：透過 EditorCamera 與 TerrainRayPicker 進行編輯預覽。非遊戲原生精確著色器。"
+        };
         let text = format!(
-            "Controls: Right-drag: Orbit | Middle/Alt-drag: Pan | Wheel: Zoom | Click: Paint / Pick Object\nObjects: {}{}{}{}\n{}",
+            "{}\n{} {}{}{}{}\n{}",
+            controls_str,
+            objects_label,
             objects.len(),
             sel_str,
             hov_str,
             atlas_str,
-            Self::NON_PARITY_NOTICE
+            notice
         );
         painter.text(
             hud_pos,
@@ -3056,5 +3140,42 @@ mod troop_tests {
         assert_eq!((objects.len(), pickables.len(), sprites.len()), (4, 4, 4));
         assert!(objects.iter().all(|o| o.source_file == "troop" && o.object_index == -5000 && o.team == 1));
         assert!(pickables.iter().all(Option::is_none), "no sprite catalog loaded in this fixture");
+    }
+
+#[test]
+    fn chinese_ui_has_no_untranslated_literals() {
+        let mut vp = Viewport3d::new();
+        let session = TerrainSession::create_blank(6, 32);
+        for english in [true, false, true, false] {
+            vp.english = english;
+            let text = crate::batch20_localization_tests::render(|ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let _ = vp.show(ui, ctx, &session, 1.0, 0.0, 2.0, &[], None);
+                });
+            });
+            assert!(
+                text.contains(if english { "3D Viewport" } else { "3D 原生視角" }),
+                "{text}"
+            );
+            if !english {
+                for literal in [
+                    "3D Viewport",
+                    "Reset Camera",
+                    "Proj: Ortho",
+                    "Proj: Persp",
+                    "Shading:",
+                    "Relief",
+                    "Height",
+                    "Collision",
+                    "Textured",
+                    "LOD:",
+                    "1 (Fine)",
+                    "2 (Med)",
+                    "4 (Fast)",
+                ] {
+                    assert!(!text.contains(literal), "未翻譯：{literal}\n{text}");
+                }
+            }
+        }
     }
 }

@@ -1026,50 +1026,100 @@ impl PackagingUi {
         collision: Option<&[u8]>,
         live: LiveDiffSessions<'_>,
     ) {
-        ui.heading("Map Version Diff Engine");
-        ui.label("Compares working memory edits against a baseline snapshot across height, collision, objects, and scripts.");
+        ui.heading(tl(self.english, "地圖版本比對引擎", "Map Version Diff Engine"));
+        ui.label(tl(
+            self.english,
+            "比對記憶體中編輯中的圖層與基準快照（高度、碰撞、物件與腳本）。",
+            "Compares working memory edits against a baseline snapshot across height, collision, objects, and scripts.",
+        ));
 
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            if ui.button("Capture Current as Baseline").clicked() {
+            if ui
+                .button(tl(
+                    self.english,
+                    "擷取目前狀態為基準快照",
+                    "Capture Current as Baseline",
+                ))
+                .clicked()
+            {
                 self.capture_baseline_from_memory(
-                    "Working Baseline",
+                    tl(self.english, "工作基準", "Working Baseline"),
                     dimension,
                     heights,
                     collision,
                     None,
                 );
             }
-            if ui.button("Compare Working vs Baseline").clicked() {
-                let _ =
-                    self.compare_live_sessions("Latest Edits", dimension, heights, collision, live);
+            if ui
+                .button(tl(
+                    self.english,
+                    "比對目前編輯與基準快照",
+                    "Compare Working vs Baseline",
+                ))
+                .clicked()
+            {
+                let _ = self.compare_live_sessions(
+                    tl(self.english, "最新編輯", "Latest Edits"),
+                    dimension,
+                    heights,
+                    collision,
+                    live,
+                );
             }
         });
         ui.horizontal(|ui| {
-            ui.label("Saved baseline map folder:");
+            ui.label(tl(
+                self.english,
+                "儲存的基準地圖資料夾：",
+                "Saved baseline map folder:",
+            ));
             ui.text_edit_singleline(&mut self.baseline_dir_input);
-            if ui.button("Load Saved Baseline").clicked() {
+            if ui
+                .button(tl(self.english, "載入已儲存基準", "Load Saved Baseline"))
+                .clicked()
+            {
                 let dir = PathBuf::from(self.baseline_dir_input.trim());
                 let _ = self.load_saved_baseline(&dir);
             }
         });
         if let Some(src) = &self.baseline_source {
             match src {
-                BaselineSource::Memory => ui.label("Baseline: in-memory (heightmap/collision only)."),
-                BaselineSource::SavedMap(p) => ui.label(format!(
-                    "Baseline: saved map {} (current layers are captured from live editor sessions).",
-                    p.display()
+                BaselineSource::Memory => ui.label(tl(
+                    self.english,
+                    "基準：記憶體快照（僅高度圖／阻擋）。",
+                    "Baseline: in-memory (heightmap/collision only).",
                 )),
+                BaselineSource::SavedMap(p) => ui.label(if self.english {
+                    format!(
+                        "Baseline: saved map {} (current layers are captured from live editor sessions).",
+                        p.display()
+                    )
+                } else {
+                    format!(
+                        "基準：已儲存地圖 {}（目前圖層從編輯工作階段擷取）。",
+                        p.display()
+                    )
+                }),
             };
         }
         for (name, state) in &self.layer_coverage {
             match state {
-                LayerState::Compared => {
-                    ui.colored_label(Color32::LIGHT_GREEN, format!("✔ {name}: compared"))
-                }
+                LayerState::Compared => ui.colored_label(
+                    Color32::LIGHT_GREEN,
+                    if self.english {
+                        format!("✔ {name}: compared")
+                    } else {
+                        format!("✔ {name}：已比對")
+                    },
+                ),
                 LayerState::Unavailable(r) => ui.colored_label(
                     Color32::from_rgb(255, 180, 50),
-                    format!("⚠ {name}: unavailable - {r}"),
+                    if self.english {
+                        format!("⚠ {name}: unavailable - {r}")
+                    } else {
+                        format!("⚠ {name}：無法使用 - {r}")
+                    },
                 ),
             };
         }
@@ -1082,7 +1132,11 @@ impl PackagingUi {
                     ui.monospace(&self.diff_summary_text);
                 });
         } else {
-            ui.label("No diff report available. Capture a baseline first and edit terrain to see differences.");
+            ui.label(tl(
+                self.english,
+                "尚無比對報告。請先擷取基準快照並編輯地形以檢視差異。",
+                "No diff report available. Capture a baseline first and edit terrain to see differences.",
+            ));
         }
     }
 
@@ -1094,11 +1148,22 @@ impl PackagingUi {
         collision: Option<&[u8]>,
         spawns: Option<&[Spawn]>,
     ) {
-        ui.heading("Map Budget & Performance Profiler");
-        ui.label("Analyzes object slots, light cluster hotspots, draw calls, and pathfinding complexity.");
+        ui.heading(tl(
+            self.english,
+            "地圖資源預算與效能分析器",
+            "Map Budget & Performance Profiler",
+        ));
+        ui.label(tl(
+            self.english,
+            "分析物件槽位、光源叢集熱點、繪製呼叫與尋路複雜度。",
+            "Analyzes object slots, light cluster hotspots, draw calls, and pathfinding complexity.",
+        ));
 
         ui.add_space(6.0);
-        if ui.button("Run Budget Profiler").clicked() {
+        if ui
+            .button(tl(self.english, "執行預算效能分析", "Run Budget Profiler"))
+            .clicked()
+        {
             self.profile_budget(dimension, heights, collision, spawns);
         }
 
@@ -1114,7 +1179,7 @@ impl PackagingUi {
             };
 
             ui.horizontal(|ui| {
-                ui.heading("Overall Grade:");
+                ui.heading(tl(self.english, "綜合評級：", "Overall Grade:"));
                 ui.colored_label(
                     grade_color,
                     format!("{:?} ({}/100)", report.overall_grade, report.overall_score),
@@ -1122,34 +1187,70 @@ impl PackagingUi {
             });
 
             ui.add_space(4.0);
-            ui.label(format!(
-                "Object Slots: {} active (Max: {})",
-                report.object_budget.total_active_objects,
-                MapBudgetLimits::MAX_OBJECTS_DAT_SLOTS
-            ));
-            ui.label(format!(
-                "Light Clusters: {} hotspots (peak {} lights/cluster, limit {})",
-                report.light_budget.hotspots.len(),
-                report.light_budget.peak_cluster_lights,
-                MapBudgetLimits::HARD_LIMIT_LIGHTS_PER_CLUSTER
-            ));
-            ui.label(format!(
-                "Estimated Draw Calls: {} (terrain {}, sprites {}, shadows {})",
-                report.draw_budget.estimated_total_draw_calls,
-                report.draw_budget.terrain_draw_calls,
-                report.draw_budget.sprite_batch_draw_calls,
-                report.draw_budget.shadow_batch_draw_calls
-            ));
-            ui.label(format!(
-                "Pathfinding: {} chokepoints, {} dead ends ({})",
-                report.path_budget.chokepoint_count,
-                report.path_budget.dead_end_count,
-                report.path_budget.complexity_rating
-            ));
+            ui.label(if self.english {
+                format!(
+                    "Object Slots: {} active (Max: {})",
+                    report.object_budget.total_active_objects,
+                    MapBudgetLimits::MAX_OBJECTS_DAT_SLOTS
+                )
+            } else {
+                format!(
+                    "物件槽位：{} 個使用中（上限：{}）",
+                    report.object_budget.total_active_objects,
+                    MapBudgetLimits::MAX_OBJECTS_DAT_SLOTS
+                )
+            });
+            ui.label(if self.english {
+                format!(
+                    "Light Clusters: {} hotspots (peak {} lights/cluster, limit {})",
+                    report.light_budget.hotspots.len(),
+                    report.light_budget.peak_cluster_lights,
+                    MapBudgetLimits::HARD_LIMIT_LIGHTS_PER_CLUSTER
+                )
+            } else {
+                format!(
+                    "光源叢集：{} 個熱點（峰值 {} 光源／叢集，上限 {}）",
+                    report.light_budget.hotspots.len(),
+                    report.light_budget.peak_cluster_lights,
+                    MapBudgetLimits::HARD_LIMIT_LIGHTS_PER_CLUSTER
+                )
+            });
+            ui.label(if self.english {
+                format!(
+                    "Estimated Draw Calls: {} (terrain {}, sprites {}, shadows {})",
+                    report.draw_budget.estimated_total_draw_calls,
+                    report.draw_budget.terrain_draw_calls,
+                    report.draw_budget.sprite_batch_draw_calls,
+                    report.draw_budget.shadow_batch_draw_calls
+                )
+            } else {
+                format!(
+                    "預估繪製呼叫：{}（地形 {}、精靈 {}、陰影 {}）",
+                    report.draw_budget.estimated_total_draw_calls,
+                    report.draw_budget.terrain_draw_calls,
+                    report.draw_budget.sprite_batch_draw_calls,
+                    report.draw_budget.shadow_batch_draw_calls
+                )
+            });
+            ui.label(if self.english {
+                format!(
+                    "Pathfinding: {} chokepoints, {} dead ends ({})",
+                    report.path_budget.chokepoint_count,
+                    report.path_budget.dead_end_count,
+                    report.path_budget.complexity_rating
+                )
+            } else {
+                format!(
+                    "尋路分析：{} 處瓶頸隘口、{} 處死胡同（{}）",
+                    report.path_budget.chokepoint_count,
+                    report.path_budget.dead_end_count,
+                    report.path_budget.complexity_rating
+                )
+            });
 
             if !report.bottlenecks.is_empty() {
                 ui.separator();
-                ui.heading("Detected Bottlenecks:");
+                ui.heading(tl(self.english, "偵測到的效能瓶頸：", "Detected Bottlenecks:"));
                 for b in &report.bottlenecks {
                     ui.colored_label(
                         Color32::from_rgb(255, 180, 50),
@@ -1707,6 +1808,63 @@ mod tests {
         assert_eq!(tr(false, "Hello", "你好"), "你好");
         assert_eq!(tl(true, "你好", "Hello"), "Hello");
         assert_eq!(tl(false, "你好", "Hello"), "你好");
+    }
+
+    #[test]
+    fn chinese_ui_has_no_untranslated_literals() {
+        let mut panel = PackagingUi::default();
+        panel.open = true;
+        let textures = crate::textures_ui::TexturesUi::default();
+        let placement = crate::placement_ui::PlacementUi::default();
+        let scenario = crate::scenario_ui::ScenarioUi::default();
+        let live = LiveDiffSessions::from_sessions(&textures, &placement, &scenario);
+
+        panel.current_tab = PackagingTab::MapDiff;
+        for english in [true, false, true, false] {
+            panel.english = english;
+            let text = crate::batch20_localization_tests::render(|ctx| {
+                panel.show(ctx, 256, None, None, None, live);
+            });
+            assert!(
+                text.contains(if english { "Map Version Diff Engine" } else { "地圖版本比對引擎" }),
+                "{text}"
+            );
+            if !english {
+                for literal in [
+                    "Map Version Diff Engine",
+                    "Compares working memory edits against a baseline snapshot",
+                    "Capture Current as Baseline",
+                    "Compare Working vs Baseline",
+                    "Saved baseline map folder:",
+                    "Load Saved Baseline",
+                    "Baseline: in-memory",
+                    "No diff report available",
+                ] {
+                    assert!(!text.contains(literal), "未翻譯：{literal}\n{text}");
+                }
+            }
+        }
+
+        panel.current_tab = PackagingTab::BudgetProfiler;
+        for english in [true, false, true, false] {
+            panel.english = english;
+            let text = crate::batch20_localization_tests::render(|ctx| {
+                panel.show(ctx, 256, None, None, None, live);
+            });
+            assert!(
+                text.contains(if english { "Map Budget & Performance Profiler" } else { "地圖資源預算與效能分析器" }),
+                "{text}"
+            );
+            if !english {
+                for literal in [
+                    "Map Budget & Performance Profiler",
+                    "Analyzes object slots, light cluster hotspots",
+                    "Run Budget Profiler",
+                ] {
+                    assert!(!text.contains(literal), "未翻譯：{literal}\n{text}");
+                }
+            }
+        }
     }
 }
 

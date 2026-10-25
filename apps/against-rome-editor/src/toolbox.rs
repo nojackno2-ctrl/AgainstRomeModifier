@@ -163,9 +163,19 @@ fn clone_verify_report(r: &VerifyReport) -> VerifyReport {
         warnings: r.warnings.clone(),
     }
 }
+#[inline]
+pub(crate) fn tl(english: bool, zh: &'static str, en: &'static str) -> &'static str {
+    if english {
+        en
+    } else {
+        zh
+    }
+}
+
 #[derive(Default)]
 pub struct ToolboxUi {
     pub open: bool,
+    pub english: bool,
     pub current_tab: ToolboxTab,
     exe: String,
     patch_backup: String,
@@ -501,29 +511,29 @@ impl ToolboxUi {
     pub fn show(&mut self, ctx: &egui::Context) {
         let mut open = self.open;
         let title = match self.current_tab {
-            ToolboxTab::Modifier => "EXE Modifier (遊戲補丁修改工具)",
-            ToolboxTab::SaveManager => "Save Game Manager (遊戲存檔管理工具)",
+            ToolboxTab::Modifier => tl(self.english, "EXE 補丁修改工具", "EXE Modifier"),
+            ToolboxTab::SaveManager => tl(self.english, "遊戲存檔管理工具", "Save Game Manager"),
         };
         egui::Window::new(title).open(&mut open).default_width(680.0).show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.current_tab, ToolboxTab::Modifier, "EXE Modifier (遊戲補丁)");
-                ui.selectable_value(&mut self.current_tab, ToolboxTab::SaveManager, "Save Manager (存檔管理)");
+                ui.selectable_value(&mut self.current_tab, ToolboxTab::Modifier, tl(self.english, "EXE 補丁修改工具", "EXE Modifier"));
+                ui.selectable_value(&mut self.current_tab, ToolboxTab::SaveManager, tl(self.english, "遊戲存檔管理", "Save Manager"));
             });
             ui.separator();
             egui::ScrollArea::vertical().show(ui, |ui| {
                 match self.current_tab {
                     ToolboxTab::Modifier => {
-                        ui.heading("EXE Modifier (遊戲補丁)");
-                        ui.label("只操作工作副本；關閉遊戲。Program Files 寫入會拒絕。Inspect 為唯讀。");
-                        ui.label("EXE 完整路徑");
+                        ui.heading(tl(self.english, "EXE 補丁修改工具", "EXE Modifier"));
+                        ui.label(tl(self.english, "只操作工作副本；關閉遊戲。Program Files 寫入會拒絕。Inspect 為唯讀。", "Only operates on working copy; close game first. Program Files writes are rejected. Inspect is read-only."));
+                        ui.label(tl(self.english, "EXE 完整路徑：", "EXE Full Path:"));
                         let a = ui.text_edit_singleline(&mut self.exe).changed();
-                        ui.label("新備份檔案完整路徑（必填）");
+                        ui.label(tl(self.english, "新備份檔案完整路徑（必填）：", "New Backup File Full Path (Required):"));
                         let b = ui.text_edit_singleline(&mut self.patch_backup).changed();
                         if a || b {
                             self.patch_review = None;
                             if a { self.states = None; }
                         }
-                        if ui.button("Inspect EXE").clicked() {
+                        if ui.button(tl(self.english, "檢查 EXE", "Inspect EXE")).clicked() {
                             let r = self.inspect();
                             self.report(r);
                         }
@@ -531,38 +541,38 @@ impl ToolboxUi {
                             for i in 0..3 {
                                 ui.horizontal(|ui| {
                                     ui.label(format!("{}: {:?}", PATCHES[i].name, states[i]));
-                                    if ui.checkbox(&mut self.enabled[i], "Enable（取消 = Disable）").changed() {
+                                    if ui.checkbox(&mut self.enabled[i], tl(self.english, "啟用（取消 = 停用）", "Enable (uncheck to Disable)")).changed() {
                                         self.patch_review = None;
                                     }
                                 });
                             }
                         }
-                        if ui.button("Review patches").clicked() {
+                        if ui.button(tl(self.english, "預覽補丁變更", "Review patches")).clicked() {
                             let r = self.review_patch();
                             self.report(r);
                         }
                         if let Some(r) = &self.patch_review {
                             ui.label(format!("將修改 {}\n保留原始 bytes 到 {}\nEnable: {:?}", r.exe, r.backup, r.enabled));
-                            if ui.button("確認 Apply patches").clicked() {
+                            if ui.button(tl(self.english, "確認套用補丁", "Confirm and Apply Patches")).clicked() {
                                 let result = self.apply_patch();
                                 self.report(result);
                             }
                         }
                     }
                     ToolboxTab::SaveManager => {
-                        ui.heading("Save Manager (存檔管理)");
-                        ui.label("明確指定 game root（其下為 SAVE）與備份 root；還原與刪除只允許工作副本。");
-                        ui.label("Game root");
+                        ui.heading(tl(self.english, "存檔與備份管理", "Save Game Manager"));
+                        ui.label(tl(self.english, "明確指定遊戲根目錄（其下為 SAVE）與備份根目錄；還原與刪除只允許工作副本。", "Specify game root (containing SAVE) and backups root; restore/delete are only allowed on working copies."));
+                        ui.label(tl(self.english, "遊戲根目錄", "Game root"));
                         let a = ui
                             .horizontal(|ui| {
                                 let changed = ui.text_edit_singleline(&mut self.game).changed();
-                                if ui.button("Browse... (瀏覽)").clicked() {
+                                if ui.button(tl(self.english, "瀏覽…", "Browse…")).clicked() {
                                     self.browse_game_folder();
                                 }
                                 changed
                             })
                             .inner;
-                        ui.label("Backups root");
+                        ui.label(tl(self.english, "備份根目錄", "Backups root"));
                         let b = ui.text_edit_singleline(&mut self.backups).changed();
                         if a || b {
                             self.catalog = None;
@@ -573,12 +583,12 @@ impl ToolboxUi {
                             self.title.clear();
                             self.restore_folder.clear();
                         }
-                        if ui.button("Scan saves / backups").clicked() {
+                        if ui.button(tl(self.english, "掃描存檔與備份", "Scan saves / backups")).clicked() {
                             let r = self.scan();
                             self.report(r);
                         }
                         if let Some(c) = &self.catalog {
-                            ui.label("存檔（folder / title / level / metadata）");
+                            ui.label(tl(self.english, "存檔清單（資料夾／標題／關卡／中繼資料）：", "Saves (folder / title / level / metadata):"));
                             for s in &c.saves {
                                 if ui.selectable_label(self.selected_save.as_ref() == Some(&s.folder), format!("{} | {} | {} | parsed={}", s.folder, s.title, s.level, s.parsed)).clicked() {
                                     self.selected_save = Some(s.folder.clone());
@@ -587,7 +597,7 @@ impl ToolboxUi {
                                     self.last_verify_report = None;
                                 }
                             }
-                            ui.label("備份（archive / original folder / title / level / time）");
+                            ui.label(tl(self.english, "備份清單（封存檔／原始資料夾／標題／關卡／時間）：", "Backups (archive / original folder / title / level / time):"));
                             for b in &c.backups {
                                 if ui.selectable_label(self.selected_backup.as_ref() == Some(&b.file_name), format!("{} | {} | {} | {} | {} | parsed={}", b.file_name, b.manifest.orig_folder, b.manifest.title, b.manifest.level, b.manifest.backup_time, b.parsed)).clicked() {
                                     self.selected_backup = Some(b.file_name.clone());
@@ -597,20 +607,20 @@ impl ToolboxUi {
                                 }
                             }
                         }
-                        ui.label("備份標題");
+                        ui.label(tl(self.english, "備份標題：", "Backup Title:"));
                         if ui.text_edit_singleline(&mut self.title).changed() {
                             self.save_review = None;
                         }
-                        ui.label("還原目的資料夾名稱（SAVE 之下；會替換整個資料夾）");
+                        ui.label(tl(self.english, "還原目的資料夾名稱（SAVE 之下；會替換整個資料夾）：", "Restore Target Folder (under SAVE; replaces entire folder):"));
                         if ui.text_edit_singleline(&mut self.restore_folder).changed() {
                             self.save_review = None;
                         }
                         ui.horizontal_wrapped(|ui| {
-                            if ui.button("Verify selected save (驗證選取存檔)").clicked() {
+                            if ui.button(tl(self.english, "驗證選取存檔", "Verify selected save")).clicked() {
                                 let r = self.verify_selected_save();
                                 self.report_verify(r);
                             }
-                            if ui.button("Verify selected backup (驗證選取備份)").clicked() {
+                            if ui.button(tl(self.english, "驗證選取備份", "Verify selected backup")).clicked() {
                                 let r = self.verify_selected_backup();
                                 self.report_verify(r);
                             }
@@ -655,11 +665,11 @@ impl ToolboxUi {
                         }
                         ui.horizontal_wrapped(|ui| {
                             for (label, action) in [
-                                ("Review Backup", SaveAction::Backup),
-                                ("Review Restore", SaveAction::Restore),
-                                ("Review Delete save", SaveAction::DeleteSave),
-                                ("Review Delete backup", SaveAction::DeleteBackup),
-                                ("Review Repair AI", SaveAction::RepairAi),
+                                (tl(self.english, "預覽備份", "Review Backup"), SaveAction::Backup),
+                                (tl(self.english, "預覽還原", "Review Restore"), SaveAction::Restore),
+                                (tl(self.english, "預覽刪除存檔", "Review Delete save"), SaveAction::DeleteSave),
+                                (tl(self.english, "預覽刪除備份", "Review Delete backup"), SaveAction::DeleteBackup),
+                                (tl(self.english, "預覽修復 AI", "Review Repair AI"), SaveAction::RepairAi),
                             ] {
                                 if ui.button(label).clicked() {
                                     let r = self.review_save(action);
@@ -682,7 +692,7 @@ impl ToolboxUi {
                             for (p, _) in &r.paths {
                                 ui.label(p.display().to_string());
                             }
-                            if ui.button("確認執行此操作").clicked() {
+                            if ui.button(tl(self.english, "確認執行此操作", "Confirm and Apply")).clicked() {
                                 let r = self.apply_save();
                                 self.report_msg(r);
                             }
@@ -1322,5 +1332,56 @@ mod tests {
         assert_eq!(u.game, game.to_string_lossy());
         assert!(u.catalog.is_none());
         assert!(!u.status.is_empty() && u.status != "完成");
+    }
+
+#[test]
+    fn chinese_ui_has_no_untranslated_literals() {
+        let mut tb = ToolboxUi::default();
+        tb.open = true;
+        tb.current_tab = ToolboxTab::Modifier;
+        for english in [true, false, true, false] {
+            tb.english = english;
+            let text = crate::batch20_localization_tests::render(|ctx| {
+                tb.show(ctx);
+            });
+            assert!(
+                text.contains(if english { "EXE Modifier" } else { "EXE 補丁修改工具" }),
+                "{text}"
+            );
+            if !english {
+                for literal in [
+                    "Inspect EXE",
+                    "Review patches",
+                ] {
+                    assert!(!text.contains(literal), "未翻譯：{literal}\n{text}");
+                }
+            }
+        }
+
+        tb.current_tab = ToolboxTab::SaveManager;
+        for english in [true, false, true, false] {
+            tb.english = english;
+            let text = crate::batch20_localization_tests::render(|ctx| {
+                tb.show(ctx);
+            });
+            assert!(
+                text.contains(if english { "Save Game Manager" } else { "遊戲存檔管理工具" }),
+                "{text}"
+            );
+            if !english {
+                for literal in [
+                    "Game root",
+                    "Backups root",
+                    "Scan saves / backups",
+                    "Review Backup",
+                    "Review Restore",
+                    "Review Delete save",
+                    "Review Delete backup",
+                    "Review Repair AI",
+                ] {
+                    assert!(!text.contains(literal), "未翻譯：{literal}\n{text}");
+                }
+            }
+        }
     }
 }

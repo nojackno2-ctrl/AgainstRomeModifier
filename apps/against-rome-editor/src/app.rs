@@ -8619,7 +8619,10 @@ angle=0.00
                 1 => app.scenario.show(ctx),
                 2 => app.textures.show(ctx),
                 3 => app.show_studio_panels(ctx),
-                4 => app.toolbox.show(ctx),
+                4 => {
+                    app.toolbox.english = app.lang() == AppLanguage::English;
+                    app.toolbox.show(ctx);
+                }
                 _ => unreachable!(),
             },
         )
@@ -8651,11 +8654,25 @@ angle=0.00
         label: &str,
     ) -> Rect {
         // 測試定位跟隨面板語言，避免依賴英文預設值。
+        app.toolbox.english = app.lang() == AppLanguage::English;
+        app.packaging.english = app.lang() == AppLanguage::English;
         let label = if panel == 0 && !app.placement.english {
             match label {
                 "Load DATA" => "載入 DATA",
                 "Snap to tile" => "對齊圖格",
                 "Move family" => "移動關聯群組",
+                other => other,
+            }
+        } else if panel == 3 && !app.packaging.english {
+            match label {
+                "Compare Working vs Baseline" => "比對目前編輯與基準快照",
+                other => other,
+            }
+        } else if panel == 4 && !app.toolbox.english {
+            match label {
+                "Game root" => "遊戲根目錄",
+                "Backups root" => "備份根目錄",
+                "Scan saves / backups" => "掃描存檔與備份",
                 other => other,
             }
         } else { label };
@@ -12031,6 +12048,7 @@ impl EditorApp {
                 if let Some(session) = &self.session {
                     let placement_objects = self.placement.objects();
                     let selected_obj = self.placement.selected_object();
+                    self.viewport_3d.english = self.lang() == AppLanguage::English;
                     self.viewport_3d.terrain_pick_mode = self.ramp_selecting;
                     self.viewport_3d.show_grid = self.show_grid;
                     self.viewport_3d.show_objects = self.show_objects;
@@ -12461,6 +12479,7 @@ impl EditorApp {
             }
         });
         self.handle_pending_action(ctx);
+        self.toolbox.english = self.lang() == AppLanguage::English;
         self.toolbox.show(ctx);
         let navigation_allowed = !self.shortcuts_blocked();
         self.navigation
