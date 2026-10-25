@@ -967,7 +967,8 @@ impl SpawnPlacementUi {
             | ShortcutAction::DesignCheck
             | ShortcutAction::CanvasZoom(_)
             | ShortcutAction::CanvasPan { .. }
-            | ShortcutAction::CanvasResetView => {}
+            | ShortcutAction::CanvasResetView
+            | ShortcutAction::Eyedropper => {}
         }
     }
 

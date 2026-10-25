@@ -3878,10 +3878,11 @@ pub enum ShortcutAction {
     CanvasZoom(f32),
     CanvasPan { dx: f32, dy: f32 },
     CanvasResetView,
+    Eyedropper,
 }
 
 /// Keys polled each frame for [`shortcut_action`].
-const SHORTCUT_KEYS: [egui::Key; 23] = [
+const SHORTCUT_KEYS: [egui::Key; 24] = [
     egui::Key::Num1, egui::Key::Num2, egui::Key::Num3,
     egui::Key::Num4, egui::Key::Num5, egui::Key::Num6,
     egui::Key::Num7, egui::Key::Num8, egui::Key::Num9,
@@ -3889,6 +3890,7 @@ const SHORTCUT_KEYS: [egui::Key; 23] = [
     egui::Key::S,
     egui::Key::A,
     egui::Key::D,
+    egui::Key::I,
     egui::Key::Delete,
     egui::Key::ArrowLeft,
     egui::Key::ArrowRight,
@@ -3929,6 +3931,7 @@ pub fn shortcut_action(
             Key::Num7 => Some(ShortcutAction::TerrainTool(ActiveTool::CollisionBlock)),
             Key::Num8 => Some(ShortcutAction::TerrainTool(ActiveTool::CollisionClear)),
             Key::Num9 => Some(ShortcutAction::TerrainTool(ActiveTool::Material)),
+            Key::I => Some(ShortcutAction::Eyedropper),
             Key::OpenBracket => Some(ShortcutAction::BrushRadius(-1.0)),
             Key::CloseBracket => Some(ShortcutAction::BrushRadius(1.0)),
             Key::F5 => Some(ShortcutAction::DesignCheck),
@@ -4375,6 +4378,153 @@ impl EditorApp {
             .map_err(|e| format!("Spawn DATA: {e}"))
     }
 
+    /// Returns the terrain height sample (0..=255) at the given world coordinates (0..=16384).
+    pub fn height_at_world(&self, wx: f32, wz: f32) -> Option<u8> {
+        let session = self.session.as_ref()?;
+        if session.vertex_size < 2 || session.heights().is_empty() {
+            return None;
+        }
+        let span = (session.vertex_size - 1) as f32;
+        let gx = (wx / 16384.0 * span).round().clamp(0.0, span) as usize;
+        let gz = (wz / 16384.0 * span).round().clamp(0.0, span) as usize;
+        session.heights().get(gz * session.vertex_size + gx).copied()
+    }
+
+    /// Formats the active tool name and brush size for the status bar.
+    pub fn active_tool_status_text(&self, lang: AppLanguage) -> String {
+        let tool_prefix = tr(lang, "Tool", "工具");
+        if self.nature.enabled {
+            let op_str = match self.nature.operation {
+                NatureOperation::Plant => tr(lang, "Nature (Plant)", "自然 (種植)"),
+                NatureOperation::Remove => tr(lang, "Nature (Remove)", "自然 (清除)"),
+            };
+            let radius_label = tr(lang, "Radius", "半徑");
+            return format!("{tool_prefix}: {op_str} ({radius_label}: {})", self.nature.brush_size);
+        }
+
+        match self.active_tool {
+            ActiveTool::Material => {
+                let name = tr(lang, "Material", "地表材質");
+                let size_label = tr(lang, "Size", "尺寸");
+                let size = self.textures.material_brush_tiles();
+                format!("{tool_prefix}: {name} ({size_label}: {size})")
+            }
+            ActiveTool::HeightRaise => {
+                let name = tr(lang, "Raise", "升高");
+                let r_label = tr(lang, "Radius", "半徑");
+                format!("{tool_prefix}: {name} ({r_label}: {:.0})", self.brush_radius)
+            }
+            ActiveTool::HeightLower => {
+                let name = tr(lang, "Lower", "降低");
+                let r_label = tr(lang, "Radius", "半徑");
+                format!("{tool_prefix}: {name} ({r_label}: {:.0})", self.brush_radius)
+            }
+            ActiveTool::HeightFlatten => {
+                let name = tr(lang, "Flatten", "整平");
+                let r_label = tr(lang, "Radius", "半徑");
+                format!("{tool_prefix}: {name} ({r_label}: {:.0})", self.brush_radius)
+            }
+            ActiveTool::HeightSmooth => {
+                let name = tr(lang, "Smooth", "平滑");
+                let r_label = tr(lang, "Radius", "半徑");
+                format!("{tool_prefix}: {name} ({r_label}: {:.0})", self.brush_radius)
+            }
+            ActiveTool::HeightRoughen => {
+                let name = tr(lang, "Roughen", "粗糙");
+                let r_label = tr(lang, "Radius", "半徑");
+                format!("{tool_prefix}: {name} ({r_label}: {:.0})", self.brush_radius)
+            }
+            ActiveTool::Water => {
+                let name = tr(lang, "Water", "水面");
+                let r_label = tr(lang, "Radius", "半徑");
+                format!("{tool_prefix}: {name} ({r_label}: {:.0})", self.brush_radius)
+            }
+            ActiveTool::CollisionBlock => {
+                let name = tr(lang, "Block", "阻擋通行");
+                let r_label = tr(lang, "Radius", "半徑");
+                format!("{tool_prefix}: {name} ({r_label}: {:.0})", self.brush_radius)
+            }
+            ActiveTool::CollisionClear => {
+                let name = tr(lang, "Clear", "清除阻擋");
+                let r_label = tr(lang, "Radius", "半徑");
+                format!("{tool_prefix}: {name} ({r_label}: {:.0})", self.brush_radius)
+            }
+        }
+    }
+
+    /// Formats cursor world, tile, and elevation readout for the status bar.
+    pub fn cursor_readout_text(&self, lang: AppLanguage) -> Option<String> {
+        let (wx, wz, tx, tz) = self.canvas_cursor?;
+        let prefix = tr(lang, "Cursor", "游標");
+        let tile_label = tr(lang, "Tile", "圖塊");
+        let base = format!("{prefix}: X: {wx:.0}, Z: {wz:.0} | {tile_label}: ({tx}, {tz})");
+        Some(if let Some(h) = self.height_at_world(wx, wz) {
+            let height_label = tr(lang, "Height", "高度");
+            format!("{base} | {height_label}: {h}")
+        } else {
+            base
+        })
+    }
+
+    /// Eyedropper: samples the floor material under the cursor (2D canvas or 3D view)
+    /// and switches to the Material tool. Respects shortcuts_blocked().
+    pub fn eyedrop_material_at_cursor(&mut self) -> bool {
+        if self.shortcuts_blocked() {
+            return false;
+        }
+        let lang = self.lang();
+        let english = lang == AppLanguage::English;
+        let Some((wx, wz, _, _)) = self.canvas_cursor else {
+            let msg = tr(
+                lang,
+                "Hover cursor over the map to pick material",
+                "請將游標移至地圖上方以吸取材質",
+            );
+            self.set_status(msg.to_string(), false);
+            return false;
+        };
+
+        let Some(session) = &self.session else {
+            let msg = tr(
+                lang,
+                "No map loaded to pick material from",
+                "尚未載入地圖，無法吸取材質",
+            );
+            self.set_status(msg.to_string(), true);
+            return false;
+        };
+
+        let span = (session.vertex_size.saturating_sub(1).max(1)) as f32;
+        let gx = (wx / 16384.0 * span).clamp(0.0, span);
+        let gy = (wz / 16384.0 * span).clamp(0.0, span);
+
+        if self.textures.sample_material_at_grid(gx, gy, span, english) {
+            self.active_tool = ActiveTool::Material;
+            self.nature.enabled = false;
+            let picked_name = self
+                .textures
+                .active_material_or_stamp()
+                .unwrap_or("material");
+            let msg = if english {
+                format!("Picked material: {picked_name}")
+            } else {
+                format!("已吸取地表材質: {picked_name}")
+            };
+            self.set_status(msg, false);
+            true
+        } else {
+            let notice = self.textures.material_notice().map(str::to_string).unwrap_or_else(|| {
+                tr(
+                    lang,
+                    "No material texture data available at this location",
+                    "該位置沒有可讀取的地表材質資料",
+                ).to_string()
+            });
+            self.set_status(notice, false);
+            false
+        }
+    }
+
     /// Dispatches one shortcut. Mutating actions are refused on retail maps like the C# editor.
     pub fn handle_shortcut_action(&mut self, action: ShortcutAction) {
         if self.shortcuts_blocked() { return; }
@@ -4393,6 +4543,9 @@ impl EditorApp {
                 if !self.nature.enabled && self.active_tool != ActiveTool::Material {
                     self.brush_radius = (self.brush_radius + delta).clamp(1.0, 64.0);
                 }
+            }
+            ShortcutAction::Eyedropper => {
+                self.eyedrop_material_at_cursor();
             }
             ShortcutAction::DesignCheck => self.run_design_check(),
             ShortcutAction::CanvasZoom(factor) => {
@@ -4526,6 +4679,7 @@ mod tests {
     use crate::terrain::SampleChange;
 
     mod batch7_tests;
+    mod batch10_tests;
     mod save_blockers_tests;
     mod unified_undo_tests;
     mod objectives_apply_tests;
@@ -11022,11 +11176,12 @@ impl EditorApp {
                 };
                 ui.colored_label(color, &self.status_message);
 
-                if let Some((wx, wz, tx, tz)) = self.canvas_cursor {
+                ui.separator();
+                ui.label(self.active_tool_status_text(lang));
+
+                if let Some(text) = self.cursor_readout_text(lang) {
                     ui.separator();
-                    let prefix = tr(lang, "Cursor", "游標");
-                    let tile_label = tr(lang, "Tile", "圖塊");
-                    ui.label(format!("{prefix}: X: {wx:.0}, Z: {wz:.0} | {tile_label}: ({tx}, {tz})"));
+                    ui.label(text);
                 }
 
                 if let Some(session) = &self.session {
