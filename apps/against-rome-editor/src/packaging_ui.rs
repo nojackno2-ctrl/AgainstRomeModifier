@@ -10,6 +10,7 @@ use against_rome_packaging::{
     },
 };
 use against_rome_scenario::model::{ScenarioDocument, Spawn};
+use crate::layout_io::{LayoutDialogKind, LayoutFilePicker};
 use eframe::egui::{self, Color32, Vec2};
 use std::path::{Path, PathBuf};
 
@@ -139,9 +140,17 @@ pub struct PackagingUi {
     // --- Budget Profiler state ---
     pub budget_report: Option<MapBudgetReport>,
 
-    // Dirty / guards
+    // Bilingual / language
+    pub english: bool,
+
+    // File picker injection (layout_picker and export_picker supported interchangeably)
+    pub layout_picker: Option<LayoutFilePicker>,
+    pub export_picker: Option<LayoutFilePicker>,
+
+    // Dirty / guards / overwrite confirmation
     pub dirty: bool,
     pub pending_discard: bool,
+    pub pending_overwrite_confirm: bool,
     pub status_message: String,
     pub status_is_error: bool,
 }
@@ -172,8 +181,12 @@ impl Default for PackagingUi {
             diff_verdict: None,
             baseline_scenario: None,
             budget_report: None,
+            english: false,
+            layout_picker: None,
+            export_picker: None,
             dirty: false,
             pending_discard: false,
+            pending_overwrite_confirm: false,
             status_message: "Ready.".to_string(),
             status_is_error: false,
         }
@@ -197,6 +210,7 @@ impl PackagingUi {
         self.diff_verdict = None;
         self.budget_report = None;
         self.pending_discard = false;
+        self.pending_overwrite_confirm = false;
     }
 
     /// Resets all map-bound packaging reports, export results, preflight findings, diff snapshots,
@@ -205,8 +219,12 @@ impl PackagingUi {
     pub fn reset_session(&mut self, map_path: Option<&Path>) {
         self.dirty = false;
         self.pending_discard = false;
+        self.pending_overwrite_confirm = false;
         self.map_dir_input = map_path
             .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        self.output_zip_input = map_path
+            .map(|p| default_export_zip_path(p).to_string_lossy().to_string())
             .unwrap_or_default();
         self.last_export_result = None;
         self.last_preflight_report = None;
@@ -233,10 +251,51 @@ impl PackagingUi {
         }
     }
 
+    fn pick_export_file(&self, kind: &LayoutDialogKind) -> Option<PathBuf> {
+        if let Some(picker) = self.export_picker.as_ref().or(self.layout_picker.as_ref()) {
+            picker(kind)
+        } else {
+            let suggested = match kind {
+                LayoutDialogKind::Save { suggested_name } => suggested_name.as_str(),
+                LayoutDialogKind::Open => "",
+            };
+            rfd::FileDialog::new()
+                .set_title("Export Mod ZIP Bundle / 匯出模組 ZIP")
+                .add_filter("ZIP Archive (*.zip)", &["zip"])
+                .set_file_name(suggested)
+                .save_file()
+        }
+    }
+
+    pub fn browse_export_zip(&mut self) {
+        let suggested_name = if !self.output_zip_input.trim().is_empty() {
+            Path::new(self.output_zip_input.trim())
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "custom-map.zip".to_string())
+        } else {
+            let map_id = Path::new(self.map_dir_input.trim())
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("custom-map");
+            format!("{map_id}.zip")
+        };
+
+        let kind = LayoutDialogKind::Save { suggested_name };
+        if let Some(path) = self.pick_export_file(&kind) {
+            self.output_zip_input = path.to_string_lossy().to_string();
+        }
+    }
+
     pub fn run_preflight_check(&mut self) {
         let dir = Path::new(self.map_dir_input.trim());
         if !dir.is_dir() {
-            self.status_message = format!("Invalid map directory: {}", dir.display());
+            self.status_message = if self.english {
+                format!("Invalid map directory: {}", dir.display())
+            } else {
+                format!("無效的地圖資料夾路徑：{}", dir.display())
+            };
             self.status_is_error = true;
             return;
         }
@@ -244,19 +303,66 @@ impl PackagingUi {
         let report = match MapExportPreflightChecker::check(dir, None, None) {
             Ok(report) => report,
             Err(e) => {
-                self.status_message = format!("Preflight failed: {e}");
+                self.status_message = if self.english {
+                    format!("Preflight failed: {e}")
+                } else {
+                    format!("預檢驗收失敗：{e}")
+                };
                 self.status_is_error = true;
                 return;
             }
         };
         let error_count = report.error_count();
         let warn_count = report.warning_count();
-        self.status_message = format!(
-            "Preflight completed: {} errors, {} warnings.",
-            error_count, warn_count
-        );
+        self.status_message = if self.english {
+            format!(
+                "Preflight completed: {} errors, {} warnings.",
+                error_count, warn_count
+            )
+        } else {
+            format!(
+                "預檢驗收完成：{} 個錯誤，{} 個警告。",
+                error_count, warn_count
+            )
+        };
         self.status_is_error = error_count > 0;
         self.last_preflight_report = Some(report);
+    }
+
+    pub fn request_export(&mut self) {
+        let dir = Path::new(self.map_dir_input.trim());
+        let zip = Path::new(self.output_zip_input.trim());
+
+        if !dir.is_dir() {
+            self.status_message = if self.english {
+                format!("Invalid map directory: {}", dir.display())
+            } else {
+                format!("無效的地圖資料夾路徑：{}", dir.display())
+            };
+            self.status_is_error = true;
+            return;
+        }
+        if zip.as_os_str().is_empty() {
+            self.status_message = tl(
+                self.english,
+                "請指定輸出 ZIP 檔案路徑。",
+                "Please specify output ZIP file path.",
+            )
+            .to_string();
+            self.status_is_error = true;
+            return;
+        }
+
+        if zip.exists() {
+            self.pending_overwrite_confirm = true;
+        } else {
+            let _ = self.run_export();
+        }
+    }
+
+    pub fn confirm_overwrite_and_export(&mut self) -> Result<(), String> {
+        self.pending_overwrite_confirm = false;
+        self.run_export()
     }
 
     pub fn run_export(&mut self) -> Result<(), String> {
@@ -264,10 +370,25 @@ impl PackagingUi {
         let zip = Path::new(self.output_zip_input.trim());
 
         if !dir.is_dir() {
-            return Err(format!("Invalid map directory: {}", dir.display()));
+            let msg = if self.english {
+                format!("Invalid map directory: {}", dir.display())
+            } else {
+                format!("無效的地圖資料夾路徑：{}", dir.display())
+            };
+            self.status_message = msg.clone();
+            self.status_is_error = true;
+            return Err(msg);
         }
         if zip.as_os_str().is_empty() {
-            return Err("Please specify output ZIP file path.".into());
+            let msg = tl(
+                self.english,
+                "請指定輸出 ZIP 檔案路徑。",
+                "Please specify output ZIP file path.",
+            )
+            .to_string();
+            self.status_message = msg.clone();
+            self.status_is_error = true;
+            return Err(msg);
         }
 
         let options = ModExportOptions {
@@ -282,17 +403,28 @@ impl PackagingUi {
 
         match ModBundleExporter::export_to_zip(dir, zip, Some(&options)) {
             Ok(result) => {
-                self.status_message = format!(
-                    "Bundle exported successfully: {} ({} files, {} bytes)",
-                    result.output_zip_path, result.file_count, result.total_size_bytes
-                );
+                self.status_message = if self.english {
+                    format!(
+                        "Bundle exported successfully: {} ({} files, {} bytes)",
+                        result.output_zip_path, result.file_count, result.total_size_bytes
+                    )
+                } else {
+                    format!(
+                        "模組套件匯出成功：{}（共 {} 個檔案，{} 位元組）",
+                        result.output_zip_path, result.file_count, result.total_size_bytes
+                    )
+                };
                 self.status_is_error = false;
                 self.last_export_result = Some(result);
                 self.dirty = true;
                 Ok(())
             }
             Err(e) => {
-                self.status_message = format!("Export failed: {e}");
+                self.status_message = if self.english {
+                    format!("Export failed: {e}")
+                } else {
+                    format!("匯出失敗：{e}")
+                };
                 self.status_is_error = true;
                 Err(e.to_string())
             }
@@ -645,45 +777,53 @@ impl PackagingUi {
         }
 
         let mut is_open = self.open;
-        egui::Window::new("Packaging, Diff & Budget Profiler")
-            .open(&mut is_open)
-            .min_size(Vec2::new(740.0, 540.0))
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.selectable_value(
-                        &mut self.current_tab,
-                        PackagingTab::ModExporter,
-                        "Mod Exporter",
-                    );
-                    ui.selectable_value(&mut self.current_tab, PackagingTab::MapDiff, "Map Diff");
-                    ui.selectable_value(
-                        &mut self.current_tab,
-                        PackagingTab::BudgetProfiler,
-                        "Budget Profiler",
-                    );
-                });
-                ui.separator();
-
-                if !self.status_message.is_empty() {
-                    let color = if self.status_is_error {
-                        Color32::from_rgb(250, 100, 100)
-                    } else {
-                        Color32::from_rgb(120, 220, 120)
-                    };
-                    ui.colored_label(color, &self.status_message);
-                    ui.separator();
-                }
-
-                match self.current_tab {
-                    PackagingTab::ModExporter => self.render_exporter_tab(ui),
-                    PackagingTab::MapDiff => {
-                        self.render_diff_tab(ui, dimension, heights, collision, live)
-                    }
-                    PackagingTab::BudgetProfiler => {
-                        self.render_budget_tab(ui, dimension, heights, collision, spawns)
-                    }
-                }
+        egui::Window::new(tl(
+            self.english,
+            "打包、差異比對與預算分析工作室",
+            "Packaging, Diff & Budget Profiler",
+        ))
+        .open(&mut is_open)
+        .min_size(Vec2::new(740.0, 540.0))
+        .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.selectable_value(
+                    &mut self.current_tab,
+                    PackagingTab::ModExporter,
+                    tl(self.english, "模組匯出工具", "Mod Exporter"),
+                );
+                ui.selectable_value(
+                    &mut self.current_tab,
+                    PackagingTab::MapDiff,
+                    tl(self.english, "地圖版本比對", "Map Diff"),
+                );
+                ui.selectable_value(
+                    &mut self.current_tab,
+                    PackagingTab::BudgetProfiler,
+                    tl(self.english, "預算效能分析", "Budget Profiler"),
+                );
             });
+            ui.separator();
+
+            if !self.status_message.is_empty() {
+                let color = if self.status_is_error {
+                    Color32::from_rgb(250, 100, 100)
+                } else {
+                    Color32::from_rgb(120, 220, 120)
+                };
+                ui.colored_label(color, &self.status_message);
+                ui.separator();
+            }
+
+            match self.current_tab {
+                PackagingTab::ModExporter => self.render_exporter_tab(ui),
+                PackagingTab::MapDiff => {
+                    self.render_diff_tab(ui, dimension, heights, collision, live)
+                }
+                PackagingTab::BudgetProfiler => {
+                    self.render_budget_tab(ui, dimension, heights, collision, spawns)
+                }
+            }
+        });
 
         if !is_open {
             self.request_close();
@@ -693,21 +833,35 @@ impl PackagingUi {
             let mut close_modal = false;
             let mut confirm = false;
 
-            egui::Window::new("Discard Diff & Profiling State?")
-                .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
-                .collapsible(false)
-                .resizable(false)
-                .show(ctx, |ui| {
-                    ui.label("Closing will clear currently calculated diff comparisons and budget reports.");
-                    ui.horizontal(|ui| {
-                        if ui.button("Discard & Close").clicked() {
-                            confirm = true;
-                        }
-                        if ui.button("Keep Editing").clicked() {
-                            close_modal = true;
-                        }
-                    });
+            egui::Window::new(tl(
+                self.english,
+                "捨棄差異比對與分析狀態？",
+                "Discard Diff & Profiling State?",
+            ))
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label(tl(
+                    self.english,
+                    "關閉將會清除目前計算的地圖差異比較與預算報告。",
+                    "Closing will clear currently calculated diff comparisons and budget reports.",
+                ));
+                ui.horizontal(|ui| {
+                    if ui
+                        .button(tl(self.english, "捨棄並關閉", "Discard & Close"))
+                        .clicked()
+                    {
+                        confirm = true;
+                    }
+                    if ui
+                        .button(tl(self.english, "繼續編輯", "Keep Editing"))
+                        .clicked()
+                    {
+                        close_modal = true;
+                    }
                 });
+            });
 
             if confirm {
                 self.clear_dirty();
@@ -716,62 +870,123 @@ impl PackagingUi {
                 self.pending_discard = false;
             }
         }
+
+        if self.pending_overwrite_confirm {
+            let mut do_overwrite = false;
+            let mut cancel = false;
+
+            egui::Window::new(tl(self.english, "確認覆蓋檔案？", "Confirm File Overwrite?"))
+                .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label(format!(
+                        "{}\n{}",
+                        tl(
+                            self.english,
+                            "目標 ZIP 檔案已存在，匯出將覆蓋既有檔案：",
+                            "Target ZIP file already exists. Exporting will overwrite it:"
+                        ),
+                        self.output_zip_input.trim()
+                    ));
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if ui
+                            .button(tl(self.english, "覆蓋既有檔案", "Overwrite Existing File"))
+                            .clicked()
+                        {
+                            do_overwrite = true;
+                        }
+                        if ui.button(tl(self.english, "取消", "Cancel")).clicked() {
+                            cancel = true;
+                        }
+                    });
+                });
+
+            if do_overwrite {
+                self.pending_overwrite_confirm = false;
+                let _ = self.run_export();
+            } else if cancel {
+                self.pending_overwrite_confirm = false;
+            }
+        }
     }
 
     fn render_exporter_tab(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Mod Bundle Exporter");
-        ui.label("Packs editable map folders into verified Against Rome distribution ZIP bundles with manifests.");
+        ui.heading(tl(self.english, "模組套件匯出工具", "Mod Bundle Exporter"));
+        ui.label(tl(
+            self.english,
+            "將可編輯的地圖資料夾打包成經由驗證的 Against Rome 發布用 ZIP 模組套件，包含清單。",
+            "Packs editable map folders into verified Against Rome distribution ZIP bundles with manifests.",
+        ));
 
         ui.add_space(6.0);
         egui::Grid::new("exporter_settings")
             .num_columns(2)
             .spacing([12.0, 6.0])
             .show(ui, |ui| {
-                ui.label("Source Map Folder:");
+                ui.label(tl(self.english, "來源地圖資料夾：", "Source Map Folder:"));
                 ui.text_edit_singleline(&mut self.map_dir_input);
                 ui.end_row();
 
-                ui.label("Output ZIP Path:");
-                ui.text_edit_singleline(&mut self.output_zip_input);
+                ui.label(tl(self.english, "輸出 ZIP 路徑：", "Output ZIP Path:"));
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.output_zip_input)
+                            .desired_width(280.0),
+                    );
+                    if ui.button(tl(self.english, "瀏覽…", "Browse…")).clicked() {
+                        self.browse_export_zip();
+                    }
+                });
                 ui.end_row();
 
-                ui.label("Package ID:");
+                ui.label(tl(self.english, "套件識別碼：", "Package ID:"));
                 ui.text_edit_singleline(&mut self.package_id);
                 ui.end_row();
 
-                ui.label("Author Name:");
+                ui.label(tl(self.english, "作者名稱：", "Author Name:"));
                 ui.text_edit_singleline(&mut self.package_author);
                 ui.end_row();
 
-                ui.label("Mod Version:");
+                ui.label(tl(self.english, "模組版本：", "Mod Version:"));
                 ui.text_edit_singleline(&mut self.package_version);
                 ui.end_row();
 
-                ui.label("Clean Intermediate Caches:");
+                ui.label(tl(self.english, "清除中介快取：", "Clean Intermediate Caches:"));
                 ui.checkbox(&mut self.clean_caches, "");
                 ui.end_row();
 
-                ui.label("Generate Minimap Thumbnail:");
+                ui.label(tl(self.english, "產生小地圖縮圖：", "Generate Minimap Thumbnail:"));
                 ui.checkbox(&mut self.generate_thumbnail, "");
                 ui.end_row();
             });
 
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            if ui.button("Preflight Verification").clicked() {
+            if ui
+                .button(tl(self.english, "發布前預檢驗收", "Preflight Verification"))
+                .clicked()
+            {
                 self.run_preflight_check();
             }
-            if ui.button("Export Mod ZIP Bundle").clicked() {
-                let _ = self.run_export();
+            if ui
+                .button(tl(self.english, "匯出模組 ZIP 套件", "Export Mod ZIP Bundle"))
+                .clicked()
+            {
+                self.request_export();
             }
         });
 
         if let Some(pre) = &self.last_preflight_report {
             ui.separator();
             ui.label(format!(
-                "Preflight Issues: {} (Errors: {}, Warnings: {})",
+                "{}: {} ({}: {}, {}: {})",
+                tl(self.english, "預檢問題", "Preflight Issues"),
                 pre.issues.len(),
+                tl(self.english, "錯誤", "Errors"),
                 pre.error_count(),
+                tl(self.english, "警告", "Warnings"),
                 pre.warning_count()
             ));
             egui::ScrollArea::vertical()
@@ -789,9 +1004,14 @@ impl PackagingUi {
                                 Color32::LIGHT_GRAY
                             }
                         };
+                        let msg = if self.english {
+                            &issue.english
+                        } else {
+                            &issue.chinese
+                        };
                         ui.colored_label(
                             color,
-                            format!("[{:?}] {}: {}", issue.category, issue.code, issue.english),
+                            format!("[{:?}] {}: {}", issue.category, issue.code, msg),
                         );
                     }
                 });
@@ -1212,6 +1432,94 @@ pub fn launch_game(game_dir: &Path, spawn: GameSpawner<'_>) -> Result<PathBuf, S
     Ok(exe)
 }
 
+/// Returns true if the path is inside the game installation MAPS folder or Against Rome game root.
+pub fn is_game_maps_dir(path: &Path) -> bool {
+    let has_maps_component = path
+        .components()
+        .any(|c| c.as_os_str().to_string_lossy().eq_ignore_ascii_case("MAPS"));
+    if has_maps_component {
+        return true;
+    }
+    against_rome_maps::detect_game_root(path, None).is_some()
+}
+
+/// Computes the default directory for exporting map mod zip bundles.
+/// Priority: user's Documents folder -> editor_data_dir parent -> temp dir.
+/// Never returns a path inside the game's MAPS folder.
+pub fn default_export_dir() -> PathBuf {
+    if let Some(user_profile) = std::env::var_os("USERPROFILE") {
+        let docs = PathBuf::from(user_profile).join("Documents");
+        if docs.is_dir() && !is_game_maps_dir(&docs) {
+            return docs;
+        }
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        let docs = PathBuf::from(home).join("Documents");
+        if docs.is_dir() && !is_game_maps_dir(&docs) {
+            return docs;
+        }
+    }
+    if let Some(editor_dir) = crate::storage::editor_data_dir() {
+        if let Some(parent) = editor_dir.parent() {
+            if !is_game_maps_dir(parent) {
+                return parent.to_path_buf();
+            }
+        }
+    }
+    if let Some(user_profile) = std::env::var_os("USERPROFILE") {
+        let docs = PathBuf::from(user_profile).join("Documents");
+        if !is_game_maps_dir(&docs) {
+            return docs;
+        }
+    }
+    let tmp = std::env::temp_dir();
+    if !is_game_maps_dir(&tmp) {
+        return tmp;
+    }
+    PathBuf::from(".")
+}
+
+/// Generates a default ZIP export path named after the map ID.
+/// Guarantees that the resulting path is never located in the game MAPS folder
+/// or inside the source map directory itself.
+pub fn default_export_zip_path(map_path: &Path) -> PathBuf {
+    let map_id = map_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("custom-map");
+    let zip_name = format!("{map_id}.zip");
+
+    let dir = default_export_dir();
+    let dir = if is_game_maps_dir(&dir) || dir.starts_with(map_path) {
+        crate::storage::editor_data_dir()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            .filter(|p| !is_game_maps_dir(p) && !p.starts_with(map_path))
+            .unwrap_or_else(std::env::temp_dir)
+    } else {
+        dir
+    };
+    dir.join(zip_name)
+}
+
+#[inline]
+pub fn tr(english: bool, en: &'static str, zh: &'static str) -> &'static str {
+    if english {
+        en
+    } else {
+        zh
+    }
+}
+
+#[inline]
+pub fn tl(english: bool, zh: &'static str, en: &'static str) -> &'static str {
+    if english {
+        en
+    } else {
+        zh
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -1289,6 +1597,116 @@ mod tests {
         ui.profile_budget(16, Some(&heights), None, Some(&spawns));
         assert!(ui.budget_report.is_some());
         assert!(ui.is_dirty());
+    }
+
+    #[test]
+    fn test_packaging_default_export_path_filled_and_never_inside_game_maps_dir() {
+        let mut ui = PackagingUi::default();
+        assert!(ui.output_zip_input.is_empty());
+
+        let fake_game_map = Path::new(r"C:\Program Files (x86)\Against Rome\MAPS\ENDL_005");
+        ui.reset_session(Some(fake_game_map));
+
+        assert!(!ui.output_zip_input.is_empty());
+        assert!(
+            ui.output_zip_input.ends_with("ENDL_005.zip"),
+            "Expected output_zip_input to end with ENDL_005.zip, got: {}",
+            ui.output_zip_input
+        );
+        let out_path = PathBuf::from(&ui.output_zip_input);
+        assert!(
+            !is_game_maps_dir(&out_path),
+            "Export path must never be inside game MAPS directory: {}",
+            out_path.display()
+        );
+        assert!(
+            !out_path.starts_with(fake_game_map),
+            "Export path must never be inside the map folder itself: {}",
+            out_path.display()
+        );
+
+        // Custom map folder
+        let custom_map = Path::new(r"D:\Modding\MyCustomMaps\SiegeOfRome");
+        ui.reset_session(Some(custom_map));
+        assert!(ui.output_zip_input.ends_with("SiegeOfRome.zip"));
+        let out_path = PathBuf::from(&ui.output_zip_input);
+        assert!(!is_game_maps_dir(&out_path));
+        assert!(!out_path.starts_with(custom_map));
+
+        // Reset to None (blank map or closed session) clears the output zip input
+        ui.reset_session(None);
+        assert!(ui.output_zip_input.is_empty());
+    }
+
+    #[test]
+    fn test_packaging_browse_picker_sets_path_and_cancel_preserves() {
+        let mut ui = PackagingUi::default();
+        let initial_path = r"C:\Users\User\Documents\initial_export.zip";
+        ui.output_zip_input = initial_path.to_string();
+
+        // 1. Injected picker returns Some(path)
+        let picked_path = PathBuf::from(r"D:\Modding\Exports\custom_pack.zip");
+        let picked_clone = picked_path.clone();
+        ui.layout_picker = Some(Box::new(move |kind| {
+            if let LayoutDialogKind::Save { suggested_name } = kind {
+                assert_eq!(suggested_name, "initial_export.zip");
+            }
+            Some(picked_clone.clone())
+        }));
+
+        ui.browse_export_zip();
+        assert_eq!(ui.output_zip_input, picked_path.to_string_lossy().to_string());
+
+        // 2. Injected picker returns None (user cancels)
+        ui.layout_picker = Some(Box::new(|_| None));
+        ui.browse_export_zip();
+        assert_eq!(
+            ui.output_zip_input,
+            picked_path.to_string_lossy().to_string(),
+            "Cancelled picker must leave the output zip input unchanged"
+        );
+
+        // 3. Test export_picker alias
+        let export_picked = PathBuf::from(r"D:\Modding\Exports\alias_pack.zip");
+        let export_clone = export_picked.clone();
+        ui.layout_picker = None;
+        ui.export_picker = Some(Box::new(move |_| Some(export_clone.clone())));
+        ui.browse_export_zip();
+        assert_eq!(ui.output_zip_input, export_picked.to_string_lossy().to_string());
+    }
+
+    #[test]
+    fn test_packaging_overwrite_confirmation_behavior() {
+        let dir = crate::packaging_ui::temp_fixture::dir("ar_packaging_overwrite");
+        let existing_zip = dir.join("existing.zip");
+        std::fs::write(&existing_zip, b"dummy zip content").unwrap();
+        let non_existent_zip = dir.join("brand_new.zip");
+
+        let mut ui = PackagingUi::default();
+        ui.map_dir_input = dir.to_string_lossy().to_string();
+
+        // Target file exists -> request_export flags pending_overwrite_confirm
+        ui.output_zip_input = existing_zip.to_string_lossy().to_string();
+        ui.request_export();
+        assert!(ui.pending_overwrite_confirm);
+
+        // Cancel resets confirmation
+        ui.pending_overwrite_confirm = false;
+
+        // Target file does not exist -> pending_overwrite_confirm is not set
+        ui.output_zip_input = non_existent_zip.to_string_lossy().to_string();
+        ui.request_export();
+        assert!(!ui.pending_overwrite_confirm);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_packaging_bilingual_labels() {
+        assert_eq!(tr(true, "Hello", "你好"), "Hello");
+        assert_eq!(tr(false, "Hello", "你好"), "你好");
+        assert_eq!(tl(true, "你好", "Hello"), "Hello");
+        assert_eq!(tl(false, "你好", "Hello"), "你好");
     }
 }
 

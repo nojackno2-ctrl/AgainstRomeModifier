@@ -1,3 +1,10 @@
+## 2026-10-25 Agy：打包面板模組 ZIP 預填路徑、瀏覽選擇器與覆蓋保護（已驗證，未手動驗證 GUI）
+- 1. 載入地圖自動預填匯出路徑：`packaging_ui.rs` 於 `reset_session` 依據載入地圖識別碼（如 `ENDL_005`）預先填入 `{map_id}.zip`；路徑預設指向使用者 Documents 資料夾或 `storage::editor_data_dir()` 之父目錄，並透過 `is_game_maps_dir` 防護確保絕不預設進遊戲安裝目錄之 `MAPS` 或地圖自身資料夾；地圖關閉或重設時清空。
+- 2. 可注入瀏覽檔案對話盒：遵循 `crate::layout_io` 的 `LayoutDialogKind` 與 `LayoutFilePicker` 注入模式，於輸出 ZIP 欄位旁新增「Browse… / 瀏覽…」按鈕；選擇器回傳路徑時更新欄位，取消時保留既有路徑不變。
+- 3. 既有檔案覆蓋保護與雙語介面：匯出時若目標 ZIP 檔案已存在，彈出確認覆蓋視窗（「Overwrite Existing File / 覆蓋既有檔案」與「Cancel / 取消」）；全區標籤、按鈕與狀態訊息均透過 `tl()` / `tr()` 提供雙語化支援。
+- 測試新增：`packaging_ui::tests` 新增 4 項測試（涵蓋預設路徑自動填入且不在 MAPS 目錄、注入瀏覽選擇器變更路徑與取消保留、目標已存在觸發覆蓋確認及雙語標籤）。
+- 驗證：cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/agy-target 通過（283 組、2538 passed、0 failed、24 ignored；日誌保存至 re_workspace/packaging-path-test.log）。未 stage／commit，保留 AGENTS.md／README.md 既有變更，未寫入 repo 以外目錄。
+
 ## 2026-10-25 Agy：地圖屬性起始鏡頭套用修復與平坦範本狀態訊息強化（已驗證，未手動驗證 GUI）
 - 1. 地圖屬性視窗起始鏡頭套用與置中主屋候選修復（Codex 審查）：先以測試重現缺陷（編輯鏡頭或點擊置中主屋僅標記 `camera_dirty` 未建置 `camera_candidate`，導致 Safe Save 被「Apply to the loaded map before Safe Save」阻擋）；修復複用戰役面板既有套用邏輯，於 `app.rs` 抽出 `apply_start_camera_candidate_from_ui`，地圖屬性鏡頭區新增「Apply / 套用」按鈕，且「Center on player main house / 置中玩家主屋」自動啟用鏡頭並呼叫該套用函式產生合法候選，`campaign_ui.rs` 補 `camera_candidate_ready` 輔助檢驗，確保 Safe Save 成功寫入 `arm_start_camera.json` 與 `SCRIPT/ak_level.bci` 且不繞過安全儲存驗證。
 - 2. 平坦範本狀態列健全度提升：`build_and_install_flat_template` 回傳型別調整為 `Result<(EndlessMapInfo, Option<String>), String>`，直接回傳 `briefing_warning` 選用字串；`perform_action` 移除 `self.status_message` 舊警告子字串檢查，改由回傳值判斷，避免先前不相干的舊警告誤壓抑平坦範本建置成功訊息。

@@ -1514,6 +1514,7 @@ impl EditorApp {
         }
         self.apply_region_request();
 
+        self.packaging.english = self.lang() == AppLanguage::English;
         self.packaging.show(
             ctx,
             dim,
