@@ -1,3 +1,9 @@
+## 2026-10-26 Agy：自主批次 #13 小地圖標記與 3D 導航、3D 聚焦快捷鍵 F、新手入門工作流程面板（已驗證）
+- 1. 小地圖選取物件與劇本標記視覺化與 3D 導航連動（minimap_ui.rs:179-250 原僅縮圖與 2D 視框，無物件／劇本標記且文字未 tr()，app.rs:12048-12057 點擊未連動 3D）：新增 `MinimapMarker`、`MinimapNavResult` 與世界點轉換；於小地圖繪製選取物件（白外環+金核心）、起始相機（青藍菱形）與生成點（隊伍色），提供雙語切換勾選；點擊／拖曳小地圖在 3D 視角模式下即時平移 3D 攝影機目標至該座標。
+- 2. 視角選取物件聚焦 (Frame Selection) 快捷鍵 `F` 與工具列支援（viewport_3d.rs:120-134、1242-1245 原無聚焦按鍵，app.rs:3898-3978 快捷鍵無 F）：新增 `CameraKeyAction::FrameSelection` 與 `ShortcutAction::FrameSelection`（映射 `Key::F`，遵守 `shortcuts_blocked()`、文字焦點與修飾鍵保護）；支援在 3D 視角與 2D 畫布下一鍵將視角中心對齊選取的放置物件或生成點座標，3D 工具列同步提供雙語聚焦按鈕。
+- 3. 首次啟動／新手入門地圖製作工作流程引導面板（app.rs:11405-11440 原工具面板缺乏新手設計流程導引）：新增 `GettingStartedUi`，於左側工具列提供「新手入門」按鈕，結構化梳理地圖初始化、地形起伏、材質通行、物件配置與劇本檢查 5 大核心設計階段，提供一鍵直達各專屬面板按鈕與常用快捷鍵速查，支援雙語 `tr()`。
+- 驗證：執行 cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/agy-target 完成 283 組測試套件，**2,598 passed／0 failed／25 ignored**（exit 0，日誌 re_workspace/agy-batch-13-test.log），編輯器單元測試 756 passed／0 failed／6 ignored（新增 8 項無視窗單元測試均通過）。同步更新 docs/map-editor-user-guide.md。未 stage／commit，遊戲安裝目錄唯讀，AGENTS.md／README.md 既有變更嚴格保留；未手動驗收 GUI。
+
 ## 2026-10-25 Agy：自主批次 #12 設計檢查 (Design Check) 與驗證體驗三項優化（已驗證）
 - 1. 設計檢查問題依層級篩選與即時統計（design_check_ui.rs:308-320、478-485 原清單未提供篩選，錯誤與警告混雜）：新增 `show_errors` 與 `show_warnings` 狀態（預設皆開啟）及 `DesignCheckUi::filtered_rows`，於設計檢查面板提供「錯誤 (N)」與「警告 (M)」雙語複選切換，即時過濾顯示項目；保留原始項目選取與定位索引；全部隱藏時提供指引提示。
 - 2. 設計檢查報告結構化 Markdown 匯出（design_check_ui.rs:296-305 原僅單行文字，無檔案匯出）：新增 `generate_markdown_report` 與 `EditorApp::export_design_check_report`，支援一鍵將檢查狀態、統計摘要表及各問題詳細座標／事件輸出為 Markdown 檔案。預設產出於 Documents → 編輯器資料目錄上層 → 暫存目錄（如 `<map>.design-check.md`），嚴格禁止寫入地圖資料夾內部，確保遊戲原生目錄純淨。

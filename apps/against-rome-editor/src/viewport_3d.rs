@@ -113,6 +113,7 @@ pub enum CameraKeyAction {
     ZoomIn,
     ZoomOut,
     ResetGameScale,
+    FrameSelection,
 }
 
 /// Pure key -> camera mapping. Ctrl/Alt combinations belong to other features
@@ -129,11 +130,12 @@ pub fn camera_key_action(key: egui::Key, ctrl: bool, alt: bool) -> Option<Camera
         egui::Key::PageUp => CameraKeyAction::ZoomIn,
         egui::Key::PageDown => CameraKeyAction::ZoomOut,
         egui::Key::Home => CameraKeyAction::ResetGameScale,
+        egui::Key::F => CameraKeyAction::FrameSelection,
         _ => return None,
     })
 }
 
-const CAMERA_KEYS: [egui::Key; 7] = [
+const CAMERA_KEYS: [egui::Key; 8] = [
     egui::Key::ArrowLeft,
     egui::Key::ArrowRight,
     egui::Key::ArrowUp,
@@ -141,6 +143,7 @@ const CAMERA_KEYS: [egui::Key; 7] = [
     egui::Key::PageUp,
     egui::Key::PageDown,
     egui::Key::Home,
+    egui::Key::F,
 ];
 
 /// Interactive 3D terrain and object viewport state and renderer.
@@ -373,6 +376,31 @@ impl Viewport3d {
             .pan(-delta_x * Self::PAN_SPEED, delta_y * Self::PAN_SPEED);
     }
 
+    /// Centers the camera target on the given world coordinates (0..16384).
+    pub fn center_on_world(&mut self, world_x: f32, world_z: f32) {
+        if world_x.is_finite() && world_z.is_finite() {
+            self.camera.target.x = (world_x / 256.0).clamp(0.0, 256.0);
+            self.camera.target.z = (world_z / 256.0).clamp(0.0, 256.0);
+        }
+    }
+
+    /// Frames the currently selected object by centering the camera target on its position.
+    pub fn frame_selection(
+        &mut self,
+        objects: &[WorldObject],
+        selected: Option<(usize, u32)>,
+    ) -> bool {
+        if let Some(key) = selected {
+            if let Some(obj) = objects.iter().find(|o| (o.slot, o.uid) == key) {
+                if obj.position[0].is_finite() && obj.position[2].is_finite() {
+                    self.center_on_world(obj.position[0], obj.position[2]);
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     /// Applies a keyboard camera command; `viewport_height` is the canvas height in pixels.
     pub fn apply_camera_key(&mut self, action: CameraKeyAction, viewport_height: f32) {
         match action {
@@ -384,6 +412,8 @@ impl Viewport3d {
             CameraKeyAction::ZoomOut => self.camera.zoom(1.19),
             CameraKeyAction::ResetGameScale => {
                 self.camera.zoom_to_game_scale(viewport_height.max(1.0) as i32)
+            }
+            CameraKeyAction::FrameSelection => {
             }
         }
     }
@@ -732,7 +762,11 @@ impl Viewport3d {
             for key in CAMERA_KEYS {
                 if ctx.input(|i| i.key_pressed(key)) {
                     if let Some(action) = camera_key_action(key, ctrl, alt) {
-                        self.apply_camera_key(action, rect.height());
+                        if action == CameraKeyAction::FrameSelection {
+                            self.frame_selection(objects, selected_object);
+                        } else {
+                            self.apply_camera_key(action, rect.height());
+                        }
                     }
                 }
             }
@@ -1242,6 +1276,15 @@ impl Viewport3d {
             let dimension = ((session.vertex_size.saturating_sub(1)) / 4).max(1) as f32;
             if ui.button("Reset Camera").clicked() {
                 self.reset_camera(dimension);
+            }
+
+            let frame_enabled = selected_object.is_some();
+            if ui
+                .add_enabled(frame_enabled, egui::Button::new("Frame (F) / 聚焦 (F)"))
+                .on_hover_text("Center 3D camera on selected object (Shortcut: F) / 將 3D 鏡頭置中對準目前選取的物件（快捷鍵：F）")
+                .clicked()
+            {
+                self.frame_selection(objects, selected_object);
             }
 
             // Orthographic vs Perspective toggle
@@ -1918,6 +1961,9 @@ mod tests {
         assert_eq!(camera_key_action(PageUp, false, false), Some(CameraKeyAction::ZoomIn));
         assert_eq!(camera_key_action(PageDown, false, false), Some(CameraKeyAction::ZoomOut));
         assert_eq!(camera_key_action(Home, false, false), Some(CameraKeyAction::ResetGameScale));
+        assert_eq!(camera_key_action(F, false, false), Some(CameraKeyAction::FrameSelection));
+        assert_eq!(camera_key_action(F, true, false), None);
+        assert_eq!(camera_key_action(F, false, true), None);
         assert_eq!(camera_key_action(ArrowLeft, true, false), None);
         assert_eq!(camera_key_action(ArrowLeft, false, true), None);
         assert_eq!(camera_key_action(A, false, false), None);
@@ -1932,6 +1978,44 @@ mod tests {
         vp.apply_camera_key(CameraKeyAction::ZoomOut, 600.0);
         vp.apply_camera_key(CameraKeyAction::ResetGameScale, 600.0);
         assert!(vp.camera.distance() > 0.0);
+    }
+
+    #[test]
+    fn test_viewport_3d_frame_selection_and_center_on_world() {
+        let mut vp = Viewport3d::new();
+        // 初始中心 (32.0, 0.0, 32.0)
+        assert_eq!(vp.camera.target.x, 32.0);
+        assert_eq!(vp.camera.target.z, 32.0);
+
+        // 移至 (8192, 4096) -> (32.0, 16.0)
+        vp.center_on_world(8192.0, 4096.0);
+        assert_eq!(vp.camera.target.x, 32.0);
+        assert_eq!(vp.camera.target.z, 16.0);
+
+        // 移至 (16384, 0) -> (64.0, 0.0)
+        vp.center_on_world(16384.0, 0.0);
+        assert_eq!(vp.camera.target.x, 64.0);
+        assert_eq!(vp.camera.target.z, 0.0);
+
+        // 測試 frame_selection
+        let obj1 = make_test_world_object(10, 501, 1, 0, 4096.0, 8192.0);
+        let obj2 = make_test_world_object(11, 502, 2, 0, 10240.0, 12800.0);
+        let objects = vec![obj1, obj2];
+
+        // 選取不存在物件回傳 false，不改變鏡頭
+        assert!(!vp.frame_selection(&objects, None));
+        assert!(!vp.frame_selection(&objects, Some((99, 999))));
+        assert_eq!(vp.camera.target.x, 64.0);
+
+        // 選取 obj1 (slot 10, uid 501) 成功聚焦至 (16.0, 32.0)
+        assert!(vp.frame_selection(&objects, Some((10, 501))));
+        assert_eq!(vp.camera.target.x, 16.0);
+        assert_eq!(vp.camera.target.z, 32.0);
+
+        // 選取 obj2 (slot 11, uid 502) 成功聚焦至 (40.0, 50.0)
+        assert!(vp.frame_selection(&objects, Some((11, 502))));
+        assert_eq!(vp.camera.target.x, 40.0);
+        assert_eq!(vp.camera.target.z, 50.0);
     }
 
     #[test]

@@ -36,9 +36,11 @@ pub mod save_manager_ui;
 pub mod scene_ui;
 pub mod minimap_ui;
 pub mod skirmish_wizard_ui;
+pub mod getting_started_ui;
 
 pub use ambience_ui::AmbienceUi;
 pub use app::EditorApp;
+pub use getting_started_ui::{GettingStartedAction, GettingStartedUi};
 pub use modifier_ui::{ModifierModel, ModifierUi};
 pub use minimap_ui::{MinimapNavigator, MinimapUi};
 pub use bmp::BmpImage;

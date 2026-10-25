@@ -970,7 +970,8 @@ impl SpawnPlacementUi {
             | ShortcutAction::CanvasResetView
             | ShortcutAction::Eyedropper
             | ShortcutAction::SampleFlattenTarget
-            | ShortcutAction::CopyCursor => {}
+            | ShortcutAction::CopyCursor
+            | ShortcutAction::FrameSelection => {}
         }
     }
 

@@ -16,7 +16,8 @@ use std::path::{Path, PathBuf};
 
 use against_rome_ambience::{Language as AppLanguage, Loc};
 use crate::ambience_ui::AmbienceUi;
-use crate::minimap_ui::MinimapUi;
+use crate::getting_started_ui::{GettingStartedAction, GettingStartedUi};
+use crate::minimap_ui::{MinimapMarker, MinimapUi};
 use crate::modifier_ui::ModifierUi;
 use crate::scene_ui::SceneUi;
 use crate::storage::load_map;
@@ -203,6 +204,7 @@ pub struct EditorApp {
     /// Squad catalog and formation layout feeding the 3D view's formation members.
     troops: TroopDisplay,
     pub(crate) skirmish_wizard: crate::skirmish_wizard_ui::SkirmishWizardUi,
+    pub getting_started: GettingStartedUi,
 }
 
 /// Background-loaded squad catalog plus the fingerprint of the spawns last expanded for the 3D
@@ -450,6 +452,7 @@ impl EditorApp {
             terrain_confirm: None,
             troops: TroopDisplay::default(),
             skirmish_wizard: crate::skirmish_wizard_ui::SkirmishWizardUi::default(),
+            getting_started: GettingStartedUi::default(),
         }
     }
 }
@@ -3910,10 +3913,11 @@ pub enum ShortcutAction {
     Eyedropper,
     SampleFlattenTarget,
     CopyCursor,
+    FrameSelection,
 }
 
 /// Keys polled each frame for [`shortcut_action`].
-const SHORTCUT_KEYS: [egui::Key; 26] = [
+const SHORTCUT_KEYS: [egui::Key; 27] = [
     egui::Key::Num1, egui::Key::Num2, egui::Key::Num3,
     egui::Key::Num4, egui::Key::Num5, egui::Key::Num6,
     egui::Key::Num7, egui::Key::Num8, egui::Key::Num9,
@@ -3921,6 +3925,7 @@ const SHORTCUT_KEYS: [egui::Key; 26] = [
     egui::Key::S,
     egui::Key::A,
     egui::Key::D,
+    egui::Key::F,
     egui::Key::I,
     egui::Key::H,
     egui::Key::K,
@@ -3973,6 +3978,7 @@ pub fn shortcut_action(
             Key::PageUp => Some(ShortcutAction::CanvasZoom(1.15)),
             Key::PageDown => Some(ShortcutAction::CanvasZoom(1.0 / 1.15)),
             Key::Home => Some(ShortcutAction::CanvasResetView),
+            Key::F => Some(ShortcutAction::FrameSelection),
             _ => None,
         };
         if action.is_some() { return action; }
@@ -4584,6 +4590,80 @@ impl EditorApp {
         true
     }
 
+    /// 將視角聚焦置中對齊目前選取的物件（支援 3D 視角與 2D 畫布；支援放置物件與腳本生成點）。
+    pub fn frame_selection_target(&mut self) -> bool {
+        let coords = if self.spawn_ui.is_active() && self.spawn_ui.has_selection() {
+            self.spawn_ui.selected_coordinates()
+        } else {
+            self.placement.selected_coordinates()
+        };
+        if let Some((wx, wz)) = coords {
+            if self.view_mode == ViewMode::View3D {
+                self.viewport_3d.center_on_world(wx, wz);
+                true
+            } else {
+                let dimension = self.session.as_ref().map_or(64, |s| s.vertex_size as u32);
+                let tile_pos = Pos2::new(wx / 256.0, wz / 256.0);
+                self.pan = crate::minimap_ui::MinimapNavigator::focus_tile_pan(
+                    tile_pos,
+                    dimension,
+                    self.last_canvas_rect.size(),
+                    self.zoom,
+                );
+                true
+            }
+        } else {
+            false
+        }
+    }
+
+    /// 處理「新手入門」導引面板觸發之面板開啟或視圖切換動作。
+    pub fn handle_getting_started_action(&mut self, action: GettingStartedAction) {
+        match action {
+            GettingStartedAction::OpenMaps => {
+                self.maps.open = true;
+            }
+            GettingStartedAction::OpenSkirmishWizard => {
+                self.open_skirmish_wizard();
+            }
+            GettingStartedAction::OpenMapProperties => {
+                self.map_properties_open = true;
+            }
+            GettingStartedAction::OpenToolbox => {
+                self.toolbox.open = true;
+            }
+            GettingStartedAction::Toggle3DView => {
+                if self.view_mode == ViewMode::View3D {
+                    self.view_mode = ViewMode::Blended;
+                } else {
+                    self.view_mode = ViewMode::View3D;
+                }
+            }
+            GettingStartedAction::OpenTextures => {
+                self.textures.open = true;
+            }
+            GettingStartedAction::OpenNavigation => {
+                self.navigation.open = true;
+            }
+            GettingStartedAction::OpenPlacement => {
+                self.placement.open = true;
+            }
+            GettingStartedAction::OpenSpawns => {
+                self.spawn_ui.open = true;
+            }
+            GettingStartedAction::OpenScenario => {
+                self.scenario.open = true;
+            }
+            GettingStartedAction::RunDesignCheck => {
+                self.run_design_check();
+                self.design_check.open = true;
+            }
+            GettingStartedAction::OpenMinimap => {
+                self.minimap.open = true;
+            }
+        }
+    }
+
     /// Dispatches one shortcut. Mutating actions are refused on retail maps like the C# editor.
     pub fn handle_shortcut_action(&mut self, action: ShortcutAction) {
         if self.shortcuts_blocked() { return; }
@@ -4623,6 +4703,14 @@ impl EditorApp {
                 if self.view_mode != ViewMode::View3D {
                     self.zoom = 1.0;
                     self.pan = egui::Vec2::ZERO;
+                }
+            }
+            ShortcutAction::FrameSelection => {
+                let framed = self.frame_selection_target();
+                if framed {
+                    self.set_status(tr(lang, "Centered view on selected object.", "已將視角置中對準選取物件。").into(), false);
+                } else {
+                    self.set_status(tr(lang, "No object selected to frame.", "尚未選取可聚焦之物件。").into(), false);
                 }
             }
             ShortcutAction::Save => {
@@ -4742,6 +4830,7 @@ mod tests {
     mod batch7_tests;
     mod batch10_tests;
     mod batch11_tests;
+    mod batch13_tests;
     mod save_blockers_tests;
     mod unified_undo_tests;
     mod objectives_apply_tests;
@@ -11318,6 +11407,9 @@ impl EditorApp {
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.heading(tr(lang, "Tools & Settings", "工具與設定"));
+                    if ui.button(tr(lang, "Getting Started", "新手入門")).on_hover_text(tr(lang, "Open map creation workflow guide and quick navigation", "開啟地圖製作核心流程指引與快捷面板跳轉")).clicked() {
+                        self.getting_started.open = true;
+                    }
                     ui.menu_button(tr(lang, "Recent maps", "最近開啟"), |ui| {
                         if let Err(e) = self.recent_maps.prune() {
                             ui.label(format!("Recent maps / 最近地圖：{e}"));
@@ -12045,15 +12137,56 @@ impl EditorApp {
         self.toolbox.show(ctx);
         self.navigation
             .show(ctx, self.session.as_ref(), self.water_surface);
-        if let Some(new_pan) = self.minimap.show(
+        let mut minimap_markers = Vec::new();
+        for (slot, uid) in self.placement.selected_objects() {
+            if let Some(obj) = self.placement.objects().iter().find(|o| (o.slot, o.uid) == (slot, uid)) {
+                if obj.position[0].is_finite() && obj.position[2].is_finite() {
+                    minimap_markers.push(MinimapMarker::selected(obj.position[0], obj.position[2]));
+                }
+            }
+        }
+        if self.spawn_ui.is_active() {
+            if let Some((sx, sz)) = self.spawn_ui.selected_coordinates() {
+                minimap_markers.push(MinimapMarker::selected(sx, sz));
+            }
+        }
+        if self.scenario.open {
+            let cam = self.scenario.start_camera();
+            if (cam.x as f32).is_finite() && (cam.z as f32).is_finite() {
+                minimap_markers.push(MinimapMarker::camera(cam.x as f32, cam.z as f32));
+            }
+            let doc = self.scenario.document();
+            for event in doc.events.iter().filter(|e| e.enabled) {
+                for action in event.actions.iter().filter(|a| a.kind == 2) {
+                    if action.x.is_finite() && action.z.is_finite() {
+                        let color = crate::spawn_placement_ui::team_color(action.team);
+                        minimap_markers.push(MinimapMarker::spawn(
+                            action.x,
+                            action.z,
+                            color,
+                            Some(event.name.clone()),
+                        ));
+                    }
+                }
+            }
+        }
+        if let Some(nav) = self.minimap.show(
             ctx,
             self.session.as_ref(),
             self.texture.as_ref(),
             self.last_canvas_rect,
             self.last_map_rect,
             self.zoom,
+            lang,
+            &minimap_markers,
         ) {
-            self.pan = new_pan;
+            self.pan = nav.canvas_pan;
+            if self.view_mode == ViewMode::View3D {
+                self.viewport_3d.center_on_world(nav.world_x, nav.world_z);
+            }
+        }
+        if let Some(action) = self.getting_started.show(ctx, lang) {
+            self.handle_getting_started_action(action);
         }
         self.refresh_placement_type_names();
         self.placement.settlement_history_routing = !self.settlement_undo.is_empty() || !self.settlement_redo.is_empty();

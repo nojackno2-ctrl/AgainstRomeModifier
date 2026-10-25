@@ -333,6 +333,8 @@ fn safe_parent(path: &Path) -> Result<PathBuf> {
     Ok(parent.join(absolute.file_name().ok_or("缺少輸出資料夾名稱")?))
 }
 impl ScenarioUi {
+    pub fn start_camera(&self) -> &StartCamera { &self.camera }
+
     pub fn history_token(&self) -> u64 { self.history.tokens.token() }
 
     pub fn take_history_receipts(&mut self) -> Vec<crate::undo_journal::SubsystemStep> {

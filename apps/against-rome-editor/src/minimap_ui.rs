@@ -2,8 +2,76 @@
 //! 移植自 C# `src.MapEditor/MinimapNavigator.cs`，提供保持長寬比的黑邊（Letterboxing）換算、
 //! 滑鼠點與地圖 Tile 座標互轉、主 2D 畫布可見範圍矩形投影，以及視圖聚焦平移向量計算。
 
+use against_rome_ambience::Language as AppLanguage;
+use crate::app::tr;
 use crate::terrain::TerrainSession;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, TextureHandle, Vec2};
+
+/// 小地圖顯示之標記類型。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MinimapMarkerKind {
+    /// 當前選取之物件（繪製為高亮黃點與白色瞄準外環）。
+    SelectedObject,
+    /// 劇本起始相機鏡頭（繪製為青藍色菱形標記）。
+    Camera,
+    /// 劇本事件生成點（繪製為隊伍代表色實心圓點）。
+    Spawn,
+}
+
+/// 繪製於小地圖上之輕量標記資訊。
+#[derive(Debug, Clone, PartialEq)]
+pub struct MinimapMarker {
+    pub world_x: f32,
+    pub world_z: f32,
+    pub color: Color32,
+    pub kind: MinimapMarkerKind,
+    pub label: Option<String>,
+}
+
+impl MinimapMarker {
+    pub fn selected(world_x: f32, world_z: f32) -> Self {
+        Self {
+            world_x,
+            world_z,
+            color: Color32::from_rgb(255, 230, 40),
+            kind: MinimapMarkerKind::SelectedObject,
+            label: None,
+        }
+    }
+
+    pub fn camera(world_x: f32, world_z: f32) -> Self {
+        Self {
+            world_x,
+            world_z,
+            color: Color32::from_rgb(80, 200, 255),
+            kind: MinimapMarkerKind::Camera,
+            label: None,
+        }
+    }
+
+    pub fn spawn(world_x: f32, world_z: f32, color: Color32, label: Option<String>) -> Self {
+        Self {
+            world_x,
+            world_z,
+            color,
+            kind: MinimapMarkerKind::Spawn,
+            label,
+        }
+    }
+}
+
+/// 點擊或拖曳小地圖時產生之導航目標結果。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MinimapNavResult {
+    /// 2D 畫布之目標平移向量。
+    pub canvas_pan: Vec2,
+    /// 目標世界 X 座標 (0..16384)。
+    pub world_x: f32,
+    /// 目標世界 Z 座標 (0..16384)。
+    pub world_z: f32,
+    /// 目標 Tile 座標。
+    pub tile_pos: Pos2,
+}
 
 /// 小地圖純幾何計算輔助類別，嚴格對照 C# `MinimapNavigator` 數學契約。
 pub struct MinimapNavigator;
@@ -144,23 +212,56 @@ impl MinimapNavigator {
         // 將 (u, v) 置中所需的 pan 即為負的相對位移向量。
         Vec2::new(-(u - 0.5) * display_size.x, -(v - 0.5) * display_size.y)
     }
+
+    /// 將世界座標 (0..16384) 投影為小地圖繪製矩形內的客戶區點位。
+    pub fn world_to_minimap_point(world_x: f32, world_z: f32, minimap_bounds: Rect) -> Pos2 {
+        let u = (world_x / 16384.0).clamp(0.0, 1.0);
+        let v = (world_z / 16384.0).clamp(0.0, 1.0);
+        Pos2::new(
+            minimap_bounds.min.x + u * minimap_bounds.width(),
+            minimap_bounds.min.y + v * minimap_bounds.height(),
+        )
+    }
+
+    /// 將小地圖上的客戶區點位轉換為世界座標 (0..16384)。
+    pub fn point_to_world(point: Pos2, minimap_bounds: Rect) -> Option<(f32, f32)> {
+        if minimap_bounds.width() <= 0.0 || minimap_bounds.height() <= 0.0 {
+            return None;
+        }
+        if point.x < minimap_bounds.min.x
+            || point.x >= minimap_bounds.max.x
+            || point.y < minimap_bounds.min.y
+            || point.y >= minimap_bounds.max.y
+        {
+            return None;
+        }
+        let u = ((point.x - minimap_bounds.min.x) / minimap_bounds.width()).clamp(0.0, 1.0);
+        let v = ((point.y - minimap_bounds.min.y) / minimap_bounds.height()).clamp(0.0, 1.0);
+        Some((u * 16384.0, v * 16384.0))
+    }
 }
 
 /// 小地圖導航面板 UI 元件。
 #[derive(Debug, Clone)]
 pub struct MinimapUi {
     pub open: bool,
+    pub show_selection: bool,
+    pub show_markers: bool,
 }
 
 impl Default for MinimapUi {
     fn default() -> Self {
-        Self { open: true }
+        Self {
+            open: true,
+            show_selection: true,
+            show_markers: true,
+        }
     }
 }
 
 impl MinimapUi {
-    /// 顯示小地圖視窗，繪製縮圖與主 2D 畫布視野矩形，並處理點擊/拖曳導航。
-    /// 若觸發視野跳轉，回傳計算後之主畫布目標 `pan`。
+    /// 顯示小地圖視窗，繪製縮圖、主 2D 畫布視野矩形、選取物件與劇本標記，並處理點擊/拖曳導航。
+    /// 若觸發視野跳轉，回傳計算後之導航目標結構 `MinimapNavResult`。
     pub fn show(
         &mut self,
         ctx: &egui::Context,
@@ -169,20 +270,29 @@ impl MinimapUi {
         canvas_rect: Rect,
         map_rect: Rect,
         zoom: f32,
-    ) -> Option<Vec2> {
+        lang: AppLanguage,
+        markers: &[MinimapMarker],
+    ) -> Option<MinimapNavResult> {
         if !self.open {
             return None;
         }
 
-        let mut target_pan = None;
+        let mut target_nav = None;
+        let title = tr(lang, "Minimap Overview", "小地圖總覽");
 
-        egui::Window::new("小地圖導航 / Minimap")
+        egui::Window::new(title)
+            .id(egui::Id::new("minimap_overview_window"))
             .open(&mut self.open)
-            .default_size(Vec2::new(220.0, 240.0))
+            .default_size(Vec2::new(240.0, 260.0))
             .resizable(true)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label("點擊或拖曳小地圖以導航主畫布視角");
+                    ui.label(tr(lang, "Click to navigate", "點擊導航視角"));
+                    ui.separator();
+                    ui.checkbox(&mut self.show_selection, tr(lang, "Selection", "選取物件"))
+                        .on_hover_text(tr(lang, "Show selected objects indicator on minimap", "在小地圖上顯示當前選取物件標記"));
+                    ui.checkbox(&mut self.show_markers, tr(lang, "Markers", "劇本標記"))
+                        .on_hover_text(tr(lang, "Show scenario camera and spawn markers", "在小地圖上顯示劇本相機與部隊生成標記"));
                 });
 
                 let dimension = session.map_or(64, |s| s.vertex_size as u32);
@@ -211,6 +321,57 @@ impl MinimapUi {
                         Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0)),
                         Color32::WHITE,
                     );
+                }
+
+                // 繪製劇本標記與選取物件
+                if (self.show_markers || self.show_selection) && screen_bounds.width() > 0.0 {
+                    for marker in markers {
+                        if marker.kind == MinimapMarkerKind::SelectedObject && !self.show_selection {
+                            continue;
+                        }
+                        if marker.kind != MinimapMarkerKind::SelectedObject && !self.show_markers {
+                            continue;
+                        }
+                        let pt = MinimapNavigator::world_to_minimap_point(
+                            marker.world_x,
+                            marker.world_z,
+                            screen_bounds,
+                        );
+                        match marker.kind {
+                            MinimapMarkerKind::SelectedObject => {
+                                // 亮白色外環瞄準線
+                                painter.circle_stroke(
+                                    pt,
+                                    5.5,
+                                    Stroke::new(1.5_f32, Color32::WHITE),
+                                );
+                                // 亮金色核心
+                                painter.circle_filled(pt, 3.5, marker.color);
+                            }
+                            MinimapMarkerKind::Camera => {
+                                let d = 4.0;
+                                let diamond = vec![
+                                    Pos2::new(pt.x, pt.y - d),
+                                    Pos2::new(pt.x + d, pt.y),
+                                    Pos2::new(pt.x, pt.y + d),
+                                    Pos2::new(pt.x - d, pt.y),
+                                ];
+                                painter.add(egui::Shape::convex_polygon(
+                                    diamond,
+                                    marker.color,
+                                    Stroke::new(1.0_f32, Color32::WHITE),
+                                ));
+                            }
+                            MinimapMarkerKind::Spawn => {
+                                painter.circle_filled(pt, 3.0, marker.color);
+                                painter.circle_stroke(
+                                    pt,
+                                    3.0,
+                                    Stroke::new(1.0_f32, Color32::from_rgb(20, 20, 20)),
+                                );
+                            }
+                        }
+                    }
                 }
 
                 // 計算主畫布可見區域在小地圖上的投影矩形
@@ -267,13 +428,20 @@ impl MinimapUi {
                                 canvas_rect.size(),
                                 zoom,
                             );
-                            target_pan = Some(new_pan);
+                            let world_x = (tile_pos.x / dimension as f32) * 16384.0;
+                            let world_z = (tile_pos.y / dimension as f32) * 16384.0;
+                            target_nav = Some(MinimapNavResult {
+                                canvas_pan: new_pan,
+                                world_x,
+                                world_z,
+                                tile_pos,
+                            });
                         }
                     }
                 }
             });
 
-        target_pan
+        target_nav
     }
 }
 
@@ -413,5 +581,51 @@ mod tests {
         let expected_pan_x = -(0.5 / 64.0 - 0.5) * 400.0;
         assert!((corner_pan.x - expected_pan_x).abs() < 0.001);
         assert!((corner_pan.y - expected_pan_x).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_minimap_world_and_point_conversions() {
+        let bounds = Rect::from_min_size(Pos2::new(10.0, 20.0), Vec2::new(100.0, 100.0));
+
+        // (0, 0) 世界座標對應 bounds.min
+        let p_min = MinimapNavigator::world_to_minimap_point(0.0, 0.0, bounds);
+        assert_eq!(p_min, Pos2::new(10.0, 20.0));
+
+        // (16384, 16384) 世界座標對應 bounds.max
+        let p_max = MinimapNavigator::world_to_minimap_point(16384.0, 16384.0, bounds);
+        assert_eq!(p_max, Pos2::new(110.0, 120.0));
+
+        // (8192, 8192) 世界座標對應 bounds 中心
+        let p_mid = MinimapNavigator::world_to_minimap_point(8192.0, 8192.0, bounds);
+        assert_eq!(p_mid, Pos2::new(60.0, 70.0));
+
+        // 逆向轉換驗證
+        let (wx, wz) = MinimapNavigator::point_to_world(Pos2::new(60.0, 70.0), bounds).expect("valid point");
+        assert!((wx - 8192.0).abs() < 0.1);
+        assert!((wz - 8192.0).abs() < 0.1);
+
+        // 越界點回傳 None
+        assert_eq!(MinimapNavigator::point_to_world(Pos2::new(5.0, 20.0), bounds), None);
+        assert_eq!(MinimapNavigator::point_to_world(Pos2::new(120.0, 70.0), bounds), None);
+    }
+
+    #[test]
+    fn test_minimap_markers_and_ui_defaults() {
+        let marker_sel = MinimapMarker::selected(100.0, 200.0);
+        assert_eq!(marker_sel.kind, MinimapMarkerKind::SelectedObject);
+        assert_eq!(marker_sel.world_x, 100.0);
+        assert_eq!(marker_sel.world_z, 200.0);
+
+        let marker_cam = MinimapMarker::camera(500.0, 600.0);
+        assert_eq!(marker_cam.kind, MinimapMarkerKind::Camera);
+
+        let marker_spawn = MinimapMarker::spawn(1000.0, 2000.0, Color32::RED, Some("Wave 1".into()));
+        assert_eq!(marker_spawn.kind, MinimapMarkerKind::Spawn);
+        assert_eq!(marker_spawn.label.as_deref(), Some("Wave 1"));
+
+        let ui = MinimapUi::default();
+        assert!(ui.open);
+        assert!(ui.show_selection);
+        assert!(ui.show_markers);
     }
 }
