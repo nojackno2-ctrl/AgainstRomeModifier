@@ -968,7 +968,9 @@ impl SpawnPlacementUi {
             | ShortcutAction::CanvasZoom(_)
             | ShortcutAction::CanvasPan { .. }
             | ShortcutAction::CanvasResetView
-            | ShortcutAction::Eyedropper => {}
+            | ShortcutAction::Eyedropper
+            | ShortcutAction::SampleFlattenTarget
+            | ShortcutAction::CopyCursor => {}
         }
     }
 

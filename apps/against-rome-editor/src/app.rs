@@ -3879,10 +3879,12 @@ pub enum ShortcutAction {
     CanvasPan { dx: f32, dy: f32 },
     CanvasResetView,
     Eyedropper,
+    SampleFlattenTarget,
+    CopyCursor,
 }
 
 /// Keys polled each frame for [`shortcut_action`].
-const SHORTCUT_KEYS: [egui::Key; 24] = [
+const SHORTCUT_KEYS: [egui::Key; 26] = [
     egui::Key::Num1, egui::Key::Num2, egui::Key::Num3,
     egui::Key::Num4, egui::Key::Num5, egui::Key::Num6,
     egui::Key::Num7, egui::Key::Num8, egui::Key::Num9,
@@ -3891,6 +3893,8 @@ const SHORTCUT_KEYS: [egui::Key; 24] = [
     egui::Key::A,
     egui::Key::D,
     egui::Key::I,
+    egui::Key::H,
+    egui::Key::K,
     egui::Key::Delete,
     egui::Key::ArrowLeft,
     egui::Key::ArrowRight,
@@ -3932,6 +3936,8 @@ pub fn shortcut_action(
             Key::Num8 => Some(ShortcutAction::TerrainTool(ActiveTool::CollisionClear)),
             Key::Num9 => Some(ShortcutAction::TerrainTool(ActiveTool::Material)),
             Key::I => Some(ShortcutAction::Eyedropper),
+            Key::H => Some(ShortcutAction::SampleFlattenTarget),
+            Key::K => Some(ShortcutAction::CopyCursor),
             Key::OpenBracket => Some(ShortcutAction::BrushRadius(-1.0)),
             Key::CloseBracket => Some(ShortcutAction::BrushRadius(1.0)),
             Key::F5 => Some(ShortcutAction::DesignCheck),
@@ -4381,12 +4387,12 @@ impl EditorApp {
     /// Returns the terrain height sample (0..=255) at the given world coordinates (0..=16384).
     pub fn height_at_world(&self, wx: f32, wz: f32) -> Option<u8> {
         let session = self.session.as_ref()?;
-        if session.vertex_size < 2 || session.heights().is_empty() {
+        if !wx.is_finite() || !wz.is_finite() || session.vertex_size < 2 || session.heights().is_empty() {
             return None;
         }
         let span = (session.vertex_size - 1) as f32;
-        let gx = (wx / 16384.0 * span).round().clamp(0.0, span) as usize;
-        let gz = (wz / 16384.0 * span).round().clamp(0.0, span) as usize;
+        let gx = (wx / 16384.0 * span).round_ties_even().clamp(0.0, span) as usize;
+        let gz = (wz / 16384.0 * span).round_ties_even().clamp(0.0, span) as usize;
         session.heights().get(gz * session.vertex_size + gx).copied()
     }
 
@@ -4460,7 +4466,7 @@ impl EditorApp {
         let base = format!("{prefix}: X: {wx:.0}, Z: {wz:.0} | {tile_label}: ({tx}, {tz})");
         Some(if let Some(h) = self.height_at_world(wx, wz) {
             let height_label = tr(lang, "Height", "高度");
-            format!("{base} | {height_label}: {h}")
+            format!("{base} | {height_label}: {h} | {}: {:.1}", tr(lang, "World Y", "世界 Y"), h as f32 * self.height_step)
         } else {
             base
         })
@@ -4469,7 +4475,9 @@ impl EditorApp {
     /// Eyedropper: samples the floor material under the cursor (2D canvas or 3D view)
     /// and switches to the Material tool. Respects shortcuts_blocked().
     pub fn eyedrop_material_at_cursor(&mut self) -> bool {
-        if self.shortcuts_blocked() {
+        if self.shortcuts_blocked() || self.current_map_is_original()
+            || self.loaded_map_path.as_deref().is_some_and(is_original_map_dir)
+            || self.is_painting || self.nature.driver.is_active() || self.textures.material_stroke_active() {
             return false;
         }
         let lang = self.lang();
@@ -4525,6 +4533,28 @@ impl EditorApp {
         }
     }
 
+    /// 複製游標世界座標；不改動地圖或復原紀錄。
+    pub fn cursor_coordinates_text(&self) -> Option<String> {
+        if self.shortcuts_blocked() { return None; }
+        let (x, z, _, _) = self.canvas_cursor?;
+        (x.is_finite() && z.is_finite()).then(|| format!("{x:.1}, {z:.1}"))
+    }
+
+    /// 設定原始高度單位的整平目標；繪製沿用既有復原路徑。
+    pub fn sample_flatten_at_cursor(&mut self) -> bool {
+        if self.shortcuts_blocked() || self.current_map_is_original()
+            || self.loaded_map_path.as_deref().is_some_and(is_original_map_dir)
+            || self.is_painting || self.nature.driver.is_active() || self.textures.material_stroke_active() { return false; }
+        let Some((x, z, _, _)) = self.canvas_cursor else { return false; };
+        let Some(height) = self.height_at_world(x, z) else { return false; };
+        self.flatten_target = height;
+        self.sample_flatten_target = false;
+        self.active_tool = ActiveTool::HeightFlatten;
+        self.nature.enabled = false;
+        self.set_status(format!("{}: {height}", tr(self.lang(), "Flatten target sampled", "已取樣整平目標")), false);
+        true
+    }
+
     /// Dispatches one shortcut. Mutating actions are refused on retail maps like the C# editor.
     pub fn handle_shortcut_action(&mut self, action: ShortcutAction) {
         if self.shortcuts_blocked() { return; }
@@ -4544,6 +4574,8 @@ impl EditorApp {
                     self.brush_radius = (self.brush_radius + delta).clamp(1.0, 64.0);
                 }
             }
+            ShortcutAction::SampleFlattenTarget => { self.sample_flatten_at_cursor(); }
+            ShortcutAction::CopyCursor => {}
             ShortcutAction::Eyedropper => {
                 self.eyedrop_material_at_cursor();
             }
@@ -4680,6 +4712,7 @@ mod tests {
 
     mod batch7_tests;
     mod batch10_tests;
+    mod batch11_tests;
     mod save_blockers_tests;
     mod unified_undo_tests;
     mod objectives_apply_tests;
@@ -10993,7 +11026,12 @@ impl EditorApp {
                     .collect()
             });
             for action in actions {
-                self.handle_shortcut_action(action);
+                if action == ShortcutAction::CopyCursor {
+                    if let Some(text) = self.cursor_coordinates_text() {
+                        ctx.copy_text(text);
+                        self.set_status(tr(self.lang(), "Cursor X/Z copied", "已複製游標 X/Z").into(), false);
+                    }
+                } else { self.handle_shortcut_action(action); }
             }
         }
 

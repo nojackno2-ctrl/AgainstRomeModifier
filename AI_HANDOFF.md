@@ -1,3 +1,7 @@
+## 2026-10-25 Codex：批次 #11（已驗證；GUI 未驗收）
+- 審查 e94ba04：修正高度半格取樣與筆刷 round_ties_even 不一致／非有限座標（app.rs:4388），補原始值 × height_step 世界 Y；吸管拒絕唯讀與進行中筆畫，不提交筆畫或新增歷史（app.rs:4477、textures_ui.rs:1838）。新增雙語 H 取樣整平目標、K 複製游標 X/Z（app.rs:4544、4537），遵守文字焦點與 shortcuts_blocked，取樣不改地圖、繪製沿用復原路徑；指南同步。每幀取樣為常數時間，無新增掃描／磁碟讀取。
+- 依序 cargo check／test／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target（test 加 --no-fail-fast）皆 exit 0；283 組、2584 passed／0 failed／25 ignored，編輯器 742／0／6；install_resource_discovery 環境失敗 0。日誌 re_workspace/codex-batch-11-{check,test,focused,build}.log。首輪 check 缺新增動作 spawn match，已補並重跑；回歸涵蓋 193／257 網格、單位、吸管歷史／唯讀及整平繪製復原重做。未 stage／commit；AGENTS.md／README.md 既有修改保留，遊戲唯讀。
+
 ## 2026-10-25 Agy：自主批次 #10 地形／材質／地景設計者工作流程三項優化（已驗證）
 - 1. 狀態列當前工具與筆刷尺寸即時顯示（app.rs:11017-11040 狀態列原僅顯示 status_message 與未儲存標記，無工具回報）：新增 `active_tool_status_text(&self, lang: AppLanguage) -> String`，於狀態列即時回報目前啟用之高度／通行／水面工具（含半徑）、地表材質（含圖塊尺寸）或自然種植／清除工具（含筆刷半徑），支援 `tr()` 雙語與 1–9／[／] 按鍵切換即時連動。
 - 2. 狀態列游標所在處地形高程 (Height) 即時取樣讀數（app.rs:11025-11030 游標原僅顯示世界 X/Z 與圖塊索引，無高度數值）：新增 `height_at_world(&self, wx: f32, wz: f32) -> Option<u8>` 與 `cursor_readout_text(&self, lang: AppLanguage) -> Option<String>`，游標在 2D 畫布與 3D 視角移動時，狀態列即時格式化顯示高程取樣值（如 `游標: X: 8192, Z: 4096 | 圖塊: (128, 64) | 高度: 42` / `Cursor: X: 8192, Z: 4096 | Tile: (128, 64) | Height: 42`），未載入地圖時優雅省略。

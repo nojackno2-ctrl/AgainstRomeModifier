@@ -72,11 +72,11 @@ fn status_bar_height_readout_under_cursor_bilingual() {
     assert_eq!(app.height_at_world(8192.0, 4096.0), Some(42));
     assert_eq!(
         app.cursor_readout_text(AppLanguage::English).unwrap(),
-        "Cursor: X: 8192, Z: 4096 | Tile: (128, 64) | Height: 42"
+        "Cursor: X: 8192, Z: 4096 | Tile: (128, 64) | Height: 42 | World Y: 168.0"
     );
     assert_eq!(
         app.cursor_readout_text(AppLanguage::TraditionalChinese).unwrap(),
-        "游標: X: 8192, Z: 4096 | 圖塊: (128, 64) | 高度: 42"
+        "游標: X: 8192, Z: 4096 | 圖塊: (128, 64) | 高度: 42 | 世界 Y: 168.0"
     );
 
     // Apply specific height changes to vertex (100, 50)
@@ -93,11 +93,11 @@ fn status_bar_height_readout_under_cursor_bilingual() {
     app.canvas_cursor = Some((wx, wz, 100, 50));
     assert_eq!(
         app.cursor_readout_text(AppLanguage::English).unwrap(),
-        "Cursor: X: 6400, Z: 3200 | Tile: (100, 50) | Height: 99"
+        "Cursor: X: 6400, Z: 3200 | Tile: (100, 50) | Height: 99 | World Y: 396.0"
     );
     assert_eq!(
         app.cursor_readout_text(AppLanguage::TraditionalChinese).unwrap(),
-        "游標: X: 6400, Z: 3200 | 圖塊: (100, 50) | 高度: 99"
+        "游標: X: 6400, Z: 3200 | 圖塊: (100, 50) | 高度: 99 | 世界 Y: 396.0"
     );
 
     // Clamping on extreme and negative coordinates without panicking
