@@ -3846,6 +3846,9 @@ impl EditorApp {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ShortcutAction {
     Save,
+    TerrainTool(ActiveTool),
+    BrushRadius(f32),
+    DesignCheck,
     Delete,
     SelectAll,
     Duplicate,
@@ -3853,7 +3856,11 @@ pub enum ShortcutAction {
 }
 
 /// Keys polled each frame for [`shortcut_action`].
-const SHORTCUT_KEYS: [egui::Key; 8] = [
+const SHORTCUT_KEYS: [egui::Key; 20] = [
+    egui::Key::Num1, egui::Key::Num2, egui::Key::Num3,
+    egui::Key::Num4, egui::Key::Num5, egui::Key::Num6,
+    egui::Key::Num7, egui::Key::Num8, egui::Key::Num9,
+    egui::Key::OpenBracket, egui::Key::CloseBracket, egui::Key::F5,
     egui::Key::S,
     egui::Key::A,
     egui::Key::D,
@@ -3882,6 +3889,24 @@ pub fn shortcut_action(
     }
     if text_focus {
         return None;
+    }
+    if !ctrl && !shift {
+        let action = match key {
+            Key::Num1 => Some(ShortcutAction::TerrainTool(ActiveTool::HeightRaise)),
+            Key::Num2 => Some(ShortcutAction::TerrainTool(ActiveTool::HeightLower)),
+            Key::Num3 => Some(ShortcutAction::TerrainTool(ActiveTool::HeightFlatten)),
+            Key::Num4 => Some(ShortcutAction::TerrainTool(ActiveTool::HeightSmooth)),
+            Key::Num5 => Some(ShortcutAction::TerrainTool(ActiveTool::HeightRoughen)),
+            Key::Num6 => Some(ShortcutAction::TerrainTool(ActiveTool::Water)),
+            Key::Num7 => Some(ShortcutAction::TerrainTool(ActiveTool::CollisionBlock)),
+            Key::Num8 => Some(ShortcutAction::TerrainTool(ActiveTool::CollisionClear)),
+            Key::Num9 => Some(ShortcutAction::TerrainTool(ActiveTool::Material)),
+            Key::OpenBracket => Some(ShortcutAction::BrushRadius(-1.0)),
+            Key::CloseBracket => Some(ShortcutAction::BrushRadius(1.0)),
+            Key::F5 => Some(ShortcutAction::DesignCheck),
+            _ => None,
+        };
+        if action.is_some() { return action; }
     }
     match key {
         Key::A if ctrl => Some(ShortcutAction::SelectAll),
@@ -4320,6 +4345,15 @@ impl EditorApp {
             "原廠地圖為唯讀，無法儲存；請先複製為自製地圖。",
         );
         match action {
+            ShortcutAction::TerrainTool(tool) => {
+                self.active_tool = tool;
+            }
+            ShortcutAction::BrushRadius(delta) => {
+                if !self.nature.enabled && self.active_tool != ActiveTool::Material {
+                    self.brush_radius = (self.brush_radius + delta).clamp(1.0, 64.0);
+                }
+            }
+            ShortcutAction::DesignCheck => self.run_design_check(),
             ShortcutAction::Save => {
                 if read_only {
                     self.set_status(read_only_msg.into(), true);
@@ -5826,7 +5860,7 @@ mod tests {
         app.design_check.open = false;
 
         // 2. Raise brush + drag across the map canvas.
-        gui_click(&mut app, &ctx, "Raise (Height)");
+        gui_click(&mut app, &ctx, "Raise (Height) [1]");
         let original = app.session.as_ref().unwrap().heights().to_vec();
         let map = app.last_map_rect;
         let (a, b) = (map.lerp_inside(egui::vec2(0.45, 0.5)), map.lerp_inside(egui::vec2(0.55, 0.5)));
@@ -5859,7 +5893,7 @@ mod tests {
         assert_eq!(crate::storage::load_map(&dir).unwrap().heights(), &painted[..]);
 
         // 4b. Material brush (loaded on demand): palette pick + canvas drag paints boden.txt.
-        let out = gui_click(&mut app, &ctx, "Material (terrain paint)");
+        let out = gui_click(&mut app, &ctx, "Material (terrain paint) [9]");
         let before = app.textures.session_textures().expect("materials loaded on demand").to_vec();
         if gui_find(&out, "Dirt Road").is_none() {
             let texts: Vec<String> = out.shapes.iter().filter_map(|s| match &s.shape { egui::epaint::Shape::Text(t) => Some(t.galley.text().to_string()), _ => None }).collect();
@@ -6345,7 +6379,7 @@ mod tests {
         app.set_loaded_map(dir.clone(), TerrainSession::create_blank(9, 32)).unwrap();
         assert!(app.textures.session_textures().is_none());
         let ctx = egui::Context::default();
-        let out = gui_click(&mut app, &ctx, "Material (terrain paint)");
+        let out = gui_click(&mut app, &ctx, "Material (terrain paint) [9]");
         assert_eq!(app.active_tool, ActiveTool::Material);
         assert!(app.textures.session_textures().is_some(), "{}", app.status_message);
         assert!(gui_find(&out, "Load a map with boden.txt to paint materials.").is_none());
@@ -10262,6 +10296,79 @@ angle=0.00
     }
 
     #[test]
+    fn terrain_tool_shortcuts_cover_all_tools_and_preserve_edits() {
+        use egui::Key::*;
+        let mut app = EditorApp::default();
+        for (key, tool) in [
+            (Num1, ActiveTool::HeightRaise), (Num2, ActiveTool::HeightLower),
+            (Num3, ActiveTool::HeightFlatten), (Num4, ActiveTool::HeightSmooth),
+            (Num5, ActiveTool::HeightRoughen), (Num6, ActiveTool::Water),
+            (Num7, ActiveTool::CollisionBlock), (Num8, ActiveTool::CollisionClear),
+            (Num9, ActiveTool::Material),
+        ] {
+            assert!(SHORTCUT_KEYS.contains(&key));
+            let action = shortcut_action(key, false, false, false, false).expect("工具快捷鍵");
+            app.handle_shortcut_action(action);
+            assert_eq!(app.active_tool, tool);
+            assert_eq!(app.session.as_ref().unwrap().heights(), TerrainSession::create_blank(257, 32).heights());
+            assert!(app.pending_action.is_none());
+        }
+    }
+
+    #[test]
+    fn brush_radius_shortcuts_clamp_and_leave_other_brushes_unchanged() {
+        let mut app = EditorApp::default();
+        app.brush_radius = 1.0;
+        let smaller = shortcut_action(egui::Key::OpenBracket, false, false, false, false).unwrap();
+        let larger = shortcut_action(egui::Key::CloseBracket, false, false, false, false).unwrap();
+        app.handle_shortcut_action(smaller);
+        assert_eq!(app.brush_radius, 1.0);
+        app.handle_shortcut_action(larger);
+        assert_eq!(app.brush_radius, 2.0);
+        app.brush_radius = 64.0;
+        app.handle_shortcut_action(larger);
+        assert_eq!(app.brush_radius, 64.0);
+        app.active_tool = ActiveTool::Material;
+        app.handle_shortcut_action(smaller);
+        assert_eq!(app.brush_radius, 64.0);
+        app.active_tool = ActiveTool::HeightRaise;
+        app.nature.enabled = true;
+        app.handle_shortcut_action(smaller);
+        assert_eq!(app.brush_radius, 64.0);
+    }
+
+    #[test]
+    fn new_shortcuts_ignore_text_focus_and_modifiers() {
+        for key in &SHORTCUT_KEYS[..12] {
+            for (ctrl, shift, alt, text) in [
+                (true, false, false, false), (false, true, false, false),
+                (false, false, true, false), (false, false, false, true),
+            ] {
+                assert_eq!(shortcut_action(*key, ctrl, shift, alt, text), None);
+            }
+        }
+    }
+
+    #[test]
+    fn f5_keyboard_event_opens_and_refreshes_design_check_headlessly() {
+        let mut app = EditorApp::default();
+        let ctx = egui::Context::default();
+        gui_frame(&mut app, &ctx, vec![]);
+        let key = |pressed| egui::Event::Key {
+            key: egui::Key::F5, physical_key: None, pressed,
+            repeat: false, modifiers: egui::Modifiers::NONE,
+        };
+        gui_frame(&mut app, &ctx, vec![key(true)]);
+        assert!(app.design_check.open);
+        assert!(app.design_check.report.is_some());
+        app.design_check.selected = Some(99);
+        gui_frame(&mut app, &ctx, vec![key(false)]);
+        gui_frame(&mut app, &ctx, vec![key(true)]);
+        assert_eq!(app.design_check.selected, None);
+        assert!(app.pending_action.is_none());
+        assert_eq!(app.session.as_ref().unwrap().heights(), TerrainSession::create_blank(257, 32).heights());
+    }
+    #[test]
     fn shortcut_mapping_is_pure_and_matches_csharp() {
         use egui::Key::*;
         let f = |k, c, s, a, t| shortcut_action(k, c, s, a, t);
@@ -10581,7 +10688,7 @@ impl EditorApp {
                 if ui.button(tr(lang, "Tech Doc", "技術文件")).clicked() {
                     self.tech_doc.open = true;
                 }
-                if ui.button(tr(lang, "Design Check", "設計檢查")).clicked() {
+                if ui.button(tr(lang, "Design Check", "設計檢查")).on_hover_text(tr(lang, "Run design check (F5)", "立即執行設計檢查（F5）")).clicked() {
                     self.run_design_check();
                 }
                 if ui.button(tr(lang, "Map Balance Summary", "地圖平衡摘要")).clicked() {
@@ -10788,47 +10895,47 @@ impl EditorApp {
                     ui.selectable_value(
                         &mut self.active_tool,
                         ActiveTool::HeightRaise,
-                        "Raise (Height)",
+                        tr(lang, "Raise (Height) [1]", "升高（高度）[1]"),
                     );
                     ui.selectable_value(
                         &mut self.active_tool,
                         ActiveTool::HeightLower,
-                        "Lower (Height)",
+                        tr(lang, "Lower (Height) [2]", "降低（高度）[2]"),
                     );
                     ui.selectable_value(
                         &mut self.active_tool,
                         ActiveTool::HeightFlatten,
-                        "Flatten (Height)",
+                        tr(lang, "Flatten (Height) [3]", "整平（高度）[3]"),
                     );
                     ui.selectable_value(
                         &mut self.active_tool,
                         ActiveTool::HeightSmooth,
-                        "Smooth (Height)",
+                        tr(lang, "Smooth (Height) [4]", "平滑（高度）[4]"),
                     );
                     ui.selectable_value(
                         &mut self.active_tool,
                         ActiveTool::HeightRoughen,
-                        "Roughen (Noise)",
+                        tr(lang, "Roughen (Noise) [5]", "粗糙（雜訊）[5]"),
                     );
                     ui.selectable_value(
                         &mut self.active_tool,
                         ActiveTool::Water,
-                        "Water (Height + Collision)",
+                        tr(lang, "Water (Height + Collision) [6]", "水面（高度與通行）[6]"),
                     );
                     ui.selectable_value(
                         &mut self.active_tool,
                         ActiveTool::CollisionBlock,
-                        "Block (Collision)",
+                        tr(lang, "Block (Collision) [7]", "阻擋（通行）[7]"),
                     );
                     ui.selectable_value(
                         &mut self.active_tool,
                         ActiveTool::CollisionClear,
-                        "Clear (Collision)",
+                        tr(lang, "Clear (Collision) [8]", "清除（通行）[8]"),
                     );
                     ui.selectable_value(
                         &mut self.active_tool,
                         ActiveTool::Material,
-                        tr(lang, "Material (terrain paint)", "材質（地表繪製）"),
+                        tr(lang, "Material (terrain paint) [9]", "材質（地表繪製）[9]"),
                     );
 
                     ui.separator();
@@ -10860,7 +10967,7 @@ impl EditorApp {
                     } else {
                         ui.add(
                             egui::Slider::new(&mut self.brush_radius, 1.0..=64.0)
-                                .text("Radius (vertices)"),
+                                .text(tr(lang, "Radius (vertices) [ / ]", "半徑（頂點）[ / ]")),
                         );
                         ui.add(egui::Slider::new(&mut self.brush_strength, 1..=64).text("Strength"));
                     }

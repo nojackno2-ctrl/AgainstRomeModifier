@@ -905,7 +905,7 @@ impl SpawnPlacementUi {
             ShortcutAction::Delete => self.delete_selected(scenario, cx),
             ShortcutAction::Duplicate => self.duplicate_selected(scenario, cx),
             ShortcutAction::Nudge { dx, dz } => self.move_selected(scenario, cx, dx, dz, false),
-            ShortcutAction::Save => {}
+            ShortcutAction::Save | ShortcutAction::TerrainTool(_) | ShortcutAction::BrushRadius(_) | ShortcutAction::DesignCheck => {}
         }
     }
 
