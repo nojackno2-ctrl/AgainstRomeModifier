@@ -1,3 +1,14 @@
+## 2026-10-25 Agy：新增對戰地圖精靈（New skirmish map… wizard）串接實作（已驗證，未手動驗證 GUI）
+- 2026-10-25 Codex 修正：移除 DATA 主屋的補造 Spawn，無腳本主屋時略過失敗目標並顯示指定雙語提示；第三步新增劇本面板同模式別名選單，波次須指定別名才可下一步（停用提示），產生器採用該選擇；DATA／Scenario 載入錯誤改為 Step 2 (Load map) failed 並中止。既有導航與完整流程測試補上回歸斷言；cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target 結束碼 0（283 組、2543 passed、0 failed、24 ignored；精靈 5 項皆通過），日誌 re_workspace/new-map-wizard-fix-test.log；未手動驗證 GUI。僅修改精靈及本交接檔，未 stage／commit。
+- 1. 對戰地圖精靈單重視窗與四步驟導覽：新增 `skirmish_wizard_ui.rs`，提供「1. 範本 (Template)」、「2. 標題與簡報 (Title & Briefing)」、「3. 基地、資源與規則 (Bases, Resources & Rules)」、「4. 摘要與確認 (Summary)」四步驟。全視窗標籤與操作按鈕均透過 `tr()` 支援雙語化，支援「上一步 (Back)」、「下一步 (Next)」、「取消 (Cancel)」與「建立 (Create)」，任何步驟取消均不進行變更與檔案寫入。
+- 2. 既有建置與產生器流水線串接：
+  - 步驟 1／2：選擇平坦範本（預設，穩定）或空白場景（標記「(experimental)」），複用 `MapsUi` 輸入驗證與平坦範本簡報寫入／保留流程。
+  - 步驟 3：複用既有聚落產生器套用路徑（`generate_settlement` + `apply_settlement`），支援 2–8 位玩家、部落文化、對稱與自然資源；選用進攻波次產生器（預設目的地為玩家主屋，產生 5 波敵軍與敵對外交事件）；選用勝負目標預設函式（存活指定秒數勝利 + 玩家主屋摧毀即失敗）。
+  - 步驟 4：彙整所有選項並於按下「建立」時依序執行建置、載入地圖、套用各產生器為記憶體可復原編輯；隨後自動執行設計檢查（Design Check）並提示設計者執行安全儲存（Safe Save），絕不自動覆寫儲存至磁碟。若中途任一步驟失敗，立即中止並明確回報失敗步驟，已建置之地圖維持開啟狀態但後續步驟不執行。
+- 3. 工具列與地圖面板入口整合：編輯器頂部工具列新增「New skirmish map… / 新增對戰地圖…」按鈕；地圖面板之空白地圖頁籤亦提供捷徑連結，無縫喚起精靈視窗。
+- 測試新增：`skirmish_wizard_ui::tests` 新增 5 項單元測試（涵蓋步驟切換與無效輸入阻擋、取消無副作用不建立地圖、完整流程產生地圖且簡報／聚落／波次／目標皆作為未儲存編輯就緒、第三步驟失敗時精準報告該步驟並保留已開啟地圖且無波次、GUI 視窗開啟與關閉）。
+- 驗證：cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/agy-target 通過（283 組、2543 passed、0 failed、24 ignored；日誌保存至 re_workspace/new-map-wizard-test.log）。未 stage／commit，保留 AGENTS.md／README.md 既有變更，未寫入 repo 以外目錄。
+
 ## 2026-10-25 Agy：打包面板模組 ZIP 預填路徑、瀏覽選擇器與覆蓋保護（已驗證，未手動驗證 GUI）
 - 1. 載入地圖自動預填匯出路徑：`packaging_ui.rs` 於 `reset_session` 依據載入地圖識別碼（如 `ENDL_005`）預先填入 `{map_id}.zip`；路徑預設指向使用者 Documents 資料夾或 `storage::editor_data_dir()` 之父目錄，並透過 `is_game_maps_dir` 防護確保絕不預設進遊戲安裝目錄之 `MAPS` 或地圖自身資料夾；地圖關閉或重設時清空。
 - 2. 可注入瀏覽檔案對話盒：遵循 `crate::layout_io` 的 `LayoutDialogKind` 與 `LayoutFilePicker` 注入模式，於輸出 ZIP 欄位旁新增「Browse… / 瀏覽…」按鈕；選擇器回傳路徑時更新欄位，取消時保留既有路徑不變。

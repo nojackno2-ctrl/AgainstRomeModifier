@@ -123,6 +123,7 @@ pub struct MapsUi {
     // Pending confirmation & dirty state
     pub pending_action: Option<MapsPendingAction>,
     pub pending_build_intent: Option<BlankMapBuildIntent>,
+    pub request_skirmish_wizard: bool,
     pub status_message: String,
     pub status_is_error: bool,
     pub dirty: bool,
@@ -159,6 +160,7 @@ impl Default for MapsUi {
             preflight_result: None,
             pending_action: None,
             pending_build_intent: None,
+            request_skirmish_wizard: false,
             status_message: "Ready.".to_string(),
             status_is_error: false,
             dirty: false,
@@ -916,6 +918,11 @@ impl MapsUi {
                     intent.spec.target_slot
                 );
                 self.status_is_error = false;
+            }
+
+            ui.separator();
+            if ui.button("新增對戰地圖… (New Skirmish Map Wizard…)").clicked() {
+                self.request_skirmish_wizard = true;
             }
         });
 

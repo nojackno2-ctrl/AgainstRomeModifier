@@ -147,7 +147,7 @@ pub struct EditorApp {
     )>,
     toolbox: ToolboxUi,
     navigation: NavigationUi,
-    height_step: f32,
+    pub(crate) height_step: f32,
     pub(crate) placement: PlacementUi,
     family: crate::family_ui::FamilyUi,
     family_open: bool,
@@ -166,7 +166,7 @@ pub struct EditorApp {
     toolbar_graph_source: Option<ToolbarGraphSource>,
     console: ConsoleUi,
     pub maps: MapsUi,
-    environment: EnvironmentUi,
+    pub(crate) environment: EnvironmentUi,
     landscape: LandscapeUi,
     packaging: PackagingUi,
     campaign: CampaignUi,
@@ -200,6 +200,7 @@ pub struct EditorApp {
     terrain_confirm: Option<TerrainBulkAction>,
     /// Squad catalog and formation layout feeding the 3D view's formation members.
     troops: TroopDisplay,
+    pub(crate) skirmish_wizard: crate::skirmish_wizard_ui::SkirmishWizardUi,
 }
 
 /// Background-loaded squad catalog plus the fingerprint of the spawns last expanded for the 3D
@@ -435,6 +436,7 @@ impl EditorApp {
             reset_auxiliary_layers: false,
             terrain_confirm: None,
             troops: TroopDisplay::default(),
+            skirmish_wizard: crate::skirmish_wizard_ui::SkirmishWizardUi::default(),
         }
     }
 }
@@ -968,7 +970,7 @@ impl EditorApp {
         self.pending_action.as_ref()
     }
 
-    fn require_clean_map_switch(&self) -> Result<(), String> {
+    pub(crate) fn require_clean_map_switch(&self) -> Result<(), String> {
         if self.has_unsaved_changes() {
             return Err("Map switch rejected: unsaved changes; save first or use the UI discard confirmation.".into());
         }
@@ -1210,7 +1212,7 @@ impl EditorApp {
         self.ramp_start = None;
     }
 
-    fn build_and_install_blank_map(
+    pub(crate) fn build_and_install_blank_map(
         &mut self,
         game_path: &Path,
         spec: &against_rome_maps::blank_builder::BlankMapSpec,
@@ -1254,7 +1256,7 @@ impl EditorApp {
     /// C# "Flat Template" (`MapSelectionForm.CreateBlankMap` + `_startWithBlankTerrain`): clones the
     /// template unchanged (settlements, scripts and DATA kept), opens the copy and immediately
     /// flattens its terrain without a confirm dialog. Nothing is saved until the designer saves.
-    fn build_and_install_flat_template(
+    pub(crate) fn build_and_install_flat_template(
         &mut self,
         game_path: &Path,
         spec: &against_rome_maps::blank_builder::BlankMapSpec,
@@ -1482,6 +1484,10 @@ impl EditorApp {
         if let Some(intent) = self.maps.take_pending_build_intent() {
             self.pending_action = Some(PendingAction::BuildBlank(intent));
         }
+        if self.maps.request_skirmish_wizard {
+            self.maps.request_skirmish_wizard = false;
+            self.open_skirmish_wizard();
+        }
         self.environment.english = self.lang() == AppLanguage::English;
         self.environment.show(
             ctx,
@@ -1560,6 +1566,7 @@ impl EditorApp {
         }
         self.show_family_window(ctx);
         self.show_toolbar_event_graph(ctx);
+        self.show_skirmish_wizard(ctx);
         if had_session && self.session.as_ref().is_some_and(|s| s.is_dirty()) && !before {
             self.texture_dirty = true;
             self.navigation.invalidate();
@@ -2370,7 +2377,7 @@ impl EditorApp {
         }
     }
 
-    fn apply_settlement(&mut self) -> Result<usize, String> {
+    pub(crate) fn apply_settlement(&mut self) -> Result<usize, String> {
         if self.current_map_is_original() {
             return Err("Settlement: original maps are read-only".into());
         }
@@ -2469,6 +2476,10 @@ impl EditorApp {
             after_token: depth,
         }]);
         Ok(requests.len() + additions.len())
+    }
+
+    pub fn has_settlement_undo(&self) -> bool {
+        !self.settlement_undo.is_empty()
     }
 
     fn settlement_history(&mut self, redo: bool) -> bool {
@@ -10524,6 +10535,9 @@ impl EditorApp {
                             }
                         }
                     }
+                }
+                if ui.button(tr(lang, "New skirmish map…", "新增對戰地圖…")).clicked() {
+                    self.open_skirmish_wizard();
                 }
                 if ui.button(tr(lang, "Environment", "環境")).clicked() {
                     self.environment.open = true;

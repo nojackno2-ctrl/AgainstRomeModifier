@@ -35,6 +35,7 @@ pub mod tech_doc_ui;
 pub mod save_manager_ui;
 pub mod scene_ui;
 pub mod minimap_ui;
+pub mod skirmish_wizard_ui;
 
 pub use ambience_ui::AmbienceUi;
 pub use app::EditorApp;
