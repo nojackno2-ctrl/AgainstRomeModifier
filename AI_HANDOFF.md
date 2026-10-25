@@ -1,3 +1,7 @@
+## 2026-10-25 Codex：批次 #7（編輯器通過；四項既有環境失敗）
+- 修正 2cff58b：2D／3D 讀數統一 256 格／16384 世界單位（app.rs:3863、11404、11560），方向鍵遵守 shortcuts_blocked、Shift 僅平移一次（:11447）。新增雙語縮放百分比／重設視角、複製已載入資料夾；缺口為原 app.rs:10991 狀態區無視角操作、:10930 路徑欄無複製且可能尚未載入；指南同步，四項無視窗回歸通過，無新增逐格掃描／磁碟讀取。
+- 依序 cargo check／test／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target（test 加 --no-fail-fast）：check／build exit 0，完整 283 組、2567 passed／4 failed／25 ignored（exit 101），編輯器單元 729 passed／0 failed／6 ignored；日誌 re_workspace/codex-batch-7-{check,test,build}.log。四失敗僅 install_resource_discovery::{app_local_trace_works_without_third_party,ancestor_and_third_party_override_never_implicitly_supply_trace,executable_at_source_root_does_not_use_tracked_cpp_payload,dgvoodoo_remains_available_when_trace_is_missing}（:55／111／128／162），提權環境內暫存祖先既有 ThirdParty／trace DLL 汙染，未改無關產品。
+- 首輪誤用 re_workspace 暫存遭既有安裝路徑防護，已中止並保留 test-first.log；改根目錄暫存完整重跑，殘留移至 re_workspace/codex-batch-7-fixtures。未 stage／commit；AGENTS.md／README.md 既有變更保留；遊戲唯讀，未手動驗收 GUI。
 ## 2026-10-25 Agy：編輯器三大設計者體驗優化（頂部工具列雙語提示、狀態列游標與圖塊座標讀數、2D 畫布視角快捷鍵）（已驗證）
 - 1. 頂部工具列所有功能按鈕雙語懸停提示：針對原缺口（app.rs:10765-10874 之存檔管理、場景導航、小地圖、物件、劇本相機、生成點、材質、SDL場景、事件圖、控制台、環境、地景、打包、戰役、AI企劃、氛圍、族系效果、規格研究、平衡摘要、載入與安全儲存等按鈕缺少 .on_hover_text），全面補齊 tr() 雙語 hover 提示。
 - 2. 狀態列游標世界座標與圖塊索引即時讀數：針對原缺口（app.rs:10915-10935 僅顯示狀態訊息與未儲存標記，無座標回報），新增 canvas_cursor 狀態；於 2D 畫布 hover 與 3D 視角 hover 時即時計算世界座標 (wx, wz) 與圖塊 (tx, tz)，在狀態列以 tr() 顯示雙語格式 `Cursor: X: {wx:.0}, Z: {wz:.0} | Tile: ({tx}, {tz})` / `游標: X: {wx:.0}, Z: {wz:.0} | 圖塊: ({tx}, {tz})`。

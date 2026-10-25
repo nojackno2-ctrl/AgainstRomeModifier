@@ -3859,6 +3859,11 @@ impl EditorApp {
     }
 }
 
+/// 編輯器圖塊為 256 × 256；每格 64 世界單位，邊界歸最後一格。
+fn cursor_tile(x: f32, z: f32) -> (i32, i32) {
+    (((x / 64.0).floor() as i32).clamp(0, 255),
+     ((z / 64.0).floor() as i32).clamp(0, 255))
+}
 /// Editor-wide keyboard shortcuts (C# `HandleShortcut` / `HandlePlacementWorkflowKey`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ShortcutAction {
@@ -4520,6 +4525,7 @@ mod tests {
     use super::*;
     use crate::terrain::SampleChange;
 
+    mod batch7_tests;
     mod save_blockers_tests;
     mod unified_undo_tests;
     mod objectives_apply_tests;
@@ -10743,6 +10749,11 @@ impl eframe::App for EditorApp {
 }
 
 impl EditorApp {
+    /// 複製已載入地圖的路徑，不採用尚未載入的輸入文字。
+    fn map_folder_clipboard(&self) -> Option<String> {
+        self.loaded_map_path.as_ref().map(|p| p.display().to_string())
+    }
+
     /// 對話框及事件圖開啟期間不讓全域快捷鍵穿透至地圖。
     fn shortcuts_blocked(&self) -> bool {
         self.pending_action.is_some() || self.pending_save_warnings.is_some()
@@ -10753,6 +10764,7 @@ impl EditorApp {
     /// One full editor frame. `eframe::App::update` delegates here; tests drive it headlessly
     /// with an `egui::Context` (no window or `eframe::Frame` needed).
     pub fn ui_frame(&mut self, ctx: &egui::Context) {
+        if self.session.is_none() { self.canvas_cursor = None; }
         if !self.recovery_deferred { self.recovery_tick(ctx); }
         self.recovery_dialog(ctx);
         if ctx.input(|i| i.viewport().close_requested()) && !self.has_unsaved_changes() {
@@ -10988,6 +11000,19 @@ impl EditorApp {
                 }
             });
 
+            ui.horizontal(|ui| {
+                if self.view_mode != ViewMode::View3D {
+                    ui.label(format!("{}: {:.0}%", tr(lang, "2D zoom", "2D 縮放"), self.zoom * 100.0));
+                    if ui.button(tr(lang, "Reset 2D view", "重設 2D 視角")).clicked() {
+                        self.handle_shortcut_action(ShortcutAction::CanvasResetView);
+                    }
+                }
+                if ui.add_enabled(self.loaded_map_path.is_some(), egui::Button::new(tr(lang, "Copy map folder", "複製地圖資料夾"))).clicked() {
+                    if let Some(path) = self.map_folder_clipboard() {
+                        ctx.copy_text(path);
+                    }
+                }
+            });
             // 狀態列
             ui.horizontal(|ui| {
                 let color = if self.status_is_error {
@@ -11376,7 +11401,7 @@ impl EditorApp {
                     if let Some(hit) = self.viewport_3d.hover_world {
                         let wx = hit.x * 256.0;
                         let wz = hit.z * 256.0;
-                        let (tx, tz) = self.viewport_3d.hover_tile.unwrap_or((hit.x.floor() as i32, hit.z.floor() as i32));
+                        let (tx, tz) = cursor_tile(wx, wz);
                         self.canvas_cursor = Some((wx, wz, tx, tz));
                     } else {
                         self.canvas_cursor = None;
@@ -11418,11 +11443,11 @@ impl EditorApp {
                 self.pan += response.drag_delta();
             }
 
-            // 支援 2D 畫布方向鍵平移（Shift 加速）
-            if response.hovered() && !ctx.wants_keyboard_input() {
+            // 無修飾鍵由畫布處理；Shift 方向鍵已由全域路徑處理一次。
+            if response.hovered() && !ctx.wants_keyboard_input() && !self.shortcuts_blocked() {
                 let (ctrl, alt) = ctx.input(|i| (i.modifiers.ctrl || i.modifiers.command, i.modifiers.alt));
-                if !ctrl && !alt {
-                    let step = if ctx.input(|i| i.modifiers.shift) { 256.0 } else { 64.0 };
+                if !ctrl && !alt && !ctx.input(|i| i.modifiers.shift) {
+                    let step = 64.0;
                     if ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
                         self.pan.x += step;
                     }
@@ -11532,11 +11557,7 @@ impl EditorApp {
             if let Some(mouse_pos) = response.hover_pos() {
                 if map_rect.contains(mouse_pos) {
                     let (wx, wz) = crate::scenario_canvas::world_from_screen(map_rect, mouse_pos);
-                    let norm_x = (mouse_pos.x - map_rect.min.x) / map_rect.width();
-                    let norm_y = (mouse_pos.y - map_rect.min.y) / map_rect.height();
-                    let tiles = 64.0_f32;
-                    let tile_x = ((norm_x * tiles).floor() as i32).clamp(0, 63);
-                    let tile_y = ((norm_y * tiles).floor() as i32).clamp(0, 63);
+                    let (tile_x, tile_y) = cursor_tile(wx, wz);
                     self.canvas_cursor = Some((wx, wz, tile_x, tile_y));
                 } else {
                     self.canvas_cursor = None;
