@@ -971,7 +971,8 @@ impl SpawnPlacementUi {
             | ShortcutAction::Eyedropper
             | ShortcutAction::SampleFlattenTarget
             | ShortcutAction::CopyCursor
-            | ShortcutAction::FrameSelection => {}
+            | ShortcutAction::FrameSelection
+            | ShortcutAction::RegenerateSettlement => {}
         }
     }
 

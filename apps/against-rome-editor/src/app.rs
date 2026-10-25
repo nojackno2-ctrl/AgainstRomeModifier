@@ -1562,6 +1562,15 @@ impl EditorApp {
         if let Some(apply) = self.environment.take_apply_request() {
             self.handle_environment_apply(apply);
         }
+        if let Some((wx, wz)) = self.environment.take_focus_base_request() {
+            self.focus_world_coordinates(wx, wz);
+            let msg = format!(
+                "{} ({:.0}, {:.0})",
+                tr(self.lang(), "Centered view on base at", "已將視角置中對齊基地於"),
+                wx, wz,
+            );
+            self.set_status(msg, false);
+        }
         self.apply_lair_events_request();
         self.pump_layout_requests();
 
@@ -3556,8 +3565,10 @@ impl EditorApp {
                 }
             });
         let (planted, removed) = self.nature_pending_counts();
+        let existing = self.nature.data.as_ref().map_or(0, |d| d.positions.len());
+        let total_objects = (existing + planted).saturating_sub(removed);
         ui.small(format!(
-            "Pending: +{planted} planted, -{removed} existing removed."
+            "Total nature objects: {total_objects} (Pending: +{planted} / -{removed})"
         ));
         ui.horizontal(|ui| {
             if ui
@@ -3914,10 +3925,11 @@ pub enum ShortcutAction {
     SampleFlattenTarget,
     CopyCursor,
     FrameSelection,
+    RegenerateSettlement,
 }
 
 /// Keys polled each frame for [`shortcut_action`].
-const SHORTCUT_KEYS: [egui::Key; 27] = [
+const SHORTCUT_KEYS: [egui::Key; 28] = [
     egui::Key::Num1, egui::Key::Num2, egui::Key::Num3,
     egui::Key::Num4, egui::Key::Num5, egui::Key::Num6,
     egui::Key::Num7, egui::Key::Num8, egui::Key::Num9,
@@ -3929,6 +3941,7 @@ const SHORTCUT_KEYS: [egui::Key; 27] = [
     egui::Key::I,
     egui::Key::H,
     egui::Key::K,
+    egui::Key::R,
     egui::Key::Delete,
     egui::Key::ArrowLeft,
     egui::Key::ArrowRight,
@@ -3950,6 +3963,9 @@ pub fn shortcut_action(
 ) -> Option<ShortcutAction> {
     use egui::Key;
     if alt {
+        if !ctrl && !shift && key == Key::R && !text_focus {
+            return Some(ShortcutAction::RegenerateSettlement);
+        }
         return None;
     }
     if ctrl && key == Key::S {
@@ -3957,6 +3973,9 @@ pub fn shortcut_action(
     }
     if text_focus {
         return None;
+    }
+    if ctrl && !shift && key == Key::R {
+        return Some(ShortcutAction::RegenerateSettlement);
     }
     if !ctrl && !shift {
         let action = match key {
@@ -4493,6 +4512,17 @@ impl EditorApp {
         }
     }
 
+    /// Returns bilingual nature brush density readout (e.g. "Density: Dense" / "密度: 茂密").
+    pub fn nature_density_readout_text(&self, lang: AppLanguage) -> String {
+        let label = tr(lang, "Density", "密度");
+        let density_str = match self.nature.density {
+            NatureDensity::Sparse => tr(lang, "Sparse", "稀疏"),
+            NatureDensity::Normal => tr(lang, "Normal", "一般"),
+            NatureDensity::Dense => tr(lang, "Dense", "茂密"),
+        };
+        format!("{label}: {density_str}")
+    }
+
     /// Formats cursor world, tile, and elevation readout for the status bar.
     pub fn cursor_readout_text(&self, lang: AppLanguage) -> Option<String> {
         let (wx, wz, tx, tz) = self.canvas_cursor?;
@@ -4590,6 +4620,17 @@ impl EditorApp {
         true
     }
 
+    /// Centers the 2D canvas pan or 3D camera target on the specified world coordinates.
+    pub fn focus_world_coordinates(&mut self, wx: f32, wz: f32) {
+        if self.view_mode == ViewMode::View3D {
+            self.viewport_3d.center_on_world(wx, wz);
+        } else {
+            self.pan = crate::minimap_ui::MinimapNavigator::focus_world_pan(
+                wx, wz, self.last_canvas_rect.size(), self.zoom,
+            );
+        }
+    }
+
     /// 將視角聚焦置中對齊目前選取的物件（支援 3D 視角與 2D 畫布；支援放置物件與腳本生成點）。
     pub fn frame_selection_target(&mut self) -> bool {
         if self.shortcuts_blocked() { return false; }
@@ -4599,17 +4640,53 @@ impl EditorApp {
             self.placement.selected_coordinates()
         };
         if let Some((wx, wz)) = coords {
-            if self.view_mode == ViewMode::View3D {
-                self.viewport_3d.center_on_world(wx, wz);
-                true
-            } else {
-                self.pan = crate::minimap_ui::MinimapNavigator::focus_world_pan(
-                    wx, wz, self.last_canvas_rect.size(), self.zoom,
-                );
-                true
-            }
+            self.focus_world_coordinates(wx, wz);
+            true
         } else {
             false
+        }
+    }
+
+    /// 隨機遞增種子碼並即時重新生成聚落配置（支援快捷鍵 Ctrl+R / Alt+R）。
+    /// 遵循 shortcuts_blocked() 保護。
+    pub fn regenerate_settlement(&mut self) -> Result<i32, String> {
+        if self.shortcuts_blocked() {
+            return Err("Shortcuts blocked.".into());
+        }
+        let Some(session) = &self.session else {
+            let msg = tr(
+                self.lang(),
+                "Load a map or terrain session before generating settlements.",
+                "請先載入地圖或地形會話以產生聚落。",
+            );
+            self.set_status(msg.into(), true);
+            return Err(msg.into());
+        };
+        let dim = session.vertex_size;
+        let heights = Some(session.heights());
+        let collision = Some((session.collision_size, session.collision()));
+        let water = self.water_surface;
+        let step = self.height_step;
+        let lang = self.lang();
+        let res = self.environment.regenerate_settlement_with_new_seed(
+            dim, heights, collision, water, step,
+        );
+        match res {
+            Ok(seed) => {
+                let msg = format!(
+                    "{} ({}: {})",
+                    tr(lang, "Regenerated settlement with new seed", "已使用新種子碼重新產生聚落"),
+                    tr(lang, "Seed", "種子碼"),
+                    seed,
+                );
+                self.set_status(msg, false);
+                Ok(seed)
+            }
+            Err(e) => {
+                let err_msg = format!("{}: {e}", tr(lang, "Settlement generation failed", "聚落產生失敗"));
+                self.set_status(err_msg.clone(), true);
+                Err(err_msg)
+            }
         }
     }
 
@@ -4713,6 +4790,9 @@ impl EditorApp {
                 } else {
                     self.set_status(tr(lang, "No object selected to frame.", "尚未選取可聚焦之物件。").into(), false);
                 }
+            }
+            ShortcutAction::RegenerateSettlement => {
+                let _ = self.regenerate_settlement();
             }
             ShortcutAction::Save => {
                 if read_only {
@@ -10902,6 +10982,10 @@ angle=0.00
         );
         assert_eq!(f(ArrowLeft, false, false, true, false), None);
         assert_eq!(f(S, true, false, true, false), None);
+        assert_eq!(f(R, true, false, false, false), Some(ShortcutAction::RegenerateSettlement));
+        assert_eq!(f(R, false, false, true, false), Some(ShortcutAction::RegenerateSettlement));
+        assert_eq!(f(R, true, false, false, true), None);
+        assert_eq!(f(R, false, false, false, false), None);
     }
 
     #[test]
@@ -11039,6 +11123,58 @@ angle=0.00
         app.set_app_language(AppLanguage::TraditionalChinese);
         assert_eq!(tr(app.lang(), "Save", "儲存"), "儲存");
         assert_eq!(app.ambience.app_language, AppLanguage::TraditionalChinese);
+    }
+
+    #[test]
+    fn settlement_regenerate_shortcut_and_status_behavior() {
+        let mut app = EditorApp::default();
+        let initial_seed = app.environment.settlement_seed;
+
+        // Blocked when shortcuts_blocked() is active
+        app.pending_action = Some(PendingAction::Blank(129));
+        assert!(app.regenerate_settlement().is_err());
+        assert_eq!(app.environment.settlement_seed, initial_seed);
+        app.pending_action = None;
+
+        // Fails safely without terrain session
+        app.session = None;
+        assert!(app.regenerate_settlement().is_err());
+        assert!(app.status_is_error);
+
+        // Succeeds with terrain session
+        app.session = Some(TerrainSession::create_blank(129, 32));
+        let seed = app.regenerate_settlement().unwrap();
+        assert_ne!(seed, initial_seed);
+        assert_eq!(app.environment.settlement_seed, seed);
+        assert!(!app.status_is_error);
+        assert!(app.environment.last_distribution.is_some());
+    }
+
+    #[test]
+    fn focus_world_coordinates_updates_pan_and_viewport() {
+        let mut app = EditorApp::default();
+        app.last_canvas_rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 800.0));
+        app.pan = Vec2::ZERO;
+
+        app.focus_world_coordinates(4096.0, 4096.0);
+        assert!(app.pan.length() > 0.0);
+
+        // In 3D view mode: camera grid target (0..256) matches world coordinates (0..16384)
+        app.view_mode = ViewMode::View3D;
+        app.focus_world_coordinates(8192.0, 8192.0);
+        let target = app.viewport_3d.camera.target;
+        assert_eq!(target.x, 8192.0 / 256.0);
+        assert_eq!(target.z, 8192.0 / 256.0);
+    }
+
+    #[test]
+    fn nature_density_readout_text_bilingual() {
+        let mut app = EditorApp::default();
+        app.nature.density = NatureDensity::Dense;
+        let text_en = app.nature_density_readout_text(AppLanguage::English);
+        assert!(text_en.contains("Dense"));
+        let text_zh = app.nature_density_readout_text(AppLanguage::TraditionalChinese);
+        assert!(text_zh.contains("茂密"));
     }
 
     #[test]
@@ -11829,6 +11965,9 @@ impl EditorApp {
             if self.show_objects {
                 self.draw_nature_overlay(&painter, map_rect);
                 self.spawn_ui.draw_overlay(&painter, map_rect);
+            }
+            if self.environment.open && self.environment.show_canvas_preview {
+                self.environment.paint_canvas_preview(&painter, map_rect, lang == AppLanguage::English);
             }
 
             self.navigation.paint_canvas(&painter, map_rect, session.collision_size);

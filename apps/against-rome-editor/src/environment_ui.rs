@@ -22,7 +22,7 @@ use crate::scenario_ui::ScenarioUi;
 use against_rome_scenario::{Action, Condition, Event};
 use crate::design_apply::{parse_templates, resolver, PlacementRequest};
 use std::collections::HashMap;
-use eframe::egui::{self, Color32, Vec2};
+use eframe::egui::{self, Color32, Rect, Stroke, Vec2};
 
 /// World units per tile for lair spawn offsets (1 tile = 256 world units).
 const LAIR_TILE_WORLD_SIZE: f32 = 256.0;
@@ -157,6 +157,20 @@ pub enum EnvironmentTab {
     Layouts,
 }
 
+/// Detailed resource allotment summary for an individual player base.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BaseResourceSummary {
+    pub base_index: usize,
+    pub team: i32,
+    pub tribe: SettlementTribe,
+    pub world_x: i32,
+    pub world_z: i32,
+    pub building_count: usize,
+    pub wood_count: usize,
+    pub stone_count: usize,
+    pub food_count: usize,
+}
+
 pub struct EnvironmentUi {
     pub open: bool,
     pub current_tab: EnvironmentTab,
@@ -194,6 +208,8 @@ pub struct EnvironmentUi {
     pub last_distribution: Option<MultiplayerDistributionResult>,
     pub last_placement_preset: Option<MapLayoutPreset>,
     pub last_nature_preset: Option<MapLayoutPreset>,
+    pub show_canvas_preview: bool,
+    pub focus_base_request: Option<(f32, f32)>,
 
     // Dirty / guards
     /// Set by the "Apply to Objects session" buttons; the app turns it into placement requests.
@@ -255,6 +271,8 @@ impl Default for EnvironmentUi {
             last_distribution: None,
             last_placement_preset: None,
             last_nature_preset: None,
+            show_canvas_preview: true,
+            focus_base_request: None,
             apply_requested: None,
             lair_events_apply_requested: false,
             layout_rect: ["0".into(), "0".into(), "8".into(), "8".into()],
@@ -302,6 +320,7 @@ impl EnvironmentUi {
         self.last_distribution = None;
         self.last_placement_preset = None;
         self.last_nature_preset = None;
+        self.focus_base_request = None;
         self.apply_requested = None;
         self.lair_events_apply_requested = false;
         self.status_message = "Ready.".to_string();
@@ -902,6 +921,139 @@ impl EnvironmentUi {
         Ok(())
     }
 
+    /// Returns per-base breakdown of buildings, wood (trees), stone quarries, and wildlife/food.
+    pub fn base_resource_summaries(&self) -> Vec<BaseResourceSummary> {
+        let Some(dist) = &self.last_distribution else {
+            return Vec::new();
+        };
+        dist.players
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let wx = p.site_evaluation.world_x.round() as i32;
+                let wz = p.site_evaluation.world_z.round() as i32;
+                let food_count = p
+                    .wildlife_and_food
+                    .iter()
+                    .map(|w| (w.count.max(1)) as usize)
+                    .sum::<usize>();
+                BaseResourceSummary {
+                    base_index: i + 1,
+                    team: p.team_index,
+                    tribe: p.tribe,
+                    world_x: wx,
+                    world_z: wz,
+                    building_count: p.buildings.len(),
+                    wood_count: p.forest_trees.len(),
+                    stone_count: p.stone_quarries.len(),
+                    food_count,
+                }
+            })
+            .collect()
+    }
+
+    /// Consumes any pending request to center the camera on a specific base position.
+    pub fn take_focus_base_request(&mut self) -> Option<(f32, f32)> {
+        self.focus_base_request.take()
+    }
+
+    /// Advances the settlement seed randomly and immediately generates a new settlement layout.
+    pub fn regenerate_settlement_with_new_seed(
+        &mut self,
+        dimension: usize,
+        heights: Option<&[u8]>,
+        collision: Option<(usize, &[u8])>,
+        water_level: f32,
+        height_step: f32,
+    ) -> Result<i32, String> {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(1, |d| d.subsec_nanos());
+        let new_seed = ((self.settlement_seed as u32).wrapping_mul(1103515245).wrapping_add(12345 ^ nanos) % 99_999) as i32 + 1;
+        self.settlement_seed = new_seed;
+        self.generate_settlement(dimension, heights, collision, water_level, height_step)?;
+        Ok(new_seed)
+    }
+
+    /// Renders a non-destructive 2D canvas overlay of the pending settlement distribution
+    /// (town centers, buildings, wood/stone resources, and wildlife) before "Apply" commits them.
+    pub fn paint_canvas_preview(&self, painter: &egui::Painter, rect: Rect, english: bool) {
+        if !self.show_canvas_preview {
+            return;
+        }
+        let Some(dist) = &self.last_distribution else {
+            return;
+        };
+
+        for (base_idx, player) in dist.players.iter().enumerate() {
+            let color = crate::spawn_placement_ui::team_color(player.team_index);
+            let base_x = player.site_evaluation.world_x;
+            let base_z = player.site_evaluation.world_z;
+            if !base_x.is_finite() || !base_z.is_finite() {
+                continue;
+            }
+            let base_pos = crate::scenario_canvas::screen_from_world(rect, base_x, base_z);
+
+            // Base Town Center marker: double circle with team color
+            let base_ring_color = color.linear_multiply(0.8);
+            painter.circle_filled(base_pos, 8.0, color);
+            painter.circle_stroke(base_pos, 13.0, Stroke::new(2.0_f32, Color32::WHITE));
+            painter.circle_stroke(base_pos, 15.0, Stroke::new(1.5_f32, base_ring_color));
+
+            // Base label
+            let base_label = if english {
+                format!("Base {} (T{})", base_idx + 1, player.team_index)
+            } else {
+                format!("基地 {} (隊伍{})", base_idx + 1, player.team_index)
+            };
+            painter.text(
+                base_pos + egui::vec2(16.0, -8.0),
+                egui::Align2::LEFT_CENTER,
+                base_label,
+                egui::FontId::proportional(12.0),
+                Color32::WHITE,
+            );
+
+            // Buildings: small colored squares
+            for b in &player.buildings {
+                if !b.world_x.is_finite() || !b.world_z.is_finite() {
+                    continue;
+                }
+                let bp = crate::scenario_canvas::screen_from_world(rect, b.world_x, b.world_z);
+                let b_rect = Rect::from_center_size(bp, egui::vec2(6.0, 6.0));
+                painter.rect_filled(b_rect, 1.0, color);
+                painter.rect_stroke(b_rect, 1.0, Stroke::new(1.0_f32, Color32::WHITE));
+            }
+
+            // Wildlife & Food: small amber dots
+            for w in &player.wildlife_and_food {
+                if !w.world_x.is_finite() || !w.world_z.is_finite() {
+                    continue;
+                }
+                let wp = crate::scenario_canvas::screen_from_world(rect, w.world_x, w.world_z);
+                painter.circle_filled(wp, 3.0, Color32::from_rgb(255, 200, 50));
+            }
+
+            // Nature trees and stone (if included)
+            if self.settlement_include_nature {
+                for t in &player.forest_trees {
+                    if !t.world_x.is_finite() || !t.world_z.is_finite() {
+                        continue;
+                    }
+                    let tp = crate::scenario_canvas::screen_from_world(rect, t.world_x, t.world_z);
+                    painter.circle_filled(tp, 2.5, Color32::from_rgb(80, 200, 100));
+                }
+                for s in &player.stone_quarries {
+                    if !s.world_x.is_finite() || !s.world_z.is_finite() {
+                        continue;
+                    }
+                    let sp = crate::scenario_canvas::screen_from_world(rect, s.world_x, s.world_z);
+                    painter.circle_filled(sp, 3.0, Color32::from_rgb(180, 180, 195));
+                }
+            }
+        }
+    }
+
     pub fn show(
         &mut self,
         ctx: &egui::Context,
@@ -1242,17 +1394,56 @@ impl EnvironmentUi {
         });
 
         ui.add_space(8.0);
-        if ui.button("Generate Settlement Bases").clicked() {
-            if let Err(e) = self.generate_settlement(dimension, heights, collision, water_level, height_step) {
-                self.status_message = format!("Generation error: {e}");
-                self.status_is_error = true;
+        ui.horizontal(|ui| {
+            if ui.button(tl(self.english, "產生聚落基地", "Generate Settlement Bases")).clicked() {
+                if let Err(e) = self.generate_settlement(dimension, heights, collision, water_level, height_step) {
+                    self.status_message = format!("Generation error: {e}");
+                    self.status_is_error = true;
+                }
             }
-        }
+            if ui
+                .button(tl(
+                    self.english,
+                    "🎲 使用新種子碼重新產生 (Ctrl+R / Alt+R)",
+                    "🎲 Regenerate with New Seed (Ctrl+R / Alt+R)",
+                ))
+                .on_hover_text(tl(
+                    self.english,
+                    "隨機更新種子碼並即時重新生成聚落配置",
+                    "Advance seed randomly and regenerate settlement layout immediately",
+                ))
+                .clicked()
+            {
+                match self.regenerate_settlement_with_new_seed(
+                    dimension,
+                    heights,
+                    collision,
+                    water_level,
+                    height_step,
+                ) {
+                    Ok(seed) => {
+                        self.status_message = format!(
+                            "{}: {seed}",
+                            tl(self.english, "已使用新種子碼重新產生聚落", "Regenerated settlement with new seed")
+                        );
+                        self.status_is_error = false;
+                    }
+                    Err(e) => {
+                        self.status_message = format!("Generation error: {e}");
+                        self.status_is_error = true;
+                    }
+                }
+            }
+        });
 
         if self.last_distribution.is_some()
             && ui
-                .button("Apply to Objects session")
-                .on_hover_text("Template names come from the Flora tab's id,name list.")
+                .button(tl(self.english, "套用至物件工作階段", "Apply to Objects session"))
+                .on_hover_text(tl(
+                    self.english,
+                    "範本名稱取自植物分頁之 id,name 清單",
+                    "Template names come from the Flora tab's id,name list.",
+                ))
                 .clicked()
         {
             self.apply_requested = Some(EnvApply::Settlement);
@@ -1260,36 +1451,113 @@ impl EnvironmentUi {
 
         if let Some(dist) = &self.last_distribution {
             ui.separator();
+            ui.horizontal(|ui| {
+                ui.checkbox(
+                    &mut self.show_canvas_preview,
+                    tl(self.english, "在 2D 畫布預覽配置", "Preview on 2D canvas"),
+                );
+                ui.label(tl(
+                    self.english,
+                    "(顯示基地核心、建築與資源露頭)",
+                    "(displays bases, buildings & resource clusters)",
+                ));
+            });
+
             let f = &dist.fairness_report;
             ui.colored_label(
                 if f.is_balanced { Color32::LIGHT_GREEN } else { Color32::from_rgb(250, 180, 80) },
                 format!(
-                    "Generation Result: {} bases, {}",
+                    "{}: {} {}, {}",
+                    tl(self.english, "生成結果", "Generation Result"),
                     dist.players.len(),
-                    if f.is_balanced { "balanced" } else { "NOT balanced" }
+                    tl(self.english, "個基地", "bases"),
+                    if f.is_balanced {
+                        tl(self.english, "平衡", "balanced")
+                    } else {
+                        tl(self.english, "不平衡", "NOT balanced")
+                    }
                 ),
             );
             ui.label(format!(
-                "Inter-player distance avg/min/max: {:.1}/{:.1}/{:.1}; resource variance wood {:.2} stone {:.2} food {:.2}",
+                "{}: {:.1}/{:.1}/{:.1}; {} {:.2} {} {:.2} {} {:.2}",
+                tl(self.english, "玩家間距 平均/最小/最大", "Inter-player distance avg/min/max"),
                 f.average_inter_player_distance,
                 f.min_inter_player_distance,
                 f.max_inter_player_distance,
+                tl(self.english, "木材變異", "resource variance wood"),
                 f.wood_resource_variance,
+                tl(self.english, "石材", "stone"),
                 f.stone_resource_variance,
+                tl(self.english, "食物", "food"),
                 f.food_resource_variance,
             ));
 
+            ui.add_space(4.0);
+            ui.label(tl(
+                self.english,
+                "各勢力基地資源分配明細：",
+                "Per-Base Resource Allotment Breakdown:",
+            ));
+
+            let summaries = self.base_resource_summaries();
+            egui::Grid::new("base_resource_breakdown_grid")
+                .striped(true)
+                .min_col_width(45.0)
+                .spacing([8.0, 4.0])
+                .show(ui, |ui| {
+                    ui.strong(tl(self.english, "基地", "Base"));
+                    ui.strong(tl(self.english, "隊伍", "Team"));
+                    ui.strong(tl(self.english, "部族", "Tribe"));
+                    ui.strong(tl(self.english, "座標 (X, Z)", "Pos (X, Z)"));
+                    ui.strong(tl(self.english, "建築", "Buildings"));
+                    ui.strong(tl(self.english, "木材", "Wood"));
+                    ui.strong(tl(self.english, "石材", "Stone"));
+                    ui.strong(tl(self.english, "食物", "Food"));
+                    ui.strong(tl(self.english, "操作", "Action"));
+                    ui.end_row();
+
+                    for s in summaries {
+                        let tribe_str = match s.tribe {
+                            SettlementTribe::Germanic => tl(self.english, "日耳曼", "Germanic"),
+                            SettlementTribe::Roman => tl(self.english, "羅馬", "Roman"),
+                            SettlementTribe::Celtic => tl(self.english, "塞爾特", "Celtic"),
+                            SettlementTribe::Hun => tl(self.english, "匈人", "Hun"),
+                        };
+                        ui.label(format!("#{}", s.base_index));
+                        ui.label(format!("T{}", s.team));
+                        ui.label(tribe_str);
+                        ui.label(format!("{}, {}", s.world_x, s.world_z));
+                        ui.label(format!("{}", s.building_count));
+                        ui.label(format!("{}", s.wood_count));
+                        ui.label(format!("{}", s.stone_count));
+                        ui.label(format!("{}", s.food_count));
+                        if ui
+                            .small_button(tl(self.english, "聚焦", "Focus"))
+                            .on_hover_text(tl(
+                                self.english,
+                                "將視角中心對齊此基地",
+                                "Center view on this base",
+                            ))
+                            .clicked()
+                        {
+                            self.focus_base_request =
+                                Some((s.world_x as f32, s.world_z as f32));
+                        }
+                        ui.end_row();
+                    }
+                });
+
             if let Some(placement) = &self.last_placement_preset {
-                ui.label(format!("Placement Preset Entries: {}", placement.entries.len()));
+                ui.label(format!("{}: {}", tl(self.english, "放置預設項目", "Placement Preset Entries"), placement.entries.len()));
             }
             if let Some(nature) = &self.last_nature_preset {
-                ui.label(format!("Nature Preset Entries: {}", nature.entries.len()));
+                ui.label(format!("{}: {}", tl(self.english, "自然預設項目", "Nature Preset Entries"), nature.entries.len()));
             }
             ui.horizontal(|ui| {
-                if self.last_placement_preset.is_some() && ui.button("Save placement preset as layout...").clicked() {
+                if self.last_placement_preset.is_some() && ui.button(tl(self.english, "儲存放置預設為配置範本...", "Save placement preset as layout...")).clicked() {
                     self.report_preset_export(false);
                 }
-                if self.last_nature_preset.is_some() && ui.button("Save nature preset as layout...").clicked() {
+                if self.last_nature_preset.is_some() && ui.button(tl(self.english, "儲存自然預設為配置範本...", "Save nature preset as layout...")).clicked() {
                     self.report_preset_export(true);
                 }
             });
@@ -1765,5 +2033,65 @@ mod small_ux_tests {
     fn discard_dialog_is_bilingual() {
         assert_eq!(discard_labels(true), ["Discard Unsaved Environment Changes?", "Closing will discard currently generated flora, lairs, and settlement presets.", "Discard & Close", "Keep Editing"]);
         assert_eq!(discard_labels(false), ["捨棄未儲存的環境變更？", "關閉將捨棄目前產生的植物、巢穴與聚落預設。", "捨棄並關閉", "繼續編輯"]);
+    }
+
+    #[test]
+    fn settlement_resource_summaries_and_focus_request_work() {
+        let mut ui = EnvironmentUi::default();
+        assert!(ui.base_resource_summaries().is_empty());
+        assert!(ui.take_focus_base_request().is_none());
+
+        let heights = vec![20; 129 * 129];
+        let collision = vec![0; 128 * 128];
+        ui.generate_settlement(129, Some(&heights), Some((128, &collision)), 0.0, 4.0).unwrap();
+
+        let summaries = ui.base_resource_summaries();
+        assert_eq!(summaries.len(), ui.settlement_players);
+        for s in &summaries {
+            assert!(s.building_count > 0, "must have buildings");
+            assert!(s.wood_count > 0, "must have wood/forest");
+            assert!(s.stone_count > 0, "must have stone quarries");
+            assert!(s.world_x > 0 && s.world_z > 0);
+        }
+
+        ui.focus_base_request = Some((summaries[0].world_x as f32, summaries[0].world_z as f32));
+        assert_eq!(
+            ui.take_focus_base_request(),
+            Some((summaries[0].world_x as f32, summaries[0].world_z as f32))
+        );
+        assert!(ui.take_focus_base_request().is_none(), "take-once");
+    }
+
+    #[test]
+    fn regenerate_settlement_with_new_seed_advances_seed_and_updates_distribution() {
+        let mut ui = EnvironmentUi::default();
+        let initial_seed = ui.settlement_seed;
+        let heights = vec![20; 129 * 129];
+        let collision = vec![0; 128 * 128];
+
+        let new_seed = ui
+            .regenerate_settlement_with_new_seed(129, Some(&heights), Some((128, &collision)), 0.0, 4.0)
+            .unwrap();
+        assert_ne!(new_seed, initial_seed);
+        assert_eq!(ui.settlement_seed, new_seed);
+        assert!(ui.last_distribution.is_some());
+        assert_eq!(ui.base_resource_summaries().len(), ui.settlement_players);
+    }
+
+    #[test]
+    fn settlement_canvas_preview_toggle_and_reset() {
+        let mut ui = EnvironmentUi::default();
+        assert!(ui.show_canvas_preview);
+        ui.show_canvas_preview = false;
+        assert!(!ui.show_canvas_preview);
+
+        let heights = vec![20; 129 * 129];
+        let collision = vec![0; 128 * 128];
+        ui.generate_settlement(129, Some(&heights), Some((128, &collision)), 0.0, 4.0).unwrap();
+        assert!(ui.last_distribution.is_some());
+
+        ui.reset_session();
+        assert!(ui.last_distribution.is_none());
+        assert!(ui.focus_base_request.is_none());
     }
 }
