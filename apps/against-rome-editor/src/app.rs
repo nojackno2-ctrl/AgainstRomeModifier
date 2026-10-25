@@ -487,11 +487,40 @@ impl EditorApp {
         let result = self.save_transaction(confirm_design, commit);
         match result {
             Ok(report) => {
-                self.status_message = format!(
+                let saved_status = format!(
                     "Saved safely in one transaction ({} files, {} cache deletions).",
                     report.written_files.len(),
                     report.deleted_files.len()
                 );
+                if self.design_check.rerun_after_save {
+                    self.run_design_check();
+                    let errors = self.design_check.report.as_ref().map_or(0, |r| r.error_count())
+                        + self.design_check.extra_issues.iter().filter(|i| i.severity == against_rome_maps::diagnostics::MapIssueSeverity::Error).count();
+                    let warnings = self.design_check.report.as_ref().map_or(0, |r| r.warning_count())
+                        + self.design_check.extra_issues.iter().filter(|i| i.severity == against_rome_maps::diagnostics::MapIssueSeverity::Warning).count();
+                    let check_summary = match &self.design_check.report {
+                        Some(rep) if rep.is_clean() && self.design_check.extra_issues.is_empty() => match self.lang() {
+                            AppLanguage::English => " (Design Check: PASS)".to_string(),
+                            _ => "（設計檢查：通過）".to_string(),
+                        },
+                        Some(_) => match self.lang() {
+                            AppLanguage::English => format!(
+                                " (Design Check: {} errors, {} warnings)",
+                                errors,
+                                warnings
+                            ),
+                            _ => format!(
+                                "（設計檢查：{} 個錯誤，{} 個警告）",
+                                errors,
+                                warnings
+                            ),
+                        },
+                        None => String::new(),
+                    };
+                    self.status_message = format!("{saved_status}{check_summary}");
+                } else {
+                    self.status_message = saved_status;
+                }
                 self.status_is_error = false;
             }
             Err(err) => {
@@ -4746,6 +4775,24 @@ mod tests {
         (app, dir, original)
     }
 
+    #[test]
+    fn save_commit_failure_preserves_check_and_success_refreshes_report() {
+        let (mut app, dir, _) = start_camera_app(false);
+        app.design_check.rerun_after_save = true;
+        let previous = crate::design_check_ui::DesignCheckReport::Unavailable("原始報告".into());
+        app.design_check.report = Some(previous.clone());
+        app.safe_save_current_using(|_| Err("注入提交失敗".into()));
+        assert!(app.status_is_error);
+        assert!(app.status_message.contains("注入提交失敗"), "{}", app.status_message);
+        assert_eq!(app.design_check.report, Some(previous));
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(app.design_check.open);
+        assert_eq!(app.design_check.report, Some(app.design_check_report()));
+        let count = app.design_check.report.as_ref().unwrap().warning_count() + app.design_check.extra_issues.len();
+        assert!(app.status_message.contains(&format!("{count} warnings")), "{}", app.status_message);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn start_camera_apply_and_repeat_save_disable_preserve_original_raw_and_pfil() {
         for pfil in [false, true] {

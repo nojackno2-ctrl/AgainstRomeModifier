@@ -1,3 +1,11 @@
+## 2026-10-25 Agy：自主批次 #12 設計檢查 (Design Check) 與驗證體驗三項優化（已驗證）
+- 1. 設計檢查問題依層級篩選與即時統計（design_check_ui.rs:308-320、478-485 原清單未提供篩選，錯誤與警告混雜）：新增 `show_errors` 與 `show_warnings` 狀態（預設皆開啟）及 `DesignCheckUi::filtered_rows`，於設計檢查面板提供「錯誤 (N)」與「警告 (M)」雙語複選切換，即時過濾顯示項目；保留原始項目選取與定位索引；全部隱藏時提供指引提示。
+- 2. 設計檢查報告結構化 Markdown 匯出（design_check_ui.rs:296-305 原僅單行文字，無檔案匯出）：新增 `generate_markdown_report` 與 `EditorApp::export_design_check_report`，支援一鍵將檢查狀態、統計摘要表及各問題詳細座標／事件輸出為 Markdown 檔案。預設產出於 Documents → 編輯器資料目錄上層 → 暫存目錄（如 `<map>.design-check.md`），嚴格禁止寫入地圖資料夾內部，確保遊戲原生目錄純淨。
+- 3. 安全儲存 (Safe Save) 成功後自動重新執行設計檢查（app.rs:488-501、design_check_ui.rs:308-320 原存檔後未刷新檢查狀態）：新增 `rerun_after_save` 勾選設定，於安全儲存交易提交完成後自動觸發 `run_design_check()` 並於狀態列附加檢查摘要（如 `(Design Check: PASS)` / `（設計檢查：通過）`），讓設計者即時確認存檔後的完整驗證狀態。
+- 驗證：執行 cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/agy-target 完成 283 組測試套件，**2,587 passed／0 failed／25 ignored**（exit 0，日誌 re_workspace/agy-batch-12-test.log），編輯器單元測試 745 passed／0 failed／6 ignored（新增 3 項無視窗單元測試均通過）。同步更新 docs/map-editor-user-guide.md。未 stage／commit，遊戲安裝目錄唯讀，AGENTS.md／README.md 既有變更嚴格保留；未手動驗收 GUI。
+
+- 2026-10-26 Codex 審查修正：報告預設位置沿用 packaging_ui 外部匯出政策，拒絕 MAPS／安裝目錄並提供可取消、可注入選檔器；重查移除重複候選建置，儲存摘要包含缺少 DATA 額外警告。原始篩選索引與成功才重查流程已檢視，新增路徑、取消及失敗儲存回歸測試。依序 cargo check／指定 cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target／cargo build 均 exit 0：283 組、2590 passed／0 failed／25 ignored（編輯器 748 passed／6 ignored）；日誌 re_workspace/codex-batch-12-review-{check,test,build}.log；git diff --check 通過，GUI 未手動驗收。未 stage／commit，安裝目錄唯讀。
+
 ## 2026-10-25 Codex：批次 #11（已驗證；GUI 未驗收）
 - 審查 e94ba04：修正高度半格取樣與筆刷 round_ties_even 不一致／非有限座標（app.rs:4388），補原始值 × height_step 世界 Y；吸管拒絕唯讀與進行中筆畫，不提交筆畫或新增歷史（app.rs:4477、textures_ui.rs:1838）。新增雙語 H 取樣整平目標、K 複製游標 X/Z（app.rs:4544、4537），遵守文字焦點與 shortcuts_blocked，取樣不改地圖、繪製沿用復原路徑；指南同步。每幀取樣為常數時間，無新增掃描／磁碟讀取。
 - 依序 cargo check／test／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target（test 加 --no-fail-fast）皆 exit 0；283 組、2584 passed／0 failed／25 ignored，編輯器 742／0／6；install_resource_discovery 環境失敗 0。日誌 re_workspace/codex-batch-11-{check,test,focused,build}.log。首輪 check 缺新增動作 spawn match，已補並重跑；回歸涵蓋 193／257 網格、單位、吸管歷史／唯讀及整平繪製復原重做。未 stage／commit；AGENTS.md／README.md 既有修改保留，遊戲唯讀。

@@ -12,7 +12,7 @@ use against_rome_maps::{
     preflight::find_missing_data_files,
 };
 use eframe::egui::{self, Color32, RichText, ScrollArea};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 /// 重用既有座標、重疊與家族連結檢查；只讀取候選資料。
@@ -304,7 +304,6 @@ pub fn format_issue_row(row: &IssueRow, lang: AppLanguage) -> String {
     line
 }
 
-#[derive(Default)]
 pub struct DesignCheckUi {
     pub open: bool,
     pub report: Option<DesignCheckReport>,
@@ -316,13 +315,167 @@ pub struct DesignCheckUi {
     pub focus_request: Option<(f32, f32)>,
     /// Scenario event index the app should reveal in the scenario panel.
     pub event_request: Option<i32>,
+    /// Whether to show errors in the issue list (default: true).
+    pub show_errors: bool,
+    /// Whether to show warnings in the issue list (default: true).
+    pub show_warnings: bool,
+    /// Whether to automatically re-run Design Check after a successful Safe Save (default: false).
+    pub rerun_after_save: bool,
+    /// 與配置面板相同的可注入選檔器介面。
+    pub report_picker: crate::layout_io::LayoutFilePicker,
 }
 
+impl Default for DesignCheckUi {
+    fn default() -> Self {
+        Self {
+            open: false,
+            report: None,
+            extra_issues: Vec::new(),
+            selected: None,
+            focus_request: None,
+            event_request: None,
+            show_errors: true,
+            show_warnings: true,
+            rerun_after_save: false,
+            report_picker: Box::new(|kind| {
+                let crate::layout_io::LayoutDialogKind::Save { suggested_name } = kind else { return None };
+                rfd::FileDialog::new()
+                    .set_title("Export Design Check / 匯出設計檢查")
+                    .add_filter("Markdown", &["md"])
+                    .set_directory(crate::packaging_ui::default_export_dir())
+                    .set_file_name(suggested_name)
+                    .save_file()
+            }),
+        }
+    }
+}
+
+impl DesignCheckUi {
+    /// Checks whether an issue with the given severity is visible under current filter toggles.
+    pub fn is_severity_visible(&self, severity: MapIssueSeverity) -> bool {
+        match severity {
+            MapIssueSeverity::Error => self.show_errors,
+            MapIssueSeverity::Warning => self.show_warnings,
+        }
+    }
+
+    /// Filters rows according to `show_errors` and `show_warnings`, returning (original_index, &row).
+    pub fn filtered_rows<'a>(&self, rows: &'a [IssueRow]) -> Vec<(usize, &'a IssueRow)> {
+        rows.iter()
+            .enumerate()
+            .filter(|(_, r)| self.is_severity_visible(r.severity))
+            .collect()
+    }
+}
+
+/// Generates a structured Markdown report from a Design Check outcome.
+pub fn generate_markdown_report(
+    report: &DesignCheckReport,
+    extra: &[MapIssue],
+    map_name: &str,
+    lang: AppLanguage,
+) -> String {
+    let rows = report_rows(report, extra, lang);
+    let error_count = rows.iter().filter(|r| r.severity == MapIssueSeverity::Error).count();
+    let warning_count = rows.len() - error_count;
+    let mut out = String::new();
+
+    match lang {
+        AppLanguage::English => {
+            out.push_str(&format!("# Map Design Check Report: {map_name}\n\n"));
+            if rows.is_empty() {
+                out.push_str("- **Status**: PASS (No issues found)\n\n");
+            } else if error_count > 0 {
+                out.push_str(&format!(
+                    "- **Status**: FAILED ({} errors, {} warnings - Safe Save blocked by errors)\n\n",
+                    error_count, warning_count
+                ));
+            } else {
+                out.push_str(&format!(
+                    "- **Status**: WARNINGS (0 errors, {} warnings - Safe Save allowed)\n\n",
+                    warning_count
+                ));
+            }
+            out.push_str("## Summary\n\n");
+            out.push_str("| Severity | Count | Safe Save Impact |\n");
+            out.push_str("|---|---|---|\n");
+            out.push_str(&format!("| Error | {error_count} | Blocks Safe Save |\n"));
+            out.push_str(&format!("| Warning | {warning_count} | Allowed (Guidance/Estimate) |\n\n"));
+
+            if !rows.is_empty() {
+                out.push_str("## Issues List\n\n");
+                for (i, row) in rows.iter().enumerate() {
+                    out.push_str(&format!("### {}. [{}] `{}`\n", i + 1, row.severity_label(lang), row.code));
+                    out.push_str(&format!("- **Description**: {}\n", row.text(lang)));
+                    if let Some((x, z)) = row.focus_tile() {
+                        out.push_str(&format!("- **Tile Coordinates**: ({x:.1}, {z:.1})\n"));
+                    }
+                    if let Some((wx, wz)) = row.focus_world() {
+                        out.push_str(&format!("- **World Coordinates**: ({wx:.1}, {wz:.1})\n"));
+                    }
+                    if row.event_index >= 0 {
+                        out.push_str(&format!("- **Scenario Event**: #{}\n", row.event_index));
+                    }
+                    out.push('\n');
+                }
+            }
+        }
+        _ => {
+            out.push_str(&format!("# 地圖設計檢查報告：{map_name}\n\n"));
+            if rows.is_empty() {
+                out.push_str("- **狀態**：通過 (PASS，未發現設計問題)\n\n");
+            } else if error_count > 0 {
+                out.push_str(&format!(
+                    "- **狀態**：未通過 ({} 個錯誤，{} 個警告 - 錯誤會阻擋安全儲存)\n\n",
+                    error_count, warning_count
+                ));
+            } else {
+                out.push_str(&format!(
+                    "- **狀態**：警告 (0 個錯誤，{} 個警告 - 允許安全儲存)\n\n",
+                    warning_count
+                ));
+            }
+            out.push_str("## 統計摘要\n\n");
+            out.push_str("| 問題層級 | 數量 | 安全儲存影響 |\n");
+            out.push_str("|---|---|---|\n");
+            out.push_str(&format!("| 錯誤 (Error) | {error_count} | 阻擋儲存 (Blocks Save) |\n"));
+            out.push_str(&format!("| 警告 (Warning) | {warning_count} | 允許儲存（建議或估計） |\n\n"));
+
+            if !rows.is_empty() {
+                out.push_str("## 問題清單\n\n");
+                for (i, row) in rows.iter().enumerate() {
+                    out.push_str(&format!("### {}. [{}] `{}`\n", i + 1, row.severity_label(lang), row.code));
+                    out.push_str(&format!("- **說明**：{}\n", row.text(lang)));
+                    if let Some((x, z)) = row.focus_tile() {
+                        out.push_str(&format!("- **圖塊座標**：（{x:.1}, {z:.1}）\n"));
+                    }
+                    if let Some((wx, wz)) = row.focus_world() {
+                        out.push_str(&format!("- **世界座標**：（{wx:.1}, {wz:.1}）\n"));
+                    }
+                    if row.event_index >= 0 {
+                        out.push_str(&format!("- **劇本事件**：第 {} 項\n", row.event_index));
+                    }
+                    out.push('\n');
+                }
+            }
+        }
+    }
+    out
+}
+
+/// 沿用打包面板的外部匯出位置，避免寫入 MAPS 或來源地圖。
+pub fn default_report_path(map_path: &Path) -> PathBuf {
+    crate::packaging_ui::default_export_zip_path(map_path).with_extension("design-check.md")
+}
 impl EditorApp {
     /// Evaluate the current effective state without side effects and show the result.
     pub fn run_design_check(&mut self) {
         let report = self.design_check_report();
-        let (path, _) = self.check_candidate_inputs().unwrap_or_default();
+        let path = if self.map_path_input.trim().is_empty() {
+            self.loaded_map_path.clone().unwrap_or_default()
+        } else {
+            PathBuf::from(self.map_path_input.trim())
+        };
         self.design_check.extra_issues = missing_data_files_issue(&path).into_iter().collect();
         self.design_check.report = Some(report);
         self.design_check.selected = None;
@@ -414,6 +567,74 @@ impl EditorApp {
         Ok(count)
     }
 
+    /// Pure generation of the current Design Check report as a Markdown document.
+    pub fn export_design_check_markdown(&self) -> String {
+        let report = match &self.design_check.report {
+            Some(r) => r.clone(),
+            None => self.design_check_report(),
+        };
+        let map_name = self
+            .loaded_map_path
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("untitled");
+        generate_markdown_report(&report, &self.design_check.extra_issues, map_name, self.lang())
+    }
+
+    /// Exports the Design Check report to an external Markdown file outside the map directory.
+    pub fn export_design_check_report(&mut self, target_path: Option<&Path>) -> Result<PathBuf, String> {
+        let markdown = self.export_design_check_markdown();
+        let path = if let Some(p) = target_path {
+            p.to_path_buf()
+        } else if let Some(map_dir) = &self.loaded_map_path {
+            default_report_path(map_dir)
+        } else {
+            return Err(tr(
+                self.lang(),
+                "No map loaded and no export path specified.",
+                "尚未載入地圖且未指定匯出路徑。",
+            )
+            .to_string());
+        };
+
+        {
+            if crate::packaging_ui::is_game_maps_dir(&path) || self.loaded_map_path.as_ref().is_some_and(|map_dir| path.starts_with(map_dir)) {
+                return Err(tr(
+                    self.lang(),
+                    "Export target cannot be inside the game map directory.",
+                    "匯出目標不可位於遊戲地圖目錄內部。",
+                )
+                .to_string());
+            }
+        }
+
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+            }
+        }
+
+        std::fs::write(&path, markdown.as_bytes()).map_err(|e| format!("{}: {e}", path.display()))?;
+        self.status_message = match self.lang() {
+            AppLanguage::English => format!("Design Check report exported to {}", path.display()),
+            _ => format!("設計檢查報告已匯出至 {}", path.display()),
+        };
+        self.status_is_error = false;
+        Ok(path)
+    }
+
+    /// 取消選檔時不寫入，也不改變狀態訊息。
+    pub fn browse_design_check_report(&mut self) -> Result<Option<PathBuf>, String> {
+        let default = default_report_path(self.loaded_map_path.as_deref().unwrap_or(Path::new("untitled")));
+        let kind = crate::layout_io::LayoutDialogKind::Save {
+            suggested_name: default.file_name().unwrap_or_default().to_string_lossy().into_owned(),
+        };
+        let Some(path) = (self.design_check.report_picker)(&kind) else { return Ok(None) };
+        self.export_design_check_report(Some(&path)).map(Some)
+    }
+
     pub fn show_design_check(&mut self, ctx: &egui::Context) {
         if !self.design_check.open {
             return;
@@ -421,6 +642,7 @@ impl EditorApp {
         let lang = self.lang();
         let mut open = true;
         let mut rerun = false;
+        let mut export_report = false;
         let mut fix_hostility = false;
         let mut fix_destination = false;
         let mut locate: Option<usize> = None;
@@ -436,6 +658,17 @@ impl EditorApp {
                 ui.horizontal_wrapped(|ui| {
                     if ui.button(tr(lang, "Re-run check", "重新檢查")).clicked() {
                         rerun = true;
+                    }
+                    if ui
+                        .button(tr(lang, "Export report", "匯出報告"))
+                        .on_hover_text(tr(
+                            lang,
+                            "Export this report as a Markdown file outside the map directory",
+                            "將此檢查報告匯出為地圖目錄外的 Markdown 檔案",
+                        ))
+                        .clicked()
+                    {
+                        export_report = true;
                     }
                     if rows.iter().any(|r| r.code == "wave-not-hostile")
                         && ui
@@ -459,11 +692,22 @@ impl EditorApp {
                         locate = selected;
                     }
                 });
-                ui.label(tr(
-                    lang,
-                    "Checks the current in-memory state. Quick fixes can be undone; Save to write changes.",
-                    "檢查目前記憶體中的狀態。一鍵修正可復原；變更後請存檔。",
-                ));
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(tr(
+                        lang,
+                        "Checks the current in-memory state. Quick fixes can be undone; Save to write changes.",
+                        "檢查目前記憶體中的狀態。一鍵修正可復原；變更後請存檔。",
+                    ));
+                    ui.checkbox(
+                        &mut self.design_check.rerun_after_save,
+                        tr(lang, "Auto re-run after save", "儲存後自動重新檢查"),
+                    )
+                    .on_hover_text(tr(
+                        lang,
+                        "Automatically re-evaluates map design check right after a successful save",
+                        "在成功完成安全儲存後自動重新執行設計檢查",
+                    ));
+                });
                 ui.separator();
                 match &self.design_check.report {
                     None => {
@@ -476,35 +720,58 @@ impl EditorApp {
                                 tr(lang, "PASS: no design issues found.", "通過：未發現設計問題。"),
                             );
                         } else {
+                            let error_count = rows.iter().filter(|r| r.severity == MapIssueSeverity::Error).count();
+                            let warning_count = rows.len() - error_count;
                             ui.label(issue_summary(&rows, lang));
-                            ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
-                                for (index, row) in rows.iter().enumerate() {
-                                    let color = match row.severity {
-                                        MapIssueSeverity::Error => Color32::from_rgb(220, 70, 70),
-                                        MapIssueSeverity::Warning => Color32::from_rgb(220, 170, 40),
-                                    };
-                                    let text = RichText::new(format!(
-                                        "[{}] {}: {}",
-                                        row.severity_label(lang),
-                                        row.code,
-                                        row.text(lang)
-                                    ))
-                                    .color(color);
-                                    ui.horizontal(|ui| {
-                                        if issue_go_to(ui, row, lang).is_some_and(|r| r.clicked()) {
-                                            selected = Some(index);
-                                            locate = Some(index);
-                                        }
-                                        let response = ui.selectable_label(selected == Some(index), text);
-                                        if response.clicked() {
-                                            selected = Some(index);
-                                        }
-                                        if response.double_clicked() {
-                                            locate = Some(index);
-                                        }
-                                    });
-                                }
+                            ui.horizontal(|ui| {
+                                ui.label(tr(lang, "Filter:", "篩選："));
+                                let err_label = match lang {
+                                    AppLanguage::English => format!("Errors ({error_count})"),
+                                    _ => format!("錯誤 ({error_count})"),
+                                };
+                                ui.checkbox(&mut self.design_check.show_errors, err_label);
+                                let warn_label = match lang {
+                                    AppLanguage::English => format!("Warnings ({warning_count})"),
+                                    _ => format!("警告 ({warning_count})"),
+                                };
+                                ui.checkbox(&mut self.design_check.show_warnings, warn_label);
                             });
+                            let filtered = self.design_check.filtered_rows(&rows);
+                            if filtered.is_empty() && !rows.is_empty() {
+                                ui.colored_label(
+                                    Color32::from_rgb(180, 180, 180),
+                                    tr(lang, "All issues hidden by severity filters.", "所有問題已依層級篩選隱藏。"),
+                                );
+                            } else {
+                                ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                                    for (index, row) in filtered {
+                                        let color = match row.severity {
+                                            MapIssueSeverity::Error => Color32::from_rgb(220, 70, 70),
+                                            MapIssueSeverity::Warning => Color32::from_rgb(220, 170, 40),
+                                        };
+                                        let text = RichText::new(format!(
+                                            "[{}] {}: {}",
+                                            row.severity_label(lang),
+                                            row.code,
+                                            row.text(lang)
+                                        ))
+                                        .color(color);
+                                        ui.horizontal(|ui| {
+                                            if issue_go_to(ui, row, lang).is_some_and(|r| r.clicked()) {
+                                                selected = Some(index);
+                                                locate = Some(index);
+                                            }
+                                            let response = ui.selectable_label(selected == Some(index), text);
+                                            if response.clicked() {
+                                                selected = Some(index);
+                                            }
+                                            if response.double_clicked() {
+                                                locate = Some(index);
+                                            }
+                                        });
+                                    }
+                                });
+                            }
                             if let Some(row) = selected.and_then(|i| rows.get(i)) {
                                 ui.separator();
                                 ui.label(row.text(lang));
@@ -524,6 +791,12 @@ impl EditorApp {
             }
         }
         self.design_check.open = open;
+        if export_report {
+            if let Err(e) = self.browse_design_check_report() {
+                self.status_message = e;
+                self.status_is_error = true;
+            }
+        }
         if fix_hostility {
             match self.fix_hostile_waves() {
                 Ok(n) => {
@@ -563,6 +836,35 @@ impl EditorApp {
 mod tests {
     use super::*;
 
+    #[test]
+    fn report_picker_cancel_and_maps_rejection() {
+        let mut app = EditorApp::default();
+        app.design_check.report_picker = Box::new(|_| None);
+        let before = app.status_message.clone();
+        assert_eq!(app.browse_design_check_report().unwrap(), None);
+        assert_eq!(app.status_message, before);
+        let target = PathBuf::from("C:/Games/Against Rome/MAPS/report.md");
+        app.design_check.report_picker = Box::new(move |_| Some(target.clone()));
+        assert!(app.browse_design_check_report().is_err());
+        let map = Path::new("D:/CustomMaps/Example");
+        let path = default_report_path(map);
+        assert!(!path.starts_with(map));
+        assert!(!crate::packaging_ui::is_game_maps_dir(&path));
+    }
+
+    #[test]
+    fn failed_save_does_not_refresh_design_check() {
+        let mut app = EditorApp::default();
+        app.design_check.rerun_after_save = true;
+        let previous = DesignCheckReport::Unavailable("保留先前報告".into());
+        app.design_check.report = Some(previous.clone());
+        app.design_check.selected = Some(2);
+        app.safe_save_current();
+        assert!(app.status_is_error);
+        assert_eq!(app.design_check.report, Some(previous));
+        assert_eq!(app.design_check.selected, Some(2));
+        assert!(!app.design_check.open);
+    }
     #[test]
     fn go_to_button_handles_clicks_and_invalid_coordinates() {
         let ctx = egui::Context::default();
@@ -672,5 +974,128 @@ mod tests {
         assert!(clean.is_clean());
         assert!(!DesignCheckReport::Unavailable("x".into()).is_clean());
         assert_eq!(DesignCheckReport::Unavailable("x".into()).error_count(), 1);
+    }
+
+    #[test]
+    fn filter_toggles_by_severity_and_summary_counts() {
+        let mut ui = DesignCheckUi::default();
+        assert!(ui.show_errors);
+        assert!(ui.show_warnings);
+        assert!(!ui.rerun_after_save);
+
+        let rows = vec![
+            IssueRow::from(&map_issue(MapIssueSeverity::Error, "err_1", Some(100.0), Some(200.0))),
+            IssueRow::from(&map_issue(MapIssueSeverity::Warning, "warn_1", None, None)),
+            IssueRow::from(&map_issue(MapIssueSeverity::Warning, "warn_2", Some(300.0), Some(400.0))),
+        ];
+
+        let all = ui.filtered_rows(&rows);
+        assert_eq!(all.len(), 3);
+        assert_eq!(all[0].0, 0);
+        assert_eq!(all[1].0, 1);
+        assert_eq!(all[2].0, 2);
+
+        ui.show_warnings = false;
+        let only_errors = ui.filtered_rows(&rows);
+        assert_eq!(only_errors.len(), 1);
+        assert_eq!(only_errors[0].0, 0);
+        assert_eq!(only_errors[0].1.code, "err_1");
+
+        ui.show_errors = false;
+        ui.show_warnings = true;
+        let only_warnings = ui.filtered_rows(&rows);
+        assert_eq!(only_warnings.len(), 2);
+        assert_eq!(only_warnings[0].0, 1);
+        assert_eq!(only_warnings[0].1.code, "warn_1");
+        assert_eq!(only_warnings[1].0, 2);
+        assert_eq!(only_warnings[1].1.code, "warn_2");
+        assert_eq!(rows[only_warnings[1].0].focus_world(), Some((300.0, 400.0)));
+
+        ui.show_warnings = false;
+        assert!(ui.filtered_rows(&rows).is_empty());
+    }
+
+    #[test]
+    fn export_report_markdown_and_external_path() {
+        let report = DesignCheckReport::Checked {
+            map_issues: vec![
+                map_issue(MapIssueSeverity::Error, "blocked_spawn", Some(512.0), Some(768.0)),
+                map_issue(MapIssueSeverity::Warning, "water_contact", None, None),
+            ],
+            preflight_error: None,
+            design_issues: vec![],
+        };
+
+        let md_en = generate_markdown_report(&report, &[], "TEST_MAP", AppLanguage::English);
+        assert!(md_en.contains("# Map Design Check Report: TEST_MAP"));
+        assert!(md_en.contains("FAILED (1 errors, 1 warnings"));
+        assert!(md_en.contains("| Error | 1 | Blocks Safe Save |"));
+        assert!(md_en.contains("### 1. [Error] `blocked_spawn`"));
+        assert!(md_en.contains("- **Tile Coordinates**: (2.0, 3.0)"));
+
+        let md_zh = generate_markdown_report(&report, &[], "TEST_MAP", AppLanguage::TraditionalChinese);
+        assert!(md_zh.contains("# 地圖設計檢查報告：TEST_MAP"));
+        assert!(md_zh.contains("未通過 (1 個錯誤，1 個警告"));
+        assert!(md_zh.contains("| 錯誤 (Error) | 1 | 阻擋儲存 (Blocks Save) |"));
+        assert!(md_zh.contains("### 1. [錯誤] `blocked_spawn`"));
+        assert!(md_zh.contains("- **圖塊座標**：（2.0, 3.0）"));
+
+        let clean = DesignCheckReport::Checked {
+            map_issues: vec![],
+            preflight_error: None,
+            design_issues: vec![],
+        };
+        let md_clean = generate_markdown_report(&clean, &[], "CLEAN_MAP", AppLanguage::English);
+        assert!(md_clean.contains("PASS (No issues found)"));
+
+        let map_dir = Path::new("C:/Games/Against Rome/MAPS/ENDL_005");
+        let export_path = default_report_path(map_dir);
+        assert_eq!(export_path.file_name().unwrap(), "ENDL_005.design-check.md");
+        assert!(!crate::packaging_ui::is_game_maps_dir(&export_path));
+        assert!(!export_path.starts_with(map_dir), "never inside the map folder");
+
+        let mut app = EditorApp::default();
+        let temp_map = std::env::temp_dir().join(format!("arm_map_test_{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_map).unwrap();
+        app.loaded_map_path = Some(temp_map.clone());
+
+        let inside = temp_map.join("report.md");
+        let err = app.export_design_check_report(Some(&inside)).unwrap_err();
+        assert!(
+            err.contains("Export target cannot be inside the game map directory")
+                || err.contains("匯出目標不可位於遊戲地圖目錄內部")
+        );
+
+        let outside = std::env::temp_dir().join(format!("arm_report_outside_{}.md", Uuid::new_v4()));
+        let written = app.export_design_check_report(Some(&outside)).unwrap();
+        assert_eq!(written, outside);
+        assert!(outside.is_file());
+        let text = std::fs::read_to_string(&outside).unwrap();
+        assert!(text.contains("# "));
+        let _ = std::fs::remove_file(outside);
+        let _ = std::fs::remove_dir_all(temp_map);
+    }
+
+    #[test]
+    fn rerun_design_check_after_safe_save() {
+        let temp_dir = std::env::temp_dir().join(format!("arm_safe_save_rerun_{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        std::fs::write(temp_dir.join(".arm_custom_map"), b"{}").unwrap();
+
+        let mut app = EditorApp::default();
+        let session = crate::TerrainSession::create_blank(5, 32);
+        app.set_loaded_map(temp_dir.clone(), session).unwrap();
+
+        assert!(!app.design_check.rerun_after_save);
+        app.safe_save_current();
+        assert!(app.status_message.starts_with("Saved safely in one transaction"));
+        assert!(!app.status_message.contains("Design Check:"));
+
+        app.design_check.rerun_after_save = true;
+        app.safe_save_current();
+        assert!(app.design_check.report.is_some());
+        assert!(app.status_message.contains("Design Check:"));
+
+        let _ = std::fs::remove_dir_all(temp_dir);
     }
 }
