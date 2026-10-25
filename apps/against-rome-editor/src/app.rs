@@ -1551,6 +1551,7 @@ impl EditorApp {
             self.open_skirmish_wizard();
         }
         self.environment.english = self.lang() == AppLanguage::English;
+        self.environment.regeneration_blocked = self.shortcuts_blocked() || ctx.wants_keyboard_input();
         self.environment.show(
             ctx,
             dim,
@@ -4459,7 +4460,10 @@ impl EditorApp {
                 NatureOperation::Remove => tr(lang, "Nature (Remove)", "自然 (清除)"),
             };
             let radius_label = tr(lang, "Radius", "半徑");
-            return format!("{tool_prefix}: {op_str} ({radius_label}: {})", self.nature.brush_size);
+            let density = if self.nature.operation == NatureOperation::Plant {
+                format!(" | {}", self.nature_density_readout_text(lang))
+            } else { String::new() };
+            return format!("{tool_prefix}: {op_str} ({radius_label}: {}){density}", self.nature.brush_size);
         }
 
         match self.active_tool {
@@ -11130,6 +11134,13 @@ angle=0.00
         let mut app = EditorApp::default();
         let initial_seed = app.environment.settlement_seed;
 
+        for (ctrl, alt) in [(true, false), (false, true)] {
+            assert_eq!(shortcut_action(egui::Key::R, ctrl, false, alt, false), Some(ShortcutAction::RegenerateSettlement));
+            assert_eq!(shortcut_action(egui::Key::R, ctrl, false, alt, true), None);
+            assert_eq!(shortcut_action(egui::Key::R, ctrl, true, alt, false), None);
+        }
+        assert_eq!(shortcut_action(egui::Key::R, true, false, true, false), None);
+
         // Blocked when shortcuts_blocked() is active
         app.pending_action = Some(PendingAction::Blank(129));
         assert!(app.regenerate_settlement().is_err());
@@ -11170,11 +11181,16 @@ angle=0.00
     #[test]
     fn nature_density_readout_text_bilingual() {
         let mut app = EditorApp::default();
+        app.nature.enabled = true;
         app.nature.density = NatureDensity::Dense;
         let text_en = app.nature_density_readout_text(AppLanguage::English);
         assert!(text_en.contains("Dense"));
         let text_zh = app.nature_density_readout_text(AppLanguage::TraditionalChinese);
         assert!(text_zh.contains("茂密"));
+        assert!(app.active_tool_status_text(AppLanguage::English).contains("Dense"));
+        assert!(app.active_tool_status_text(AppLanguage::TraditionalChinese).contains("茂密"));
+        app.nature.operation = NatureOperation::Remove;
+        assert!(!app.active_tool_status_text(AppLanguage::English).contains("Density"));
     }
 
     #[test]
@@ -11217,7 +11233,7 @@ impl EditorApp {
 
     /// 對話框及事件圖開啟期間不讓全域快捷鍵穿透至地圖。
     fn shortcuts_blocked(&self) -> bool {
-        self.pending_action.is_some() || self.pending_save_warnings.is_some()
+        self.pending_action.is_some() || self.pending_save_warnings.is_some() || self.environment.has_modal()
             || self.terrain_confirm.is_some() || self.recovery.offer.is_some()
             || self.skirmish_wizard.open || self.event_graph.open || self.event_graph.pending_close
     }
@@ -12336,6 +12352,7 @@ impl EditorApp {
         self.refresh_placement_type_names();
         self.placement.settlement_history_routing = !self.settlement_undo.is_empty() || !self.settlement_redo.is_empty();
         self.placement.settlement_history_available = (!self.settlement_undo.is_empty(), !self.settlement_redo.is_empty());
+        self.placement.selection_tools_blocked = self.shortcuts_blocked() || ctx.wants_keyboard_input();
         self.placement.show(ctx);
         // Opening the Scenario, Spawns, or Balance Summary panel loads the open map's script on demand (once per
         // map, never over pending edits); otherwise added events or objects could not be

@@ -37,8 +37,8 @@ fn status_bar_active_tool_and_brush_size_bilingual() {
     app.nature.enabled = true;
     app.nature.operation = NatureOperation::Plant;
     app.nature.brush_size = 3;
-    assert_eq!(app.active_tool_status_text(AppLanguage::English), "Tool: Nature (Plant) (Radius: 3)");
-    assert_eq!(app.active_tool_status_text(AppLanguage::TraditionalChinese), "工具: 自然 (種植) (半徑: 3)");
+    assert_eq!(app.active_tool_status_text(AppLanguage::English), "Tool: Nature (Plant) (Radius: 3) | Density: Normal");
+    assert_eq!(app.active_tool_status_text(AppLanguage::TraditionalChinese), "工具: 自然 (種植) (半徑: 3) | 密度: 一般");
 
     app.nature.operation = NatureOperation::Remove;
     app.nature.brush_size = 7;

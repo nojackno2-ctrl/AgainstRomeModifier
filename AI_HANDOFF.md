@@ -1,3 +1,7 @@
+## 2026-10-26 Codex：批次 #16（編輯器通過；四項既有環境失敗）
+- 審查 3c5a615：修正資源數量、重生失敗保留種子碼、環境確認視窗／文字輸入阻擋及密度讀數未接介面；預覽只讀、離屏略過，Ctrl+R 無既有衝突，重生保留已套用聚落與復原。新增雙語 DATA 反向選取／同隊伍選取（保留資料、dirty 與歷史），指南及四項新增回歸同步。
+- 依序 cargo check／test／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target（test 加 --no-fail-fast）：check／build exit 0；test exit 101，283 組、2609 passed／4 failed／25 ignored，編輯器 771／0／6。僅 install_resource_discovery.rs:55／111／128／162 為提權環境資源污染。日誌 re_workspace/codex-batch-16-{check,test,build}.log；先前日誌占用、re_workspace/Against_Rome.exe 暫存祖先污染及舊密度斷言已處理，最終 TEMP／TMP 位於工作區 target；中間紀錄保留 test-first／test-polluted.log。git diff --check 通過，GUI 未手動驗收；遊戲唯讀，未 stage／commit，AGENTS.md／README.md 既有變更保留。
+
 ## 2026-10-26 Agy：自主批次 #15 聚落生成 2D 畫布預覽、各基地資源分配明細與聚焦、隨機種子碼重抽快捷鍵（已驗證）
 - 1. 聚落生成結果 2D 畫布即時非破壞性預覽（environment_ui.rs:888-903 原生成後無 2D 預覽、需盲按 Apply，app.rs:11829-11842 畫布覆蓋層缺聚落預覽）：新增 `show_canvas_preview` 切換狀態與 `paint_canvas_preview`，利用 `scenario_canvas::screen_from_world` 依隊伍色於 2D 畫布繪製主城雙環錨點、建築佔地方塊、林區木材、採石場露頭與野生動物點位，支援一鍵核取切換，未提交前絕不改動地圖物件。
 - 2. 各勢力基地資源分配明細表與視角聚焦（environment_ui.rs:1261-1287 原僅顯示全域平均與變異數、缺乏個別基地數據，native/.../models.rs:106-114 既有各勢力資源）：新增 `BaseResourceSummary` 與 `base_resource_summaries()`，於聚落分頁呈現結構化雙語表格（基地編號、隊伍、部族風格、座標、建築數、木材、石材、食物），並新增「聚焦」(Focus) 操作按鈕，連動 `focus_world_coordinates` 一鍵將 2D/3D 視角置中對齊選定基地。

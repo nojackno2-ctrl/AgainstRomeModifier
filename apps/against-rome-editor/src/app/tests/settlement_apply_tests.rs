@@ -88,6 +88,40 @@ fn apply(app: &mut EditorApp) {
 }
 
 #[test]
+fn preview_and_regenerate_preserve_applied_objects_nature_and_undo() {
+    let (mut app, root, _) = fixture("batch16_preview", true, 384);
+    let ctx = egui::Context::default();
+    let before = app.placement.objects();
+    let pending = app.nature.session.capture();
+    let dirty = (app.placement.is_dirty(), app.nature_is_dirty(), app.environment.is_dirty());
+    let _ = ctx.run(egui::RawInput::default(), |ctx| {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            app.environment.paint_canvas_preview(ui.painter(), ui.max_rect(), false);
+        });
+    });
+    assert_eq!(app.placement.objects(), before);
+    assert_eq!(app.nature.session.capture(), pending);
+    assert_eq!((app.placement.is_dirty(), app.nature_is_dirty(), app.environment.is_dirty()), dirty);
+    apply(&mut app);
+    let objects = app.placement.objects();
+    let nature = app.nature.session.capture();
+    let depth = app.settlement_undo.len();
+    app.environment.pending_discard = true;
+    let seed = app.environment.settlement_seed;
+    app.handle_shortcut_action(ShortcutAction::RegenerateSettlement);
+    assert_eq!(app.environment.settlement_seed, seed);
+    app.environment.pending_discard = false;
+    app.regenerate_settlement().unwrap();
+    assert_eq!(app.placement.objects(), objects);
+    assert_eq!(app.nature.session.capture(), nature);
+    assert_eq!(app.settlement_undo.len(), depth);
+    app.perform_undo();
+    assert_eq!(app.placement.objects(), before);
+    assert_eq!(app.nature.session.capture(), pending);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn current_session_generate_apply_single_undo_redo_safe_save_reload() {
     for include in [true, false] {
         let (mut app, root, map) = fixture("settlement_roundtrip", include, 384);

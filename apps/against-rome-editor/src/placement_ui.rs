@@ -191,6 +191,7 @@ pub(crate) struct PlacementState {
 
 pub struct PlacementUi {
     pub open: bool,
+    pub(crate) selection_tools_blocked: bool,
     map_input: String,
     loaded_map: Option<PathBuf>,
     store: Option<ObjectStore>,
@@ -245,6 +246,7 @@ impl Default for PlacementUi {
     fn default() -> Self {
         Self {
             open: false,
+            selection_tools_blocked: false,
             map_input: String::new(),
             loaded_map: None,
             store: None,
@@ -943,6 +945,30 @@ impl PlacementUi {
             .map(|o| (o.slot, o.uid)).collect();
         self.select_objects(&matching);
         matching.len()
+    }
+
+    /// 反向選取全地圖 DATA 物件；不修改物件或復原歷史。
+    pub fn invert_selection(&mut self) -> usize {
+        if self.pending.is_some() || self.selection_tools_blocked { return 0; }
+        let selected: std::collections::HashSet<_> = self.selected_objects().into_iter().collect();
+        let keys: Vec<_> = self.objects().iter().map(|o| (o.slot, o.uid))
+            .filter(|k| !selected.contains(k)).collect();
+        self.select_objects(&keys);
+        keys.len()
+    }
+
+    /// 選取目前所選隊伍的所有 DATA 物件，包含子物件與中立隊伍。
+    pub fn select_same_teams(&mut self) -> usize {
+        if self.pending.is_some() || self.selection_tools_blocked { return 0; }
+        let objects = self.objects();
+        let selected: std::collections::HashSet<_> = self.selected_objects().into_iter().collect();
+        let teams: std::collections::HashSet<_> = objects.iter()
+            .filter(|o| selected.contains(&(o.slot, o.uid))).map(|o| o.team).collect();
+        if teams.is_empty() { return 0; }
+        let keys: Vec<_> = objects.iter().filter(|o| teams.contains(&o.team))
+            .map(|o| (o.slot, o.uid)).collect();
+        self.select_objects(&keys);
+        keys.len()
     }
 
     /// 僅在單選時提供座標，避免多選時誤複製最後選取的物件。
@@ -1663,6 +1689,15 @@ impl PlacementUi {
                 }
             });
             self.tile_bounds_form(ui);
+            ui.horizontal(|ui| {
+                if ui.add_enabled(self.pending.is_none() && !self.selection_tools_blocked, egui::Button::new("反向選取 / Invert selection")).clicked() {
+                    self.invert_selection();
+                }
+                if ui.add_enabled(self.pending.is_none() && !self.selection_tools_blocked && !self.selected_objects().is_empty(), egui::Button::new("選取同隊伍 / Select same teams")).clicked() {
+                    self.select_same_teams();
+                }
+                ui.small("全地圖，包含隱藏項目 / Whole map, including filtered objects");
+            });
             let objects = self.visible(self.store.as_ref().map(ObjectStore::objects).unwrap_or_default());
             let selected_count = self.selected_families().len();
             if selected_count > 1 {
@@ -3178,6 +3213,41 @@ mod tests {
         assert_eq!(ui.selected_object(), Some((1, 2)));
         ui.select_object(Some((1, 77)));
         assert_eq!(ui.selected_object(), None);
+    }
+
+    #[test]
+    fn selection_tools_preserve_data_and_history_and_respect_confirmation() {
+        let temp = Temp::new();
+        fixture(&temp.0);
+        let mut ui = PlacementUi::default();
+        ui.load_now(&temp.0.display().to_string()).unwrap();
+        let objects = ui.objects();
+        let dirty = ui.is_dirty();
+        let history = (ui.undo_depth(), ui.redo_depth());
+        ui.filter = "no matching objects".into();
+        ui.select_object(Some((1, 2)));
+        let expected: Vec<_> = objects.iter().filter(|o| o.team == objects.iter().find(|o| (o.slot, o.uid) == (1, 2)).unwrap().team)
+            .map(|o| (o.slot, o.uid)).collect();
+        assert_eq!(ui.select_same_teams(), expected.len());
+        assert_eq!(ui.selected_objects(), expected);
+        ui.invert_selection();
+        assert!(ui.selected_objects().iter().all(|k| !expected.contains(k)));
+        ui.invert_selection();
+        assert_eq!(ui.selected_objects(), expected);
+        ui.clear_selection();
+        assert_eq!(ui.select_same_teams(), 0);
+        assert_eq!(ui.invert_selection(), objects.len());
+        assert_eq!(ui.invert_selection(), 0);
+        ui.selection_tools_blocked = true;
+        assert_eq!(ui.invert_selection(), 0);
+        ui.selection_tools_blocked = false;
+        ui.pending = Some(Pending::Close);
+        assert_eq!(ui.invert_selection(), 0);
+        assert_eq!(ui.select_same_teams(), 0);
+        assert!(ui.selected_objects().is_empty());
+        assert_eq!(ui.objects(), objects);
+        assert_eq!(ui.is_dirty(), dirty);
+        assert_eq!((ui.undo_depth(), ui.redo_depth()), history);
     }
 
     #[test]

@@ -209,6 +209,7 @@ pub struct EnvironmentUi {
     pub last_placement_preset: Option<MapLayoutPreset>,
     pub last_nature_preset: Option<MapLayoutPreset>,
     pub show_canvas_preview: bool,
+    pub regeneration_blocked: bool,
     pub focus_base_request: Option<(f32, f32)>,
 
     // Dirty / guards
@@ -272,6 +273,7 @@ impl Default for EnvironmentUi {
             last_placement_preset: None,
             last_nature_preset: None,
             show_canvas_preview: true,
+            regeneration_blocked: false,
             focus_base_request: None,
             apply_requested: None,
             lair_events_apply_requested: false,
@@ -932,11 +934,7 @@ impl EnvironmentUi {
             .map(|(i, p)| {
                 let wx = p.site_evaluation.world_x.round() as i32;
                 let wz = p.site_evaluation.world_z.round() as i32;
-                let food_count = p
-                    .wildlife_and_food
-                    .iter()
-                    .map(|w| (w.count.max(1)) as usize)
-                    .sum::<usize>();
+                let food_count = p.wildlife_and_food.len();
                 BaseResourceSummary {
                     base_index: i + 1,
                     team: p.team_index,
@@ -944,8 +942,8 @@ impl EnvironmentUi {
                     world_x: wx,
                     world_z: wz,
                     building_count: p.buildings.len(),
-                    wood_count: p.forest_trees.len(),
-                    stone_count: p.stone_quarries.len(),
+                    wood_count: if self.settlement_include_nature { p.forest_trees.len() } else { 0 },
+                    stone_count: if self.settlement_include_nature { p.stone_quarries.len() } else { 0 },
                     food_count,
                 }
             })
@@ -957,6 +955,10 @@ impl EnvironmentUi {
         self.focus_base_request.take()
     }
 
+    pub fn has_modal(&self) -> bool {
+        self.pending_discard || self.pending_clear_lairs
+    }
+
     /// Advances the settlement seed randomly and immediately generates a new settlement layout.
     pub fn regenerate_settlement_with_new_seed(
         &mut self,
@@ -966,19 +968,27 @@ impl EnvironmentUi {
         water_level: f32,
         height_step: f32,
     ) -> Result<i32, String> {
+        if self.regeneration_blocked || self.has_modal() {
+            return Err(tl(self.english, "請先關閉對話框或結束文字輸入。", "Close dialogs or finish text input first.").into());
+        }
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(1, |d| d.subsec_nanos());
         let new_seed = ((self.settlement_seed as u32).wrapping_mul(1103515245).wrapping_add(12345 ^ nanos) % 99_999) as i32 + 1;
+        let new_seed = if new_seed == self.settlement_seed { new_seed % 99_999 + 1 } else { new_seed };
+        let previous_seed = self.settlement_seed;
         self.settlement_seed = new_seed;
-        self.generate_settlement(dimension, heights, collision, water_level, height_step)?;
+        if let Err(error) = self.generate_settlement(dimension, heights, collision, water_level, height_step) {
+            self.settlement_seed = previous_seed;
+            return Err(error);
+        }
         Ok(new_seed)
     }
 
     /// Renders a non-destructive 2D canvas overlay of the pending settlement distribution
     /// (town centers, buildings, wood/stone resources, and wildlife) before "Apply" commits them.
     pub fn paint_canvas_preview(&self, painter: &egui::Painter, rect: Rect, english: bool) {
-        if !self.show_canvas_preview {
+        if !self.show_canvas_preview || !painter.clip_rect().intersects(rect) {
             return;
         }
         let Some(dist) = &self.last_distribution else {
@@ -1072,6 +1082,7 @@ impl EnvironmentUi {
             .open(&mut is_open)
             .min_size(Vec2::new(740.0, 540.0))
             .show(ctx, |ui| {
+                ui.set_enabled(!self.has_modal());
                 ui.horizontal(|ui| {
                     ui.selectable_value(&mut self.current_tab, EnvironmentTab::FloraScatter, "Flora Scatter");
                     ui.selectable_value(&mut self.current_tab, EnvironmentTab::NeutralLairs, "Neutral Lairs");
@@ -2060,6 +2071,57 @@ mod small_ux_tests {
             Some((summaries[0].world_x as f32, summaries[0].world_z as f32))
         );
         assert!(ui.take_focus_base_request().is_none(), "take-once");
+    }
+
+    #[test]
+    fn settlement_preview_and_failed_regeneration_preserve_plan() {
+        let mut ui = EnvironmentUi::default();
+        let heights = vec![20; 129 * 129];
+        let collision = vec![0; 128 * 128];
+        ui.generate_settlement(129, Some(&heights), Some((128, &collision)), 0.0, 4.0).unwrap();
+        let plan = ui.last_distribution.clone();
+        let placement = ui.last_placement_preset.clone();
+        let nature = ui.last_nature_preset.clone();
+        let seed = ui.settlement_seed;
+        let dirty = ui.is_dirty();
+        let ctx = egui::Context::default();
+        for english in [false, true] {
+            let _ = ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |panel| {
+                    ui.paint_canvas_preview(panel.painter(), panel.max_rect(), english);
+                });
+            });
+        }
+        assert!(ui.regenerate_settlement_with_new_seed(129, None, None, 0.0, 4.0).is_err());
+        assert_eq!(ui.settlement_seed, seed);
+        assert_eq!(ui.last_distribution, plan);
+        assert_eq!(ui.last_placement_preset, placement);
+        assert_eq!(ui.last_nature_preset, nature);
+        assert_eq!(ui.is_dirty(), dirty);
+        for modal in [false, true] {
+            ui.pending_discard = modal;
+            ui.regeneration_blocked = !modal;
+            assert!(ui.regenerate_settlement_with_new_seed(129, Some(&heights), Some((128, &collision)), 0.0, 4.0).is_err());
+            assert_eq!(ui.last_distribution, plan);
+            assert_eq!(ui.settlement_seed, seed);
+        }
+    }
+
+    #[test]
+    fn settlement_counts_match_actual_apply_entries() {
+        let mut ui = EnvironmentUi::default();
+        let heights = vec![20; 129 * 129];
+        let collision = vec![0; 128 * 128];
+        ui.generate_settlement(129, Some(&heights), Some((128, &collision)), 0.0, 4.0).unwrap();
+        let dist = ui.last_distribution.as_mut().unwrap();
+        for player in &mut dist.players {
+            for food in &mut player.wildlife_and_food { food.count = 9; }
+        }
+        let expected = SettlementGeneratorEngine::to_placement_layout_preset(ui.last_distribution.as_ref().unwrap());
+        let summaries = ui.base_resource_summaries();
+        assert_eq!(summaries.iter().map(|s| s.building_count + s.food_count).sum::<usize>(), expected.entries.len());
+        ui.settlement_include_nature = false;
+        assert!(ui.base_resource_summaries().iter().all(|s| s.wood_count == 0 && s.stone_count == 0));
     }
 
     #[test]

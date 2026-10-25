@@ -407,3 +407,12 @@
 - 按 K（Copy cursor X/Z／複製游標 X/Z）複製世界座標，保留一位小數，方便貼入事件或鏡頭欄位；文字輸入或對話框期間不觸發。
 - 高度讀數同時顯示原始高度（Height／高度，0–255）與 World Y／世界 Y（原始值乘上地圖 height_step）；257 頂點對應 16384 世界單位，每格 64，其他尺寸依實際頂點數換算。非有限座標不取樣。
 - I 材質吸管在唯讀或筆畫進行中不觸發，也不會提交筆畫或新增復原紀錄。
+
+### 批次 #16：選取與聚落安全性 / Selection and settlement safety
+
+- DATA 物件面板新增「反向選取 / Invert selection」：反選全地圖物件，包含被文字篩選隱藏的項目；再按一次恢復原選取集合。
+- 「選取同隊伍 / Select same teams」擴展為目前所選隊伍的全部物件，支援多隊伍與中立物件。無選取時不操作。兩項功能均保留物件資料、未儲存狀態與復原／重做歷史，確認對話框期間停用。
+- Invert selection covers the whole DATA map, including filtered objects. Select same teams expands all selected teams, including neutral objects. Neither changes map data or undo/redo history; confirmation dialogs block both actions.
+- 聚落重生遇到錯誤會保留原種子碼與草稿；確認對話框或文字輸入期間不執行重生。已套用的物件與自然物件仍保留，並可循原路徑復原。資源表食物數依實際套用物件筆數，未啟用自然物件時木材／石材顯示 0。
+- Failed regeneration preserves the seed and draft. Dialogs and text input block regeneration. Previously applied objects and nature retain their undo history. Food counts reflect actual object entries; wood/stone show zero when nature is excluded.
+- 自然種植狀態列現會顯示目前密度（稀疏／一般／茂密）；清除模式不顯示密度。The nature planting status now shows Sparse / Normal / Dense; removal omits density.
