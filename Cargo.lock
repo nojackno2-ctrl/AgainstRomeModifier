@@ -157,8 +157,10 @@ dependencies = [
  "against-rome-scene",
  "against-rome-textures",
  "eframe",
+ "proc-macro2",
  "rfd",
  "serde_json",
+ "syn 2.0.119",
  "uuid",
 ]
 

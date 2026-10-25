@@ -458,13 +458,13 @@ impl ConsoleUi {
                             self.clear_output();
                         }
                         if ui
-                            .add_enabled(self.runner.can_undo(), egui::Button::new("Undo"))
+                            .add_enabled(self.runner.can_undo(), egui::Button::new("復原"))
                             .clicked()
                         {
                             self.execute_input("/undo");
                         }
                         if ui
-                            .add_enabled(self.runner.can_redo(), egui::Button::new("Redo"))
+                            .add_enabled(self.runner.can_redo(), egui::Button::new("重做"))
                             .clicked()
                         {
                             self.execute_input("/redo");

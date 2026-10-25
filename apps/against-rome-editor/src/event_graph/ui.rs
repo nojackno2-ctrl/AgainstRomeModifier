@@ -423,7 +423,7 @@ impl EventGraphUi {
                     }
 
                     ui.separator();
-                    ui.label(format!("Zoom: {:.1}x", self.zoom));
+                            ui.label(format!("縮放：{:.1} 倍", self.zoom));
                     if ui.button("重設視角 (Reset View)").clicked() {
                         self.zoom = 1.0;
                         self.pan = Vec2::new(100.0, 100.0);
@@ -441,28 +441,28 @@ impl EventGraphUi {
                             ui.label("選擇節點型別:");
                             egui::ComboBox::from_id_source("add_node_type_combo")
                                 .selected_text(match self.new_node_kind_selection {
-                                    0 => "Event Trigger",
-                                    1 => "Condition: Object Exists",
-                                    2 => "Condition: Object Dead",
-                                    3 => "Condition: Object In Area",
-                                    4 => "Action: Show Message",
-                                    5 => "Action: Diplomacy",
-                                    6 => "Action: Spawn Unit",
-                                    7 => "Action: Victory",
-                                    8 => "Action: Defeat",
-                                    _ => "Delay",
+                                    0 => "事件觸發器",
+                                    1 => "條件：物件存在",
+                                    2 => "條件：物件死亡",
+                                    3 => "條件：物件位於區域內",
+                                    4 => "動作：顯示訊息",
+                                    5 => "動作：外交",
+                                    6 => "動作：產生單位",
+                                    7 => "動作：勝利",
+                                    8 => "動作：失敗",
+                                    _ => "延遲",
                                 })
                                 .show_ui(ui, |ui| {
-                                    ui.selectable_value(&mut self.new_node_kind_selection, 0, "Event Trigger");
-                                    ui.selectable_value(&mut self.new_node_kind_selection, 1, "Condition: Object Exists");
-                                    ui.selectable_value(&mut self.new_node_kind_selection, 2, "Condition: Object Dead");
-                                    ui.selectable_value(&mut self.new_node_kind_selection, 3, "Condition: Object In Area");
-                                    ui.selectable_value(&mut self.new_node_kind_selection, 4, "Action: Show Message");
-                                    ui.selectable_value(&mut self.new_node_kind_selection, 5, "Action: Diplomacy");
-                                    ui.selectable_value(&mut self.new_node_kind_selection, 6, "Action: Spawn Unit");
-                                    ui.selectable_value(&mut self.new_node_kind_selection, 7, "Action: Victory");
-                                    ui.selectable_value(&mut self.new_node_kind_selection, 8, "Action: Defeat");
-                                    ui.selectable_value(&mut self.new_node_kind_selection, 9, "Delay");
+                                    ui.selectable_value(&mut self.new_node_kind_selection, 0, "事件觸發器");
+                                    ui.selectable_value(&mut self.new_node_kind_selection, 1, "條件：物件存在");
+                                    ui.selectable_value(&mut self.new_node_kind_selection, 2, "條件：物件死亡");
+                                    ui.selectable_value(&mut self.new_node_kind_selection, 3, "條件：物件位於區域內");
+                                    ui.selectable_value(&mut self.new_node_kind_selection, 4, "動作：顯示訊息");
+                                    ui.selectable_value(&mut self.new_node_kind_selection, 5, "動作：外交");
+                                    ui.selectable_value(&mut self.new_node_kind_selection, 6, "動作：產生單位");
+                                    ui.selectable_value(&mut self.new_node_kind_selection, 7, "動作：勝利");
+                                    ui.selectable_value(&mut self.new_node_kind_selection, 8, "動作：失敗");
+                                    ui.selectable_value(&mut self.new_node_kind_selection, 9, "延遲");
                                 });
 
                             if ui.button("確認加入").clicked() {
@@ -727,7 +727,7 @@ impl EventGraphUi {
                     if !self.diagnostics.is_empty() {
                         let err_count = self.diagnostics.iter().filter(|d| d.severity == GraphDiagnosticSeverity::Error).count();
                         if err_count > 0 {
-                            ui.colored_label(Color32::from_rgb(255, 100, 100), format!("({err_count} errors)"));
+                            ui.colored_label(Color32::from_rgb(255, 100, 100), format!("（{err_count} 個錯誤）"));
                         }
                     }
                 });

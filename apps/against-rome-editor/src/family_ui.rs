@@ -784,13 +784,18 @@ impl FamilyUi {
             }
             Some(Ok(p)) => {
                 ui.label(format!(
-                    "root {} (uid {}): {} objects, {} lights, {} emitters, {} camps",
+                    "{} {} (UID {}): {} {}, {} {}, {} {}, {} {}",
+                    tr(en, "root", "根物件"),
                     p.root_slot,
                     p.root_uid,
                     p.objects.len(),
+                    tr(en, "objects", "個物件"),
                     p.lights.len(),
+                    tr(en, "lights", "個光源"),
                     p.particles.len(),
-                    p.lager_slots.len() + p.big_lager_slots.len()
+                    tr(en, "emitters", "個發射器"),
+                    p.lager_slots.len() + p.big_lager_slots.len(),
+                    tr(en, "camps", "個營地")
                 ));
                 show_overlay(ui, &overlay_points(p));
             }
@@ -889,5 +894,5 @@ pub fn show_overlay(ui: &mut egui::Ui, points: &[OverlayPoint]) {
             }
         }
     }
-    response.on_hover_text("grey = object, ring = light radius, orange = particle child");
+    response.on_hover_text("灰色＝物件、圓環＝光源半徑、橘色＝子粒子");
 }

@@ -776,7 +776,7 @@ impl EditorApp {
                                 ui.separator();
                                 ui.label(row.text(lang));
                                 if let Some((x, z)) = row.focus_tile() {
-                                    ui.small(format!("tile ({x:.1}, {z:.1})"));
+                                    ui.small(if lang == AppLanguage::English { format!("tile ({x:.1}, {z:.1})") } else { format!("圖塊（{x:.1}，{z:.1}）") });
                                 }
                             }
                         }

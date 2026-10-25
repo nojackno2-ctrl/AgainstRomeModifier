@@ -1015,7 +1015,7 @@ impl MapsUi {
                         ui.colored_label(color, format!("[{:?}]", issue.severity));
                         ui.label(format!("{}. [{}] {}", idx + 1, issue.code, issue.chinese));
                         if let (Some(x), Some(z)) = (issue.world_x, issue.world_z) {
-                            ui.label(format!("(Pos: {:.1}, {:.1})", x, z));
+                            ui.label(format!("({} {:.1}, {:.1})", tl(self.english, "位置：", "Pos:"), x, z));
                         }
                     });
                 }

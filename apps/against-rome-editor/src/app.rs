@@ -1470,6 +1470,7 @@ impl EditorApp {
     }
 
     pub fn handle_pending_action(&mut self, ctx: &egui::Context) {
+        let lang = self.lang();
         if self.pending_action.is_none() {
             return;
         }
@@ -1480,15 +1481,15 @@ impl EditorApp {
         }
         let mut discard = false;
         let mut cancel = false;
-        egui::Window::new("Unsaved changes")
+        egui::Window::new(tr(lang, "Unsaved changes", "未儲存的變更"))
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
             .show(ctx, |ui| {
-                ui.label("Discard unsaved changes? Closing also discards pending DATA and scenario edits.");
+                ui.label(tr(lang, "Discard unsaved changes? Closing also discards pending DATA and scenario edits.", "要捨棄未儲存的變更嗎？關閉也會捨棄待儲存的 DATA 與劇本編輯。"));
                 ui.horizontal(|ui| {
-                    discard = ui.button("Discard unsaved changes").clicked();
-                    cancel = ui.button("Keep editing").clicked();
+                    discard = ui.button(tr(lang, "Discard unsaved changes", "捨棄未儲存的變更")).clicked();
+                    cancel = ui.button(tr(lang, "Keep editing", "繼續編輯")).clicked();
                 });
             });
         if discard {
@@ -3499,13 +3500,15 @@ impl EditorApp {
     }
 
     fn show_nature_panel(&mut self, ui: &mut egui::Ui) {
+        let lang = self.lang();
+        let english = lang == AppLanguage::English;
         if std::mem::take(&mut self.save_focus_nature) {
             ui.scroll_to_cursor(Some(egui::Align::Center));
         }
-        ui.heading("Nature Brush");
+        ui.heading(tr(lang, "Nature Brush", "自然物件筆刷"));
         let mut enabled = self.nature.enabled;
         if ui
-            .checkbox(&mut enabled, "Nature brush (replaces terrain brush)")
+            .checkbox(&mut enabled, tr(lang, "Nature brush (replaces terrain brush)", "自然物件筆刷（取代地形筆刷）"))
             .changed()
         {
             self.nature_set_enabled(enabled);
@@ -3515,35 +3518,35 @@ impl EditorApp {
         }
         let mut operation = self.nature.operation;
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut operation, NatureOperation::Plant, "Plant");
-            ui.selectable_value(&mut operation, NatureOperation::Remove, "Remove");
+            ui.selectable_value(&mut operation, NatureOperation::Plant, tr(lang, "Plant", "種植"));
+            ui.selectable_value(&mut operation, NatureOperation::Remove, tr(lang, "Remove", "移除"));
         });
         if operation != self.nature.operation {
             self.nature_set_operation(operation);
         }
-        ui.add(egui::Slider::new(&mut self.nature.brush_size, 1..=16).text("Brush size (tiles)"));
+        ui.add(egui::Slider::new(&mut self.nature.brush_size, 1..=16).text(tr(lang, "Brush size (tiles)", "筆刷大小（圖塊）")));
         if self.nature.operation == NatureOperation::Plant {
             ui.horizontal(|ui| {
-                ui.label("Density:");
+                ui.label(tr(lang, "Density:", "密度："));
                 for (density, label) in [
-                    (NatureDensity::Sparse, "Sparse"),
-                    (NatureDensity::Normal, "Normal"),
-                    (NatureDensity::Dense, "Dense"),
+                    (NatureDensity::Sparse, tr(lang, "Sparse", "稀疏")),
+                    (NatureDensity::Normal, tr(lang, "Normal", "一般")),
+                    (NatureDensity::Dense, tr(lang, "Dense", "密集")),
                 ] {
                     ui.selectable_value(&mut self.nature.density, density, label);
                 }
             });
-            ui.checkbox(&mut self.nature.mix_species, "Mix species in category");
+            ui.checkbox(&mut self.nature.mix_species, tr(lang, "Mix species in category", "混合類別內的物種"));
         }
         if self.nature.data.is_none() {
             if let Err(e) = self.ensure_nature_data() {
-                ui.colored_label(Color32::from_rgb(240, 80, 80), format!("Unavailable: {e}"));
+                ui.colored_label(Color32::from_rgb(240, 80, 80), format!("{} {e}", tr(lang, "Unavailable:", "無法使用：")));
                 return;
             }
         }
         ui.checkbox(
             &mut self.nature.show_other_regions,
-            "Show other regions' objects",
+            tr(lang, "Show other regions' objects", "顯示其他區域的物件"),
         );
         let categories: Vec<NatureCategory> = self
             .nature
@@ -3556,15 +3559,15 @@ impl EditorApp {
                     .collect()
             })
             .unwrap_or_default();
-        egui::ComboBox::from_label("Category")
-            .selected_text(self.nature.category.map_or("All", |c| c.display_name(true)))
+        egui::ComboBox::from_label(tr(lang, "Category", "類別"))
+            .selected_text(self.nature.category.map_or(tr(lang, "All", "全部"), |c| c.display_name(english)))
             .show_ui(ui, |ui| {
-                ui.selectable_value(&mut self.nature.category, None, "All");
+                ui.selectable_value(&mut self.nature.category, None, tr(lang, "All", "全部"));
                 for category in categories {
                     ui.selectable_value(
                         &mut self.nature.category,
                         Some(category),
-                        category.display_name(true),
+                        category.display_name(english),
                     );
                 }
             });
@@ -3586,32 +3589,31 @@ impl EditorApp {
         let (planted, removed) = self.nature_pending_counts();
         let existing = self.nature.data.as_ref().map_or(0, |d| d.positions.len());
         let total_objects = (existing + planted).saturating_sub(removed);
-        ui.small(format!(
-            "Total nature objects: {total_objects} (Pending: +{planted} / -{removed})"
-        ));
+        ui.small(if english { format!("Total nature objects: {total_objects} (Pending: +{planted} / -{removed})") }
+            else { format!("自然物件總數：{total_objects}（待儲存：+{planted}／-{removed}）") });
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(self.nature.session.can_undo() || !self.settlement_undo.is_empty(), egui::Button::new("Undo"))
+                .add_enabled(self.nature.session.can_undo() || !self.settlement_undo.is_empty(), egui::Button::new(tr(lang, "Undo", "復原")))
                 .clicked()
             {
                 self.nature.last_action = true;
                 self.navigate_panel(crate::undo_journal::SubsystemId::Nature, false);
             }
             if ui
-                .add_enabled(self.nature.session.can_redo() || !self.settlement_redo.is_empty(), egui::Button::new("Redo"))
+                .add_enabled(self.nature.session.can_redo() || !self.settlement_redo.is_empty(), egui::Button::new(tr(lang, "Redo", "重做")))
                 .clicked()
             {
                 self.nature.last_action = true;
                 self.navigate_panel(crate::undo_journal::SubsystemId::Nature, true);
             }
             if ui
-                .add_enabled(self.nature.session.is_dirty(), egui::Button::new("Discard"))
+                .add_enabled(self.nature.session.is_dirty(), egui::Button::new(tr(lang, "Discard", "捨棄變更")))
                 .clicked()
             {
                 self.nature_discard();
             }
         });
-        ui.small("Drag on the map. Remove never touches script-linked or non-landscape objects. Save with Safe Save.");
+        ui.small(tr(lang, "Drag on the map. Remove never touches script-linked or non-landscape objects. Save with Safe Save.", "在地圖上拖曳。移除不會影響腳本連結物件或非地景物件。請使用安全儲存寫入。"));
     }
 }
 
@@ -6499,6 +6501,10 @@ mod tests {
 
     /// Clicks the painted label exactly like a mouse: press and release on its centre.
     fn gui_click(app: &mut EditorApp, ctx: &egui::Context, label: &str) -> egui::FullOutput {
+        let label = match label {
+            "Continue saving" => tr(app.lang(), "Continue saving", "繼續儲存"),
+            other => other,
+        };
         let settled = gui_frame(app, ctx, vec![]);
         let pos = gui_find(&settled, label).unwrap_or_else(|| panic!("no painted label {label:?}")).center();
         gui_frame(app, ctx, gui_pointer(pos, true));
@@ -9090,7 +9096,7 @@ angle=0.00
                 .iter()
                 .find_map(|s| match &s.shape {
                     egui::epaint::Shape::Text(t)
-                        if t.galley.text() == "Discard unsaved changes" =>
+                        if t.galley.text() == tr(app.lang(), "Discard unsaved changes", "捨棄未儲存的變更") =>
                     {
                         Some(Rect::from_min_size(t.pos, t.galley.size()).center())
                     }
@@ -9190,8 +9196,8 @@ angle=0.00
                     _ => None,
                 })
                 .collect();
-            assert!(text.contains(&"Discard unsaved changes"), "{name}");
-            assert!(text.contains(&"Keep editing"), "{name}");
+            assert!(text.contains(&tr(app.lang(), "Discard unsaved changes", "捨棄未儲存的變更")), "{name}");
+            assert!(text.contains(&tr(app.lang(), "Keep editing", "繼續編輯")), "{name}");
             assert!(!app.close_allowed, "{name}");
             assert_eq!(app.map_path_input, "original-map-path", "{name}");
             // A missing Load would report failure; Blank would change terrain size and status.
@@ -9339,7 +9345,7 @@ angle=0.00
             .shapes
             .iter()
             .find_map(|s| match &s.shape {
-                egui::epaint::Shape::Text(t) if t.galley.text() == "Keep editing" => {
+                egui::epaint::Shape::Text(t) if t.galley.text() == tr(app.lang(), "Keep editing", "繼續編輯") => {
                     Some(Rect::from_min_size(t.pos, t.galley.size()).center())
                 }
                 _ => None,
@@ -10242,7 +10248,7 @@ angle=0.00
             .shapes
             .iter()
             .find_map(|s| match &s.shape {
-                egui::epaint::Shape::Text(t) if t.galley.text() == "Discard unsaved changes" => {
+                egui::epaint::Shape::Text(t) if t.galley.text() == tr(app.lang(), "Discard unsaved changes", "捨棄未儲存的變更") => {
                     Some(Rect::from_min_size(t.pos, t.galley.size()).center())
                 }
                 _ => None,
@@ -11701,11 +11707,11 @@ impl EditorApp {
 
                 if let Some(session) = &self.session {
                     if session.is_dirty() || self.reset_auxiliary_layers {
-                        ui.colored_label(Color32::YELLOW, "[Unsaved Changes]");
+                        ui.colored_label(Color32::YELLOW, tr(lang, "[Unsaved Changes]", "[有未儲存的變更]"));
                     }
                 }
                 if self.nature.session.is_dirty() {
-                    ui.colored_label(Color32::YELLOW, "[Unsaved Nature]");
+                    ui.colored_label(Color32::YELLOW, tr(lang, "[Unsaved Nature]", "[有未儲存的自然物件]"));
                 }
             });
         });
@@ -11714,20 +11720,20 @@ impl EditorApp {
             let messages: Vec<_> = issues.iter().map(|i| i.english.clone()).collect();
             let mut open = true;
             let mut decision = None;
-            egui::Window::new("Confirm Save (Design Warnings)")
+            egui::Window::new(tr(lang, "Confirm Save (Design Warnings)", "確認儲存（設計警告）"))
                 .open(&mut open)
                 .collapsible(false)
                 .resizable(false)
                 .show(ctx, |ui| {
-                    ui.label("These design warnings may affect playability. Continue saving?");
+                    ui.label(tr(lang, "These design warnings may affect playability. Continue saving?", "這些設計警告可能影響遊玩。仍要繼續儲存嗎？"));
                     for message in messages.iter().take(10) {
                         ui.label(message);
                     }
                     ui.horizontal(|ui| {
-                        if ui.button("Continue saving").clicked() {
+                        if ui.button(tr(lang, "Continue saving", "繼續儲存")).clicked() {
                             decision = Some(true);
                         }
-                        if ui.button("Cancel save").clicked() {
+                        if ui.button(tr(lang, "Cancel save", "取消儲存")).clicked() {
                             decision = Some(false);
                         }
                     });
@@ -11771,25 +11777,25 @@ impl EditorApp {
                     ui.label(tr(lang, "Display Mode:", "顯示模式:"));
                     ui.horizontal_wrapped(|ui| {
                         if ui
-                            .selectable_value(&mut self.view_mode, ViewMode::Blended, "Blended")
+                            .selectable_value(&mut self.view_mode, ViewMode::Blended, tr(lang, "Blended", "混合"))
                             .clicked()
                         {
                             self.texture_dirty = true;
                         }
                         if ui
-                            .selectable_value(&mut self.view_mode, ViewMode::Heightmap, "Height")
+                            .selectable_value(&mut self.view_mode, ViewMode::Heightmap, tr(lang, "Height", "高度"))
                             .clicked()
                         {
                             self.texture_dirty = true;
                         }
                         if ui
-                            .selectable_value(&mut self.view_mode, ViewMode::Collision, "Collision")
+                            .selectable_value(&mut self.view_mode, ViewMode::Collision, tr(lang, "Collision", "阻擋"))
                             .clicked()
                         {
                             self.texture_dirty = true;
                         }
                         if ui
-                            .selectable_value(&mut self.view_mode, ViewMode::View3D, "3D View")
+                            .selectable_value(&mut self.view_mode, ViewMode::View3D, tr(lang, "3D View", "3D 視角"))
                             .clicked()
                         {
                             self.texture_dirty = true;
@@ -11812,12 +11818,12 @@ impl EditorApp {
                     {
                         self.toggle_box_select();
                     }
-                    ui.label("Brush Mode:");
+                    ui.label(tr(lang, "Brush Mode:", "筆刷模式："));
                     if ui
                         .add(egui::Button::new(if self.ramp_selecting {
-                            "Cancel Ramp Selection"
+                            tr(lang, "Cancel Ramp Selection", "取消斜坡選取")
                         } else {
-                            "Ramp: choose two points"
+                            tr(lang, "Ramp: choose two points", "斜坡：選取兩個端點")
                         }))
                         .clicked()
                     {
@@ -11836,13 +11842,13 @@ impl EditorApp {
                     );
                     if self.ramp_selecting {
                         let cancel_hint = if self.view_mode == ViewMode::View3D {
-                            "Use left-click on terrain to choose points; Esc cancels."
+                            tr(lang, "Use left-click on terrain to choose points; Esc cancels.", "以左鍵點選地形端點；Esc 取消。")
                         } else {
-                            "Click the endpoint; right-click or Esc cancels."
+                            tr(lang, "Click the endpoint; right-click or Esc cancels.", "點選終點；右鍵或 Esc 取消。")
                         };
                         ui.small(match self.ramp_start {
-                            Some((x, y)) => format!("Start: ({x:.0}, {y:.0}); {cancel_hint}"),
-                            None => format!("Click a start point, then an endpoint. {cancel_hint}"),
+                            Some((x, y)) => format!("{} ({x:.0}, {y:.0}); {cancel_hint}", tr(lang, "Start:", "起點：")),
+                            None => format!("{} {cancel_hint}", tr(lang, "Click a start point, then an endpoint.", "先點選起點，再點選終點。")),
                         });
                     }
                     ui.selectable_value(
@@ -11926,7 +11932,7 @@ impl EditorApp {
                     }
 
                     if self.active_tool == ActiveTool::HeightFlatten {
-                        ui.checkbox(&mut self.sample_flatten_target, "Sample first dab height");
+                        ui.checkbox(&mut self.sample_flatten_target, tr(lang, "Sample first dab height", "取樣第一筆高度"));
                         if !self.sample_flatten_target {
                             ui.add(
                                 egui::Slider::new(&mut self.flatten_target, 0..=255)
@@ -11940,14 +11946,14 @@ impl EditorApp {
                                 .text("Water surface (G units)"),
                         );
                         ui.add(egui::Slider::new(&mut self.water_bed, 0..=254).text("Bed height"));
-                        ui.label("Local excavation/blocking; set game water level separately.");
-                        ui.label(format!(
-                            "World water: {:.2}; Heightmapstep: {}",
-                            self.water_surface * self.height_step,
-                            self.height_step
-                        ));
+                        ui.label(tr(lang, "Local excavation/blocking; set game water level separately.", "局部挖掘／阻擋；遊戲水位需另外設定。"));
+                        ui.label(if lang == AppLanguage::English {
+                            format!("World water: {:.2}; Heightmapstep: {}", self.water_surface * self.height_step, self.height_step)
+                        } else {
+                            format!("世界水位：{:.2}；高度圖步距：{}", self.water_surface * self.height_step, self.height_step)
+                        });
                         if self.water_surface < 4.0 {
-                            ui.label("Water surface too low for the water brush (minimum 4).");
+                            ui.label(tr(lang, "Water surface too low for the water brush (minimum 4).", "水位過低，無法使用水域筆刷（最低為 4）。"));
                         }
                     }
                     if self.active_tool == ActiveTool::HeightRoughen {
@@ -11995,42 +12001,36 @@ impl EditorApp {
                     self.show_nature_panel(ui);
 
                     ui.separator();
-                    ui.heading("Map Diagnostics");
+                    ui.heading(tr(lang, "Map Diagnostics", "地圖診斷"));
                     if let Some(session) = &self.session {
                         let v_size = session.vertex_size;
                         let is_standard_257 = v_size == 257;
                         if is_standard_257 {
-                            ui.label(format!(
-                                "Height Dimensions: {}x{} (Standard)",
-                                v_size, v_size
-                            ));
+                            ui.label(if lang == AppLanguage::English { format!("Height Dimensions: {}x{} (Standard)", v_size, v_size) }
+                                else { format!("高度圖尺寸：{}×{}（標準）", v_size, v_size) });
                         } else {
                             ui.colored_label(
                                 Color32::from_rgb(255, 180, 50),
-                                format!(
-                                    "Height Dimensions: {}x{} (Non-257 Compatible)",
-                                    v_size, v_size
-                                ),
+                                if lang == AppLanguage::English { format!("Height Dimensions: {}x{} (Non-257 Compatible)", v_size, v_size) }
+                                    else { format!("高度圖尺寸：{}×{}（相容非 257 尺寸）", v_size, v_size) },
                             );
                         }
-                        ui.label(format!(
-                            "Collision Grid: {}x{}",
-                            session.collision_size, session.collision_size
-                        ));
-                        ui.label("Channel: Green channel height decoded");
+                        ui.label(if lang == AppLanguage::English { format!("Collision Grid: {}x{}", session.collision_size, session.collision_size) }
+                            else { format!("阻擋網格：{}×{}", session.collision_size, session.collision_size) });
+                        ui.label(tr(lang, "Channel: Green channel height decoded", "通道：已解碼綠色通道高度"));
                         if session.raw_boden_bmp.is_some() {
-                            ui.colored_label(Color32::LIGHT_GREEN, "Original R/B pixels preserved");
+                            ui.colored_label(Color32::LIGHT_GREEN, tr(lang, "Original R/B pixels preserved", "保留原始紅／藍通道像素"));
                         } else {
-                            ui.label("Synthesized grayscale heightmap");
+                            ui.label(tr(lang, "Synthesized grayscale heightmap", "合成灰階高度圖"));
                         }
                     }
 
                     ui.separator();
-                    ui.heading("Quick Presets");
-                    if ui.button("New Blank 257x257 (Retail)").clicked() {
+                    ui.heading(tr(lang, "Quick Presets", "快速預設"));
+                    if ui.button(tr(lang, "New Blank 257x257 (Retail)", "新增空白地圖 257×257（正式版）")).clicked() {
                         self.pending_action = Some(PendingAction::Blank(257));
                     }
-                    if ui.button("New Blank 193x193 (TUTOR_01)").clicked() {
+                    if ui.button(tr(lang, "New Blank 193x193 (TUTOR_01)", "新增空白地圖 193×193（TUTOR_01）")).clicked() {
                         self.pending_action = Some(PendingAction::Blank(193));
                     }
                 });
@@ -12082,7 +12082,7 @@ impl EditorApp {
                     }
                 } else {
                     ui.centered_and_justified(|ui| {
-                        ui.heading("No terrain session loaded. Create or load a map first.");
+                ui.heading(tr(lang, "No terrain session loaded. Create or load a map first.", "尚未載入地形。請先建立或載入地圖。"));
                     });
                 }
                 return;

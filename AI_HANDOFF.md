@@ -1,3 +1,6 @@
+## 2026-10-26 Codex：批次 #22（已驗證，環境限定失敗另列）
+- 審查 93361b7：恢復報告固定資料標籤，明確說明還原覆寫／永久刪除後果，修正 3D 預覽措辭；98 處英文介面全數在地化，完整清單 re_workspace/codex-batch-22-all-literals.txt。新增單一工作區語法掃描（明確技術名稱允許清單）、雙語真實點擊與資料值回歸。依序 cargo check、cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target、cargo build：check/build exit 0；test exit 101，284 組共 2631 passed／4 failed／25 ignored，僅 install_resource_discovery.rs:55、111、128、162 為提升權限環境的資源發現失敗；日誌 re_workspace/codex-batch-22-{check,test,build}.log。首輪暫存路徑受既有 re_workspace/Against_Rome.exe 汙染（test-polluted.log），改用工作區獨立暫存目錄後其餘失敗消失，暫存已清除。git diff --check 通過；未 stage／commit，安裝目錄唯讀，保留 AGENTS.md／README.md 原有變更；實機 GUI 未驗證。
+
 ## 2026-10-26 Agy：批次 #21 模組套件與差異效能、3D 原生視角及工具箱三大面板純英文文字全域雙語在地化（已驗證）
 - 1. 模組套件與版本比對／預算分析工作室（packaging_ui.rs 原 18 處純英文 UI 字串）：在地化「地圖版本比對引擎」與「地圖資源預算與效能分析器」兩大分頁標題、基準快照說明、比對按鈕、存檔基準資料夾輸入、覆蓋狀態（✔ 已比對 / ⚠ 無法使用）、分析器評級、物件槽位、光源叢集、繪製呼叫、尋路瓶頸等純文字輸出；新增 `chinese_ui_has_no_untranslated_literals` 無視窗回歸測試。
 - 2. 3D 原生視角工具列與 HUD（viewport_3d.rs 原 19 處純英文 UI 字串）：引入 `english: bool` 與 `tl()` 雙語 helper，在地化工具列標題（3D 原生視角 / 3D Viewport）、重設鏡頭、聚焦選取、正交／透視切換、網格／水面／物件／標記開關、著色模式（浮雕／高度／碰撞／材質貼圖）、LOD 精細度、物件與圖塊座標狀態；在地化底部 HUD 操作說明；新增 `chinese_ui_has_no_untranslated_literals` 無視窗回歸測試。

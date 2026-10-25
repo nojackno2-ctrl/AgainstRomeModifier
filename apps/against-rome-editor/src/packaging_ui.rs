@@ -1044,7 +1044,7 @@ impl PackagingUi {
                 .clicked()
             {
                 self.capture_baseline_from_memory(
-                    tl(self.english, "工作基準", "Working Baseline"),
+                    "Working Baseline",
                     dimension,
                     heights,
                     collision,
@@ -1060,7 +1060,7 @@ impl PackagingUi {
                 .clicked()
             {
                 let _ = self.compare_live_sessions(
-                    tl(self.english, "最新編輯", "Latest Edits"),
+                    "Latest Edits",
                     dimension,
                     heights,
                     collision,
@@ -1684,6 +1684,27 @@ mod tests {
         assert!(ui.diff_report.is_some());
         assert!(ui.diff_report.as_ref().unwrap().has_differences());
         assert!(ui.is_dirty());
+    }
+
+    #[test]
+    fn diff_report_data_labels_do_not_follow_ui_language() {
+        let textures = crate::textures_ui::TexturesUi::default();
+        let placement = crate::placement_ui::PlacementUi::default();
+        let scenario = crate::scenario_ui::ScenarioUi::default();
+        let live = LiveDiffSessions::from_sessions(&textures, &placement, &scenario);
+        let heights = vec![32u8; 16 * 16];
+        for english in [false, true] {
+            let mut panel = PackagingUi { english, open: true, current_tab: PackagingTab::MapDiff, ..Default::default() };
+            crate::batch20_localization_tests::click(
+                |ctx| panel.show(ctx, 16, Some(&heights), None, None, live),
+                tl(english, "擷取目前狀態為基準快照", "Capture Current as Baseline"));
+            crate::batch20_localization_tests::click(
+                |ctx| panel.show(ctx, 16, Some(&heights), None, None, live),
+                tl(english, "比對目前編輯與基準快照", "Compare Working vs Baseline"));
+            let report = panel.diff_report.as_ref().expect("已產生比對報告");
+            assert_eq!(report.baseline_label, "Working Baseline");
+            assert_eq!(report.current_label, "Latest Edits");
+        }
     }
 
     #[test]

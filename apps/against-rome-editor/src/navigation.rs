@@ -309,7 +309,7 @@ impl NavigationUi {
         egui::Window::new("通行診斷 / Navigation").open(&mut open).show(ctx,|ui| {
             ui.label("編輯器連通模型估計，非遊戲精確尋路器。 / Editor connectivity estimate; not the exact game pathfinder.");
             let Some(session)=session else {ui.label("請先載入地圖。");return;};
-            ui.label(format!("Collision {} × {} ; water surface {:.2} height samples",session.collision_size,session.collision_size,water_surface));
+            ui.label(format!("阻擋網格 {}×{}；水位高度取樣值 {:.2}",session.collision_size,session.collision_size,water_surface));
             ui.horizontal(|ui| {
                 ui.label("建築障礙估計 / Building obstacle estimate");
                 ui.selectable_value(&mut mode, BuildingMode::Off, "關閉 / Off");
@@ -347,12 +347,12 @@ impl NavigationUi {
             }
             if let Some(error)=&self.error {ui.colored_label(egui::Color32::RED,error);}
             if let Some(report)=&self.report {
-                if mode != BuildingMode::Off { ui.label("包含建築障礙的估計 / Estimate including building obstacles"); } ui.label(format!("Passable: {} ; isolated regions from seed: {}",report.passable,report.isolated.len()));
+                if mode != BuildingMode::Off { ui.label("包含建築障礙的估計 / Estimate including building obstacles"); } ui.label(format!("可通行：{}；與起點隔離的區域：{}",report.passable,report.isolated.len()));
                 if !report.seed_passable {ui.label("起點在阻擋格或水下，請選擇其他起點。");}
-                ui.label(match report.path_cells {Some(n)=>format!("Path: {n} grid cells"),None=>"終點無法抵達 / End unreachable".into()});
+                ui.label(match report.path_cells {Some(n)=>format!("路徑：{n} 個網格"),None=>"終點無法抵達 / End unreachable".into()});
                 egui::ScrollArea::vertical().max_height(240.0).show(ui,|ui| {
                     for region in &report.isolated {
-                        ui.label(format!("{} cells; center ({}, {}); bridge suggestion: {:?}",region.tile_count,region.centroid.x,region.centroid.z,region.bridge.map(|p|(p.x,p.z))));
+                        ui.label(format!("{} 個網格；中心（{}，{}）；橋接建議：{:?}",region.tile_count,region.centroid.x,region.centroid.z,region.bridge.map(|p|(p.x,p.z))));
                     }
                 });
             }

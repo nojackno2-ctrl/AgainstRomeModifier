@@ -793,7 +793,7 @@ impl LauncherApp {
                                 ui.add_space(16.0);
                                 ui.label(
                                     RichText::new(format!(
-                                        "Target: {}",
+                                        "{} {}", if lang.is_chinese() { "目標：" } else { "Target:" },
                                         ChildApp::Modifier.primary_executable_name()
                                     ))
                                     .color(Color32::from_rgb(130, 140, 155))

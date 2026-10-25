@@ -791,12 +791,11 @@ impl AiPlannerUi {
                 ui.separator();
                 if let Some(plan) = &self.current_plan {
                     ui.heading(tl(self.english, "企劃預覽：", "Plan Preview:"));
-                    ui.label(format!(
-                        "Features: {} (Base Height: {:?}, Base Material: {:?})",
-                        plan.features.len(),
-                        plan.base_height,
-                        plan.base_material
-                    ));
+                    ui.label(if self.english {
+                        format!("Features: {} (Base Height: {:?}, Base Material: {:?})", plan.features.len(), plan.base_height, plan.base_material)
+                    } else {
+                        format!("地形特徵：{}（基礎高度：{:?}，基礎材質：{:?}）", plan.features.len(), plan.base_height, plan.base_material)
+                    });
                     if !self.plan_summary.is_empty() {
                         egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
                             ui.monospace(&self.plan_summary);
@@ -809,8 +808,8 @@ impl AiPlannerUi {
                 if let Some(apply_res) = &self.last_apply_result {
                     ui.separator();
                     ui.heading(tl(self.english, "執行報告：", "Execution Report:"));
-                    ui.label(format!("Modified Height Samples: {}", apply_res.height_samples_changed));
-                    ui.label(format!("Modified Collision Pixels: {}", apply_res.collision_pixels_changed));
+            ui.label(format!("{} {}", tl(self.english, "已修改高度取樣點：", "Modified Height Samples:"), apply_res.height_samples_changed));
+            ui.label(format!("{} {}", tl(self.english, "已修改阻擋像素：", "Modified Collision Pixels:"), apply_res.collision_pixels_changed));
                     egui::ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
                         for log in &apply_res.operation_log {
                             ui.label(log);

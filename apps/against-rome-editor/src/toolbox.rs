@@ -109,6 +109,17 @@ pub enum SaveAction {
     DeleteBackup,
     RepairAi,
 }
+impl SaveAction {
+    fn consequence(self, english: bool) -> &'static str {
+        match self {
+            Self::Backup => tl(english, "建立新的備份封存檔；保留來源存檔。", "Create a new backup archive; keep the source save."),
+            Self::Restore => tl(english, "以備份取代目標存檔的整個資料夾；目標目前內容將被覆寫。", "Replace the entire target save folder from backup; overwrite its current contents."),
+            Self::DeleteSave => tl(english, "永久刪除選取的存檔資料夾及其全部內容；無法復原。", "Permanently delete the selected save folder and all contents; cannot be undone."),
+            Self::DeleteBackup => tl(english, "永久刪除選取的備份封存檔；無法復原。", "Permanently delete the selected backup archive; cannot be undone."),
+            Self::RepairAi => tl(english, "修復 CLAK/scr.dat，並在變更前建立安全備份。", "Repair CLAK/scr.dat after creating a safety backup."),
+        }
+    }
+}
 struct SaveReview {
     game: String,
     backups: String,
@@ -590,7 +601,7 @@ impl ToolboxUi {
                         if let Some(c) = &self.catalog {
                             ui.label(tl(self.english, "存檔清單（資料夾／標題／關卡／中繼資料）：", "Saves (folder / title / level / metadata):"));
                             for s in &c.saves {
-                                if ui.selectable_label(self.selected_save.as_ref() == Some(&s.folder), format!("{} | {} | {} | parsed={}", s.folder, s.title, s.level, s.parsed)).clicked() {
+                                if ui.selectable_label(self.selected_save.as_ref() == Some(&s.folder), format!("{} | {} | {} | {}={}", s.folder, s.title, s.level, tl(self.english, "已解析", "parsed"), s.parsed)).clicked() {
                                     self.selected_save = Some(s.folder.clone());
                                     self.title = s.title.clone();
                                     self.save_review = None;
@@ -599,7 +610,7 @@ impl ToolboxUi {
                             }
                             ui.label(tl(self.english, "備份清單（封存檔／原始資料夾／標題／關卡／時間）：", "Backups (archive / original folder / title / level / time):"));
                             for b in &c.backups {
-                                if ui.selectable_label(self.selected_backup.as_ref() == Some(&b.file_name), format!("{} | {} | {} | {} | {} | parsed={}", b.file_name, b.manifest.orig_folder, b.manifest.title, b.manifest.level, b.manifest.backup_time, b.parsed)).clicked() {
+                                if ui.selectable_label(self.selected_backup.as_ref() == Some(&b.file_name), format!("{} | {} | {} | {} | {} | {}={}", b.file_name, b.manifest.orig_folder, b.manifest.title, b.manifest.level, b.manifest.backup_time, tl(self.english, "已解析", "parsed"), b.parsed)).clicked() {
                                     self.selected_backup = Some(b.file_name.clone());
                                     self.restore_folder = b.manifest.orig_folder.clone();
                                     self.save_review = None;
@@ -678,16 +689,8 @@ impl ToolboxUi {
                             }
                         });
                         if let Some(r) = &self.save_review {
-                            let confirm_desc = match r.action {
-                                SaveAction::RepairAi => format!(
-                                    "確認 {:?}: {}\nGame root: {}\nBackups root: {}\n目標存檔 folder: {}\n將修復 CLAK/scr.dat 並在變更前建立安全備份",
-                                    r.action, r.source, r.game, r.backups, r.folder
-                                ),
-                                _ => format!(
-                                    "確認 {:?}: {}\nGame root: {}\nBackups root: {}\n將替換/操作 folder: {}\nTitle: {}",
-                                    r.action, r.source, r.game, r.backups, r.folder, r.title
-                                ),
-                            };
+                            let confirm_desc = format!("{}\n{}\n{}\n{}\n{}\n{}\n{}",
+                                r.action.consequence(self.english), r.source, r.game, r.backups, r.folder, r.title, r.level);
                             ui.colored_label(egui::Color32::YELLOW, confirm_desc);
                             for (p, _) in &r.paths {
                                 ui.label(p.display().to_string());
@@ -731,6 +734,7 @@ mod tests {
     }
     #[test]
     fn modifier_review_apply_and_stale_guard() {
+        for english in [false, true] {
         let t = Temp::new();
         let p = t.0.join("copy.exe");
         let mut b = vec![0; FOCUS.offset + FOCUS.original.len()];
@@ -739,6 +743,8 @@ mod tests {
         }
         fs::write(&p, &b).unwrap();
         let mut u = ToolboxUi {
+            english,
+            open: true,
             exe: p.display().to_string(),
             patch_backup: t.0.join("before.bin").display().to_string(),
             ..Default::default()
@@ -746,8 +752,9 @@ mod tests {
         u.inspect().unwrap();
         assert_eq!(u.states, Some([State::Original; 3]));
         u.enabled = [true; 3];
-        u.review_patch().unwrap();
-        u.apply_patch().unwrap();
+        click(&mut u, tl(english, "預覽補丁變更", "Review patches"));
+        assert!(u.patch_review.is_some());
+        click(&mut u, tl(english, "確認套用補丁", "Confirm and Apply Patches"));
         assert_eq!(u.states, Some([State::Patched; 3]));
         assert_eq!(fs::read(&u.patch_backup).unwrap(), b);
         u.patch_backup = t.0.join("next.bin").display().to_string();
@@ -756,9 +763,11 @@ mod tests {
         fs::write(&p, b"changed").unwrap();
         assert!(u.apply_patch().is_err());
         assert!(!Path::new(&u.patch_backup).exists());
+        }
     }
     #[test]
     fn save_backup_restore_delete_and_stale_review() {
+        for english in [false, true] {
         let t = Temp::new();
         let game = t.0.join("game");
         let folder = game.join("SAVE/SAVE_001");
@@ -770,6 +779,9 @@ mod tests {
         .unwrap();
         fs::write(folder.join("data.bin"), b"original").unwrap();
         let mut u = ToolboxUi {
+            english,
+            open: true,
+            current_tab: ToolboxTab::SaveManager,
             game: game.display().to_string(),
             backups: t.0.join("backups").display().to_string(),
             ..Default::default()
@@ -777,8 +789,9 @@ mod tests {
         u.scan().unwrap();
         u.selected_save = Some("SAVE_001".into());
         u.title = "Custom title".into();
-        u.review_save(SaveAction::Backup).unwrap();
-        u.apply_save().unwrap();
+        click(&mut u, tl(english, "預覽備份", "Review Backup"));
+        assert_eq!(u.save_review.as_ref().unwrap().action, SaveAction::Backup);
+        click(&mut u, tl(english, "確認執行此操作", "Confirm and Apply"));
         let archive = u.catalog.as_ref().unwrap().backups[0].file_name.clone();
         assert_eq!(
             u.catalog.as_ref().unwrap().backups[0].manifest.title,
@@ -787,21 +800,41 @@ mod tests {
         fs::write(folder.join("data.bin"), b"changed").unwrap();
         u.selected_backup = Some(archive.clone());
         u.restore_folder = "SAVE_001".into();
-        u.review_save(SaveAction::Restore).unwrap();
-        u.apply_save().unwrap();
+        click(&mut u, tl(english, "預覽還原", "Review Restore"));
+        assert_eq!(u.save_review.as_ref().unwrap().action, SaveAction::Restore);
+        click(&mut u, tl(english, "確認執行此操作", "Confirm and Apply"));
         assert_eq!(fs::read(folder.join("data.bin")).unwrap(), b"original");
         u.selected_save = Some("SAVE_001".into());
         u.review_save(SaveAction::DeleteSave).unwrap();
         fs::write(folder.join("new.bin"), b"external").unwrap();
         assert!(u.apply_save().is_err());
         assert!(folder.exists());
-        u.review_save(SaveAction::DeleteSave).unwrap();
-        u.apply_save().unwrap();
+        click(&mut u, tl(english, "預覽刪除存檔", "Review Delete save"));
+        assert_eq!(u.save_review.as_ref().unwrap().action, SaveAction::DeleteSave);
+        click(&mut u, tl(english, "確認執行此操作", "Confirm and Apply"));
         assert!(!folder.exists());
         u.selected_backup = Some(archive.clone());
-        u.review_save(SaveAction::DeleteBackup).unwrap();
-        u.apply_save().unwrap();
+        click(&mut u, tl(english, "預覽刪除備份", "Review Delete backup"));
+        assert_eq!(u.save_review.as_ref().unwrap().action, SaveAction::DeleteBackup);
+        click(&mut u, tl(english, "確認執行此操作", "Confirm and Apply"));
         assert!(!Path::new(&u.backups).join(archive).exists());
+        }
+    }
+    // 實際點擊兩種語言的按鈕，避免只有 API 測試而漏掉介面分派退化。
+    fn click(panel: &mut ToolboxUi, label: &str) {
+        crate::batch20_localization_tests::click(|ctx| panel.show(ctx), label);
+    }
+
+    #[test]
+    fn confirmation_describes_each_destructive_action() {
+        assert!(SaveAction::Restore.consequence(false).contains("整個資料夾"));
+        assert!(SaveAction::Restore.consequence(false).contains("覆寫"));
+        for action in [SaveAction::DeleteSave, SaveAction::DeleteBackup] {
+            assert!(action.consequence(false).contains("永久刪除"));
+            assert!(action.consequence(false).contains("無法復原"));
+            assert!(action.consequence(true).contains("Permanently delete"));
+        }
+        assert!(!SaveAction::Backup.consequence(false).contains("替換"));
     }
     #[test]
     fn explicit_paths_and_installed_writes_fail_closed() {

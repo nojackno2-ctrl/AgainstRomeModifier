@@ -716,7 +716,7 @@ impl Viewport3d {
         let field = match Self::build_height_field(session, height_scale, height_step) {
             Ok(f) => f,
             Err(err) => {
-                ui.colored_label(Color32::RED, format!("Terrain init error: {err}"));
+                ui.colored_label(Color32::RED, format!("{} {err}", tl(self.english, "地形初始化錯誤：", "Terrain init error:")));
                 return action;
             }
         };
@@ -1273,7 +1273,7 @@ impl Viewport3d {
         selected_object: Option<(usize, u32)>,
     ) {
         ui.horizontal_wrapped(|ui| {
-            ui.heading(tl(self.english, "3D 原生視角", "3D Viewport"));
+            ui.heading(tl(self.english, "3D 編輯預覽", "3D Viewport"));
             ui.separator();
 
             let dimension = ((session.vertex_size.saturating_sub(1)) / 4).max(1) as f32;
@@ -3146,6 +3146,9 @@ mod troop_tests {
     fn chinese_ui_has_no_untranslated_literals() {
         let mut vp = Viewport3d::new();
         let session = TerrainSession::create_blank(6, 32);
+        vp.shading_mode = ShadingMode::Collision;
+        vp.mesh_lod_step = 4;
+        vp.camera.orthographic = false;
         for english in [true, false, true, false] {
             vp.english = english;
             let text = crate::batch20_localization_tests::render(|ctx| {
@@ -3154,9 +3157,12 @@ mod troop_tests {
                 });
             });
             assert!(
-                text.contains(if english { "3D Viewport" } else { "3D 原生視角" }),
+                text.contains(if english { "3D Viewport" } else { "3D 編輯預覽" }),
                 "{text}"
             );
+            assert_eq!(vp.shading_mode, ShadingMode::Collision);
+            assert_eq!(vp.mesh_lod_step, 4);
+            assert!(!vp.camera.orthographic);
             if !english {
                 for literal in [
                     "3D Viewport",

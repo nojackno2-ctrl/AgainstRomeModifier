@@ -912,32 +912,32 @@ impl CampaignUi {
                         ui.selectable_value(
                             &mut self.obj_kind,
                             ObjectiveKind::EliminateAllEnemies,
-                            "Eliminate All Enemies",
+                            tl(self.english, "消滅所有敵人", "Eliminate All Enemies"),
                         );
                         ui.selectable_value(
                             &mut self.obj_kind,
                             ObjectiveKind::Survival,
-                            "Survival (Hold Timer)",
+                            tl(self.english, "生存（撐過指定時間）", "Survival (Hold Timer)"),
                         );
                         ui.selectable_value(
                             &mut self.obj_kind,
                             ObjectiveKind::CaptureArea,
-                            "Capture Area",
+                            tl(self.english, "占領區域", "Capture Area"),
                         );
                         ui.selectable_value(
                             &mut self.obj_kind,
                             ObjectiveKind::AssassinateTarget,
-                            "Assassinate Target",
+                            tl(self.english, "刺殺目標", "Assassinate Target"),
                         );
                         ui.selectable_value(
                             &mut self.obj_kind,
                             ObjectiveKind::DestroyBuilding,
-                            "Destroy Building",
+                            tl(self.english, "摧毀建築", "Destroy Building"),
                         );
                         ui.selectable_value(
                             &mut self.obj_kind,
                             ObjectiveKind::EscortUnit,
-                            "Escort Unit",
+                            tl(self.english, "護送單位", "Escort Unit"),
                         );
                     });
                 ui.end_row();
@@ -949,17 +949,17 @@ impl CampaignUi {
                         ui.selectable_value(
                             &mut self.obj_category,
                             ObjectiveCategory::Primary,
-                            "Primary Objective",
+                            tl(self.english, "主要目標", "Primary Objective"),
                         );
                         ui.selectable_value(
                             &mut self.obj_category,
                             ObjectiveCategory::Bonus,
-                            "Bonus / Secondary",
+                            tl(self.english, "獎勵／次要目標", "Bonus / Secondary"),
                         );
                         ui.selectable_value(
                             &mut self.obj_category,
                             ObjectiveCategory::FailureCriterion,
-                            "Failure Criterion",
+                            tl(self.english, "失敗條件", "Failure Criterion"),
                         );
                     });
                 ui.end_row();
@@ -998,8 +998,10 @@ impl CampaignUi {
 
         ui.separator();
         ui.label(format!(
-            "Configured Objectives: {} (Compiled Events: {})",
+            "{} {} ({} {})",
+            tl(self.english, "已設定目標：", "Configured Objectives:"),
             self.objectives.len(),
+            tl(self.english, "已編譯事件：", "Compiled Events:"),
             self.last_compiled_objective_events.len()
         ));
         for d in &self.last_objective_diagnostics {
@@ -1185,9 +1187,10 @@ impl CampaignUi {
                                 })
                                 .collect();
                             ui.label(format!(
-                                "{}: {}s — {}",
+                                "{}: {} {} — {}",
                                 ev.name,
                                 ev.delay_seconds,
+                                tl(self.english, "秒", "s"),
                                 action_summaries.join(", ")
                             ));
                         }
@@ -1600,18 +1603,18 @@ impl CampaignUi {
 
         ui.separator();
         ui.heading(tl(self.english, "運鏡飛行軌跡", "Cinematic Flight Tracks"));
-        ui.label(format!("Waypoints: {}", self.camera_waypoints.len()));
+        ui.label(format!("{} {}", tl(self.english, "路徑點：", "Waypoints:"), self.camera_waypoints.len()));
 
         if ui.button(tl(self.english, "編譯樣條飛行路徑", "Compile Spline Flight Path")).clicked() {
             let _ = self.compile_cinematics_flight();
         }
 
         if self.flight_pose_count > 0 {
-            ui.label(format!("Sampled camera poses: {}", self.flight_pose_count));
+            ui.label(format!("{} {}", tl(self.english, "已取樣相機姿態：", "Sampled camera poses:"), self.flight_pose_count));
         }
         if !self.last_cinematic_events.is_empty() {
             ui.label(format!(
-                "Compiled Cinematic Events: {}",
+                "{} {}", tl(self.english, "已編譯過場事件：", "Compiled Cinematic Events:"),
                 self.last_cinematic_events.len()
             ));
         }

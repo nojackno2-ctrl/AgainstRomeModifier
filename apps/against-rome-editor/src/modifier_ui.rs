@@ -1851,7 +1851,7 @@ impl ModifierUi {
                     };
                     ui.label(tag);
                     ui.label(e.path.strip_prefix(&p.game).unwrap_or(&e.path).display().to_string());
-                    ui.label(format!("{} → {} bytes", e.old_len.map_or("-".into(), |n| n.to_string()), e.new_len.map_or("-".into(), |n| n.to_string())));
+                    ui.label(format!("{} → {} 位元組", e.old_len.map_or("-".into(), |n| n.to_string()), e.new_len.map_or("-".into(), |n| n.to_string())));
                     ui.label(e.changed_bytes.map_or(String::new(), |n| format!("{n} bytes 不同")));
                     ui.end_row();
                 }

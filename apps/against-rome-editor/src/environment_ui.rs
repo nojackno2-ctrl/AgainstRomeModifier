@@ -1249,7 +1249,7 @@ impl EnvironmentUi {
         ui.label(format!("{}: {}", tl(self.english, "已產生植物數量", "Generated Flora Count"), self.generated_flora.len()));
         egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
             for (i, item) in self.generated_flora.iter().take(50).enumerate() {
-                ui.label(format!("{}. {} (Pos: {:.1}, {:.1}, {:.1})", i + 1, item.name, item.x, item.y, item.z));
+                ui.label(format!("{}. {} ({} {:.1}, {:.1}, {:.1})", i + 1, item.name, tl(self.english, "位置：", "Pos:"), item.x, item.y, item.z));
             }
             if self.generated_flora.len() > 50 {
                 ui.label(format!(
@@ -1348,13 +1348,16 @@ impl EnvironmentUi {
             for (i, lair) in self.generated_lairs.iter().enumerate() {
                 ui.horizontal(|ui| {
                     ui.label(format!(
-                        "{}. {} at ({:.1}, {:.1}) rot {:.0}, {} events",
+                        "{}. {} {} ({:.1}, {:.1}) {} {:.0}, {} {}",
                         i + 1,
                         lair.definition_id,
+                        tl(self.english, "位於", "at"),
                         lair.world_x,
                         lair.world_z,
+                        tl(self.english, "旋轉", "rot"),
                         lair.rotation_deg,
-                        self.lair_event_counts.get(i).copied().unwrap_or(0)
+                        self.lair_event_counts.get(i).copied().unwrap_or(0),
+                        tl(self.english, "個事件", "events")
                     ));
                     if ui.small_button(tl(self.english, "移除", "Remove")).clicked() {
                         remove = Some(i);
@@ -1371,8 +1374,10 @@ impl EnvironmentUi {
             egui::ScrollArea::vertical().id_source("lair_event_preview").max_height(120.0).show(ui, |ui| {
                 for e in &self.generated_lair_events {
                     ui.label(format!(
-                        "{} (delay {}s, repeat {}, {} conditions, {} actions)",
-                        e.name, e.delay_seconds, e.repeat, e.conditions.len(), e.actions.len()
+                        "{} ({} {} {}, {} {}, {} {}, {} {})",
+                        e.name, tl(self.english, "延遲", "delay"), e.delay_seconds, tl(self.english, "秒", "s"),
+                        tl(self.english, "重複", "repeat"), e.repeat, e.conditions.len(), tl(self.english, "個條件", "conditions"),
+                        e.actions.len(), tl(self.english, "個動作", "actions")
                     ));
                 }
             });
