@@ -132,6 +132,7 @@ pub struct EditorApp {
     pub view_mode: ViewMode,
     pub zoom: f32,
     pub pan: Vec2,
+    pub canvas_cursor: Option<(f32, f32, i32, i32)>,
 
     // 紋理快取
     texture: Option<TextureHandle>,
@@ -390,6 +391,7 @@ impl EditorApp {
             view_mode: ViewMode::Blended,
             zoom: 1.0,
             pan: Vec2::ZERO,
+            canvas_cursor: None,
             texture: None,
             texture_dirty: true,
             is_painting: false,
@@ -3868,10 +3870,13 @@ pub enum ShortcutAction {
     SelectAll,
     Duplicate,
     Nudge { dx: f32, dz: f32 },
+    CanvasZoom(f32),
+    CanvasPan { dx: f32, dy: f32 },
+    CanvasResetView,
 }
 
 /// Keys polled each frame for [`shortcut_action`].
-const SHORTCUT_KEYS: [egui::Key; 20] = [
+const SHORTCUT_KEYS: [egui::Key; 23] = [
     egui::Key::Num1, egui::Key::Num2, egui::Key::Num3,
     egui::Key::Num4, egui::Key::Num5, egui::Key::Num6,
     egui::Key::Num7, egui::Key::Num8, egui::Key::Num9,
@@ -3884,6 +3889,9 @@ const SHORTCUT_KEYS: [egui::Key; 20] = [
     egui::Key::ArrowRight,
     egui::Key::ArrowUp,
     egui::Key::ArrowDown,
+    egui::Key::PageUp,
+    egui::Key::PageDown,
+    egui::Key::Home,
 ];
 
 /// Pure key -> action mapping. `text_focus` (a text field wants the keyboard) suppresses everything
@@ -3919,6 +3927,9 @@ pub fn shortcut_action(
             Key::OpenBracket => Some(ShortcutAction::BrushRadius(-1.0)),
             Key::CloseBracket => Some(ShortcutAction::BrushRadius(1.0)),
             Key::F5 => Some(ShortcutAction::DesignCheck),
+            Key::PageUp => Some(ShortcutAction::CanvasZoom(1.15)),
+            Key::PageDown => Some(ShortcutAction::CanvasZoom(1.0 / 1.15)),
+            Key::Home => Some(ShortcutAction::CanvasResetView),
             _ => None,
         };
         if action.is_some() { return action; }
@@ -3934,6 +3945,15 @@ pub fn shortcut_action(
                 Key::ArrowRight => ShortcutAction::Nudge { dx: step, dz: 0.0 },
                 Key::ArrowUp => ShortcutAction::Nudge { dx: 0.0, dz: -step },
                 _ => ShortcutAction::Nudge { dx: 0.0, dz: step },
+            })
+        }
+        Key::ArrowLeft | Key::ArrowRight | Key::ArrowUp | Key::ArrowDown if !ctrl && shift => {
+            let step = 256.0;
+            Some(match key {
+                Key::ArrowLeft => ShortcutAction::CanvasPan { dx: step, dy: 0.0 },
+                Key::ArrowRight => ShortcutAction::CanvasPan { dx: -step, dy: 0.0 },
+                Key::ArrowUp => ShortcutAction::CanvasPan { dx: 0.0, dy: step },
+                _ => ShortcutAction::CanvasPan { dx: 0.0, dy: -step },
             })
         }
         _ => None,
@@ -4370,6 +4390,22 @@ impl EditorApp {
                 }
             }
             ShortcutAction::DesignCheck => self.run_design_check(),
+            ShortcutAction::CanvasZoom(factor) => {
+                if self.view_mode != ViewMode::View3D {
+                    self.zoom = (self.zoom * factor).clamp(0.25, 10.0);
+                }
+            }
+            ShortcutAction::CanvasPan { dx, dy } => {
+                if self.view_mode != ViewMode::View3D {
+                    self.pan += egui::Vec2::new(dx, dy);
+                }
+            }
+            ShortcutAction::CanvasResetView => {
+                if self.view_mode != ViewMode::View3D {
+                    self.zoom = 1.0;
+                    self.pan = egui::Vec2::ZERO;
+                }
+            }
             ShortcutAction::Save => {
                 if read_only {
                     self.set_status(read_only_msg.into(), true);
@@ -10510,8 +10546,30 @@ angle=0.00
             f(ArrowDown, true, false, false, false),
             Some(ShortcutAction::Nudge { dx: 0.0, dz: 256.0 })
         );
-        // Plain arrows belong to the 3D camera; Alt disables everything.
+        // Plain arrows belong to the 3D camera / 2D canvas hover; Shift+Arrows pan the canvas; Alt disables everything.
         assert_eq!(f(ArrowLeft, false, false, false, false), None);
+        assert_eq!(
+            f(ArrowRight, false, true, false, false),
+            Some(ShortcutAction::CanvasPan { dx: -256.0, dy: 0.0 })
+        );
+        assert_eq!(f(ArrowUp, false, false, false, false), None);
+        assert_eq!(
+            f(ArrowDown, false, true, false, false),
+            Some(ShortcutAction::CanvasPan { dx: 0.0, dy: -256.0 })
+        );
+        assert_eq!(
+            f(PageUp, false, false, false, false),
+            Some(ShortcutAction::CanvasZoom(1.15))
+        );
+        assert_eq!(
+            f(PageDown, false, false, false, false),
+            Some(ShortcutAction::CanvasZoom(1.0 / 1.15))
+        );
+        assert_eq!(
+            f(Home, false, false, false, false),
+            Some(ShortcutAction::CanvasResetView)
+        );
+        assert_eq!(f(ArrowLeft, false, false, true, false), None);
         assert_eq!(f(S, true, false, true, false), None);
     }
 
@@ -10561,6 +10619,60 @@ angle=0.00
         let pan = app.pan;
         app.focus_world_position(f32::NAN, 1.0);
         assert_eq!(app.pan, pan, "non-finite focus is ignored");
+    }
+
+    #[test]
+    fn canvas_keyboard_shortcuts_zoom_pan_and_reset() {
+        let mut app = EditorApp::default();
+        assert_eq!(app.zoom, 1.0);
+        assert_eq!(app.pan, Vec2::ZERO);
+
+        // Zoom in
+        app.handle_shortcut_action(ShortcutAction::CanvasZoom(1.5));
+        assert_eq!(app.zoom, 1.5);
+
+        // Pan
+        app.handle_shortcut_action(ShortcutAction::CanvasPan { dx: 100.0, dy: -50.0 });
+        assert_eq!(app.pan, Vec2::new(100.0, -50.0));
+
+        // Zoom clamping test
+        app.handle_shortcut_action(ShortcutAction::CanvasZoom(100.0));
+        assert_eq!(app.zoom, 10.0); // max 10.0
+        app.handle_shortcut_action(ShortcutAction::CanvasZoom(0.01));
+        assert_eq!(app.zoom, 0.25); // min 0.25
+
+        // Reset view
+        app.handle_shortcut_action(ShortcutAction::CanvasResetView);
+        assert_eq!(app.zoom, 1.0);
+        assert_eq!(app.pan, Vec2::ZERO);
+
+        // In 3D view mode, canvas zoom/pan/reset does not alter 2D zoom/pan
+        app.view_mode = ViewMode::View3D;
+        app.handle_shortcut_action(ShortcutAction::CanvasZoom(2.0));
+        app.handle_shortcut_action(ShortcutAction::CanvasPan { dx: 50.0, dy: 50.0 });
+        assert_eq!(app.zoom, 1.0);
+        assert_eq!(app.pan, Vec2::ZERO);
+    }
+
+    #[test]
+    fn status_bar_cursor_readout_and_default_state() {
+        let app = EditorApp::default();
+        assert_eq!(app.canvas_cursor, None);
+
+        let (wx, wz, tx, tz) = (8192.0, 4096.0, 32, 16);
+        let format_readout = |lang| {
+            let prefix = tr(lang, "Cursor", "游標");
+            let tile_label = tr(lang, "Tile", "圖塊");
+            format!("{prefix}: X: {wx:.0}, Z: {wz:.0} | {tile_label}: ({tx}, {tz})")
+        };
+        assert_eq!(
+            format_readout(AppLanguage::English),
+            "Cursor: X: 8192, Z: 4096 | Tile: (32, 16)"
+        );
+        assert_eq!(
+            format_readout(AppLanguage::TraditionalChinese),
+            "游標: X: 8192, Z: 4096 | 圖塊: (32, 16)"
+        );
     }
 
     #[test]
@@ -10725,49 +10837,49 @@ impl EditorApp {
             ui.horizontal_wrapped(|ui| {
                 ui.heading(tr(lang, "Against Rome Map Editor (Rust)", "Against Rome 地圖編輯器 (Rust)"));
                 ui.separator();
-                if ui.button(tr(lang, "Modifier", "修改器")).clicked() {
+                if ui.button(tr(lang, "Modifier", "修改器")).on_hover_text(tr(lang, "Open game save and memory trainer window", "開啟遊戲存檔與記憶體修改器視窗")).clicked() {
                     self.toolbox.open_modifier();
                 }
-                if ui.button(tr(lang, "Modifier Studio", "修改器工作室")).clicked() {
+                if ui.button(tr(lang, "Modifier Studio", "修改器工作室")).on_hover_text(tr(lang, "Open in-editor live value inspection and memory tools", "開啟編輯器內部即時數值檢視與記憶體工具")).clicked() {
                     self.modifier.open = true;
                 }
-                if ui.button(tr(lang, "Save Manager", "存檔管理")).clicked() {
+                if ui.button(tr(lang, "Save Manager", "存檔管理")).on_hover_text(tr(lang, "Backup, restore, and organize game save files", "備份、還原與管理遊戲存檔")).clicked() {
                     self.toolbox.open_save_manager();
                 }
-                if ui.button(tr(lang, "Navigation", "導航")).clicked() {
+                if ui.button(tr(lang, "Navigation", "導航")).on_hover_text(tr(lang, "Inspect passability grid, APAT footprints, and pathfinding routes", "檢視通行網格、APAT 建築占地與尋路路徑")).clicked() {
                     self.navigation.open = true;
                 }
-                if ui.button(tr(lang, "Minimap", "小地圖")).clicked() {
+                if ui.button(tr(lang, "Minimap", "小地圖")).on_hover_text(tr(lang, "Toggle minimap overview window", "切換右下角小地圖總覽視窗")).clicked() {
                     self.minimap.open = true;
                 }
-                if ui.button(tr(lang, "Objects", "物件")).clicked() {
+                if ui.button(tr(lang, "Objects", "物件")).on_hover_text(tr(lang, "Open placed DATA objects list and placement inspector", "開啟已放置 DATA 物件清單與屬性檢查器")).clicked() {
                     self.placement.open = true;
                 }
-                if ui.button(tr(lang, "Scenario / Camera", "劇本／鏡頭")).clicked() {
+                if ui.button(tr(lang, "Scenario / Camera", "劇本／鏡頭")).on_hover_text(tr(lang, "Open scenario trigger events, conditions, and camera actions", "開啟劇本觸發事件、判斷條件與鏡頭動作")).clicked() {
                     self.scenario.open = true;
                 }
-                if ui.button(tr(lang, "Spawns", "放置腳本物件")).clicked() {
+                if ui.button(tr(lang, "Spawns", "放置腳本物件")).on_hover_text(tr(lang, "Place and manage script-spawned units and buildings", "放置與管理腳本生成的部隊與建築")).clicked() {
                     self.spawn_ui.open = true;
                 }
-                if ui.button(tr(lang, "Materials", "材質")).clicked() {
+                if ui.button(tr(lang, "Materials", "材質")).on_hover_text(tr(lang, "Paint terrain surface textures and blending layers", "繪製地表材質與過渡圖層混合")).clicked() {
                     self.textures.open = true;
                 }
-                if ui.button(tr(lang, "Scene (SDL)", "場景 (SDL)")).clicked() {
+                if ui.button(tr(lang, "Scene (SDL)", "場景 (SDL)")).on_hover_text(tr(lang, "Inspect and modify SDL scene markers and entities", "檢視與修改 SDL 場景標記與物件實體")).clicked() {
                     self.scene.open = true;
                 }
-                if ui.button(tr(lang, "Event Graph", "事件圖")).clicked() {
+                if ui.button(tr(lang, "Event Graph", "事件圖")).on_hover_text(tr(lang, "Visual node graph editor for scenario events and triggers", "視覺化劇本事件與觸發器節點圖編輯器")).clicked() {
                     self.open_toolbar_event_graph();
                 }
-                if ui.button(tr(lang, "Console", "主控台")).clicked() {
+                if ui.button(tr(lang, "Console", "主控台")).on_hover_text(tr(lang, "Interactive developer console and command executor", "互動式開發者主控台與命令執行器")).clicked() {
                     self.console.open = true;
                 }
-                if ui.button(tr(lang, "Maps", "地圖")).clicked() {
+                if ui.button(tr(lang, "Maps", "地圖")).on_hover_text(tr(lang, "Open map file browser and template manager", "開啟地圖檔案瀏覽器與範本管理器")).clicked() {
                     self.maps.open = true;
                 }
-                if ui.button(tr(lang, "Map properties", "地圖屬性")).clicked() {
+                if ui.button(tr(lang, "Map properties", "地圖屬性")).on_hover_text(tr(lang, "Edit map title, player briefing, and starting camera position", "編輯地圖標題、玩家任務簡報與起始相機視角")).clicked() {
                     self.map_properties_open = true;
                 }
-                if ui.button(tr(lang, "New Map", "新地圖")).clicked() {
+                if ui.button(tr(lang, "New Map", "新地圖")).on_hover_text(tr(lang, "Create a blank map or generate a flat template", "建立空白地圖或產生平坦範本地圖")).clicked() {
                     self.maps.open = true;
                     self.maps.current_tab = crate::maps_ui::MapsTab::NewBlankMap;
                     if self.maps.game_path_input.trim().is_empty()
@@ -10781,55 +10893,56 @@ impl EditorApp {
                         }
                     }
                 }
-                if ui.button(tr(lang, "New skirmish map…", "新增對戰地圖…")).clicked() {
+                if ui.button(tr(lang, "New skirmish map…", "新增對戰地圖…")).on_hover_text(tr(lang, "4-step wizard to create a balanced skirmish map with settlement, waves, and objectives", "開啟四步驟精靈建立含聚落、波次與勝負目標的平衡對戰地圖")).clicked() {
                     self.open_skirmish_wizard();
                 }
-                if ui.button(tr(lang, "Environment", "環境")).clicked() {
+                if ui.button(tr(lang, "Environment", "環境")).on_hover_text(tr(lang, "Configure lighting, sun angles, weather, and day-night presets", "設定光照、太陽角度、天氣與日夜預設")).clicked() {
                     self.environment.open = true;
                 }
-                if ui.button(tr(lang, "Landscape", "地景")).clicked() {
+                if ui.button(tr(lang, "Landscape", "地景")).on_hover_text(tr(lang, "Generate terrain elevations, mountain ridges, and river paths", "產生高低起伏、山脈山脊與河道規劃")).clicked() {
                     self.landscape.open = true;
                 }
-                if ui.button(tr(lang, "Packaging", "打包")).clicked() {
+                if ui.button(tr(lang, "Packaging", "打包")).on_hover_text(tr(lang, "Export map mod as ZIP package for distribution", "將地圖模組匯出為可分發的 ZIP 壓縮包")).clicked() {
                     self.packaging.open = true;
                 }
-                if ui.button(tr(lang, "Campaign", "戰役")).clicked() {
+                if ui.button(tr(lang, "Campaign", "戰役")).on_hover_text(tr(lang, "Configure starting camera, intro cutscenes, and AI attack waves", "設定起始視角鏡頭、過場動畫與 AI 進攻波次")).clicked() {
                     self.campaign.open = true;
                 }
-                if ui.button(tr(lang, "AI Planner", "AI 企劃")).clicked() {
+                if ui.button(tr(lang, "AI Planner", "AI 企劃")).on_hover_text(tr(lang, "Generate terrain, water, and materials with local Ollama AI", "使用本機 Ollama AI 規劃地形、水面與地表材質")).clicked() {
                     self.ai_planner.open = true;
                 }
-                if ui.button(tr(lang, "Ambience", "氛圍")).clicked() {
+                if ui.button(tr(lang, "Ambience", "氛圍")).on_hover_text(tr(lang, "Configure background music, ambient sound zones, and water level", "設定背景音樂、環境音效區域與地表水位")).clicked() {
                     self.ambience.open = true;
                 }
-                if ui.button(tr(lang, "Families & Effects", "群組與特效")).clicked() {
+                if ui.button(tr(lang, "Families & Effects", "群組與特效")).on_hover_text(tr(lang, "Inspect DATA object parent-child links, particles, and light attachments", "檢視 DATA 物件父子關聯、粒子系統與附屬光源")).clicked() {
                     self.family_open = true;
                 }
-                if ui.button(tr(lang, "Tech Doc", "技術文件")).clicked() {
+                if ui.button(tr(lang, "Tech Doc", "技術文件")).on_hover_text(tr(lang, "Read built-in reverse engineering format documentation and research", "查閱內建逆向工程格式文件與規格研究")).clicked() {
                     self.tech_doc.open = true;
                 }
                 if ui.button(tr(lang, "Design Check", "設計檢查")).on_hover_text(tr(lang, "Run design check (F5)", "立即執行設計檢查（F5）")).clicked() {
                     self.run_design_check();
                 }
-                if ui.button(tr(lang, "Map Balance Summary", "地圖平衡摘要")).clicked() {
+                if ui.button(tr(lang, "Map Balance Summary", "地圖平衡摘要")).on_hover_text(tr(lang, "Compare player team resource balance, settlement sizes, and unit counts", "檢視各隊伍起始資源、聚落規模與部隊數量平衡")).clicked() {
                     self.balance_summary.open = true;
                 }
 
                 ui.label(tr(lang, "Map Folder:", "地圖資料夾:"));
                 ui.text_edit_singleline(&mut self.map_path_input);
 
-                if ui.button(tr(lang, "Load Folder", "載入資料夾")).clicked() {
+                if ui.button(tr(lang, "Load Folder", "載入資料夾")).on_hover_text(tr(lang, "Load map folder entered in the path field", "載入路徑欄位中指定的自製地圖資料夾")).clicked() {
                     self.pending_action = Some(PendingAction::Load(PathBuf::from(
                         self.map_path_input.trim(),
                     )));
                 }
 
-                if ui.button(tr(lang, "Safe Save", "安全儲存 (Ctrl+S)")).clicked() {
+                if ui.button(tr(lang, "Safe Save", "安全儲存 (Ctrl+S)")).on_hover_text(tr(lang, "Run design validation and save map files atomically (Ctrl+S)", "執行設計驗證並以不可部分完成交易安全儲存地圖 (Ctrl+S)")).clicked() {
                     self.request_safe_save();
                 }
 
                 if ui
                     .button(tr(lang, "Test in Game", "選用：啟動遊戲測試"))
+                    .on_hover_text(tr(lang, "Save custom map and launch Against Rome to test in-game", "儲存自製地圖並啟動羅馬帝國遊戲進行實機測試"))
                     .clicked()
                 {
                     self.test_in_game();
@@ -10883,6 +10996,13 @@ impl EditorApp {
                     Color32::from_rgb(100, 200, 100)
                 };
                 ui.colored_label(color, &self.status_message);
+
+                if let Some((wx, wz, tx, tz)) = self.canvas_cursor {
+                    ui.separator();
+                    let prefix = tr(lang, "Cursor", "游標");
+                    let tile_label = tr(lang, "Tile", "圖塊");
+                    ui.label(format!("{prefix}: X: {wx:.0}, Z: {wz:.0} | {tile_label}: ({tx}, {tz})"));
+                }
 
                 if let Some(session) = &self.session {
                     if session.is_dirty() || self.reset_auxiliary_layers {
@@ -11253,6 +11373,14 @@ impl EditorApp {
                         self.scene.scene_pointer(event);
                     }
                     self.handle_viewport_3d_action(action);
+                    if let Some(hit) = self.viewport_3d.hover_world {
+                        let wx = hit.x * 256.0;
+                        let wz = hit.z * 256.0;
+                        let (tx, tz) = self.viewport_3d.hover_tile.unwrap_or((hit.x.floor() as i32, hit.z.floor() as i32));
+                        self.canvas_cursor = Some((wx, wz, tx, tz));
+                    } else {
+                        self.canvas_cursor = None;
+                    }
                 } else {
                     ui.centered_and_justified(|ui| {
                         ui.heading("No terrain session loaded. Create or load a map first.");
@@ -11288,6 +11416,26 @@ impl EditorApp {
             // 最小可用 pan state：支援滑鼠中鍵拖曳平移
             if response.dragged_by(egui::PointerButton::Middle) {
                 self.pan += response.drag_delta();
+            }
+
+            // 支援 2D 畫布方向鍵平移（Shift 加速）
+            if response.hovered() && !ctx.wants_keyboard_input() {
+                let (ctrl, alt) = ctx.input(|i| (i.modifiers.ctrl || i.modifiers.command, i.modifiers.alt));
+                if !ctrl && !alt {
+                    let step = if ctx.input(|i| i.modifiers.shift) { 256.0 } else { 64.0 };
+                    if ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
+                        self.pan.x += step;
+                    }
+                    if ctx.input(|i| i.key_pressed(egui::Key::ArrowRight)) {
+                        self.pan.x -= step;
+                    }
+                    if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+                        self.pan.y += step;
+                    }
+                    if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+                        self.pan.y -= step;
+                    }
+                }
             }
 
             // 支援滑鼠滾輪縮放（以游標為錨點保持世界座標不變）
@@ -11379,6 +11527,22 @@ impl EditorApp {
                 } else if self.scene.is_capturing() {
                     self.scene.end_drag();
                 }
+            }
+
+            if let Some(mouse_pos) = response.hover_pos() {
+                if map_rect.contains(mouse_pos) {
+                    let (wx, wz) = crate::scenario_canvas::world_from_screen(map_rect, mouse_pos);
+                    let norm_x = (mouse_pos.x - map_rect.min.x) / map_rect.width();
+                    let norm_y = (mouse_pos.y - map_rect.min.y) / map_rect.height();
+                    let tiles = 64.0_f32;
+                    let tile_x = ((norm_x * tiles).floor() as i32).clamp(0, 63);
+                    let tile_y = ((norm_y * tiles).floor() as i32).clamp(0, 63);
+                    self.canvas_cursor = Some((wx, wz, tile_x, tile_y));
+                } else {
+                    self.canvas_cursor = None;
+                }
+            } else {
+                self.canvas_cursor = None;
             }
 
             // 處理滑鼠操作繪製

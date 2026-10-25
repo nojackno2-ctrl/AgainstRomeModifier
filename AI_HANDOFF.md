@@ -1,3 +1,9 @@
+## 2026-10-25 Agy：編輯器三大設計者體驗優化（頂部工具列雙語提示、狀態列游標與圖塊座標讀數、2D 畫布視角快捷鍵）（已驗證）
+- 1. 頂部工具列所有功能按鈕雙語懸停提示：針對原缺口（app.rs:10765-10874 之存檔管理、場景導航、小地圖、物件、劇本相機、生成點、材質、SDL場景、事件圖、控制台、環境、地景、打包、戰役、AI企劃、氛圍、族系效果、規格研究、平衡摘要、載入與安全儲存等按鈕缺少 .on_hover_text），全面補齊 tr() 雙語 hover 提示。
+- 2. 狀態列游標世界座標與圖塊索引即時讀數：針對原缺口（app.rs:10915-10935 僅顯示狀態訊息與未儲存標記，無座標回報），新增 canvas_cursor 狀態；於 2D 畫布 hover 與 3D 視角 hover 時即時計算世界座標 (wx, wz) 與圖塊 (tx, tz)，在狀態列以 tr() 顯示雙語格式 `Cursor: X: {wx:.0}, Z: {wz:.0} | Tile: ({tx}, {tz})` / `游標: X: {wx:.0}, Z: {wz:.0} | 圖塊: ({tx}, {tz})`。
+- 3. 2D 畫布視角鍵盤快捷導覽（縮放、平移與重設）：針對原缺口（app.rs:3862-3950 快捷鍵僅支援筆刷與物件 Nudge，2D 畫布僅支援滑鼠滾輪與中鍵），新增 ShortcutAction 之 CanvasZoom(f32)、CanvasPan { dx, dy }、CanvasResetView。支援 PageUp/PageDown 縮放（clamp 0.25..=10.0）、Home 重設視圖；2D 畫布懸停支援方向鍵平移（Shift 加速至 256px），全域支援 Shift+方向鍵快速平移，Ctrl+方向鍵保留予放置物件微調（相容 3D 攝影機與既有測試）。
+- 驗證：執行 cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/agy-target 完成 283 組測試套件，**2,567 passed／0 failed／25 ignored**（exit 0，日誌 re_workspace/agy-batch-6-test.log）。已同步更新 docs/map-editor-user-guide.md。未 stage／commit；遊戲安裝目錄唯讀；AGENTS.md／README.md 既有變更嚴格保留；未手動驗收 GUI。
+
 ## 2026-10-25 Codex：批次 #5 審查修正（已驗證）
 - Codex 在完整測試期間因模型容量不足（"Selected model is at capacity"）中斷；修正與測試已寫完。Claude 重跑 `cargo test --workspace --locked --offline --no-fail-fast`：exit 0，**2,565 passed／0 failed／25 ignored**（`re_workspace/codex-batch-5-claude-test.log`）。
 - 已審查指定五筆提交；修正全域快捷鍵穿透確認視窗／精靈／事件圖（含復原重做），以及 SDL Delete 略過原廠地圖唯讀防護；各補無視窗回歸測試。cargo check --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 通過；完整測試進行中，日誌 re_workspace/codex-batch-5-test.log。未 stage／commit；遊戲唯讀；AGENTS.md／README.md 既有修改保留。
