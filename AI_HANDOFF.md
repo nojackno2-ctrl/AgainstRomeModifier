@@ -1,3 +1,8 @@
+## 2026-10-26 Codex：批次 #42 Design Check 效能（已驗證）
+- 定位：大型 fixture 建立 56.435 s（計時之外）；Design Check 62.036 s，其中已儲存／候選家族索引重建分別 30.811／31.029 s；劇本 staging 40.289 ms、兩次幾何診斷各約 3.4 ms；Safe Save 439.676 ms、reload 34.837 ms。佐證：re_workspace/codex-batch-42-before.log。
+- 修正：ObjectStore::family_details_batch 在同一唯讀批次共用 FamilyDetailsIndex，避免每個根物件重掃／解碼全部資料池；新增同 fixture 新舊家族結果與診斷位元組一致性及磁碟不變檢查。首次測試編譯誤用不存在的 MapCheckSnapshot::empty，已改用 new。
+- 單獨壓力測試通過：Design Check 609.604 ms（約快 102 倍），Safe Save 446.762 ms、reload 34.157 ms；同 fixture 舊／新診斷 32.006 s／229.333 ms，家族結果及診斷文字位元組相同、磁碟位元組不變。fixture 分段為精靈 20.482 s、DATA 建立／載入／移動 30.812 s、劇本 13.321 ms；此成本在 Design Check 計時之外，未擴大修改移動流程。佐證：re_workspace/codex-batch-42-after.log。依序 cargo check／cargo test／cargo build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 全部 exit 0；test 使用 --no-fail-fast，日誌 re_workspace/codex-batch-42-test.log：287 組、2705 passed、0 failed、26 ignored（編輯器 844 passed／7 ignored）；install_resource_discovery 12 passed，提升權限環境專屬失敗 0。check／build 日誌同前綴；無 MSVC 連結錯誤。git diff --check 通過。未修改指定暫時模組、未接觸遊戲資料夾、未 stage／commit。
+
 ## 2026-10-26 Codex：任務 #41 多次儲存與切圖端到端測試（已驗證）
 - 新增 12 項 TEMP e2e：十個子系統各三輪編輯／Safe Save／重載及儲存界線 Undo／再次儲存；實際點擊切圖捨棄確認與跨圖復原隔離；257×257、256 DATA 物件、512 spawns、256 events 壓力。Families & Effects 使用帶光源的跨池家族複製；nature 每輪移除磁碟基準的樹並新增，涵蓋 slot 重用。
 - 限制：既有 Safe Save 清除 Undo 歷程，ambience 無局部 Undo；本次驗證儲存後 Undo 保持乾淨已儲存狀態，未實作跨儲存還原舊狀態。既有地形流程增加 Undo／Redo 最多 64 步斷言，原驗證保留。

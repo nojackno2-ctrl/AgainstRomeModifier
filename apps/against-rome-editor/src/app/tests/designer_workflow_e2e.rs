@@ -173,8 +173,11 @@ save_cycle_test!(three_safe_saves_campaign_camera, "camera");
 
 #[test]
 fn large_map_near_event_limit_design_save_reload_timings() {
+    let total = std::time::Instant::now();
     let root = workflow_fixture("stress_41");
     let mut app = wizard_map(&root, 5, false);
+    eprintln!("Task42 fixture 建立／精靈={:?}", total.elapsed());
+    let setup = std::time::Instant::now();
     let map = app.loaded_map_path.clone().unwrap();
     let live = vec![(232, None); 256];
     spawn_save_tests::write_data(&map, 512, &live, 1000);
@@ -196,6 +199,8 @@ fn large_map_near_event_limit_design_save_reload_timings() {
         x: 512.0 + (i % 32) as f32 * 256.0, z: 512.0 + (i / 32) as f32 * 256.0,
         ..Default::default()
     }).collect();
+    eprintln!("Task42 DATA 建立／載入／移動={:?}", setup.elapsed());
+    let scenario_start = std::time::Instant::now();
     app.scenario.apply_spawns(spawns).unwrap();
     let events: Vec<_> = (0..256).map(|i| against_rome_scenario::Event {
         name: format!("壓力事件 {i}"), delay_seconds: i,
@@ -203,6 +208,7 @@ fn large_map_near_event_limit_design_save_reload_timings() {
         ..Default::default()
     }).collect();
     app.scenario.add_events(&events).unwrap();
+    eprintln!("Task42 劇本建構={:?}，fixture 總計={:?}", scenario_start.elapsed(), total.elapsed());
     let start = std::time::Instant::now();
     app.run_design_check();
     assert_eq!(app.design_check.report.as_ref().unwrap().error_count(), 0, "{:?}", app.design_check.report);
@@ -214,6 +220,18 @@ fn large_map_near_event_limit_design_save_reload_timings() {
     eprintln!("Task41 257x257 / 256 DATA objects / 512 spawns / 256 events: Design Check={check:?}, Safe Save={save:?}, reload={reload:?}");
     assert!(start.elapsed() < std::time::Duration::from_secs(120));
     assert_eq!(loaded.scenario.document(), app.scenario.document());
+    // 同一大型候選資料比較舊路徑與批次路徑的完整診斷文字位元組，並確認唯讀。
+    let disk_before = map_bytes(&map);
+    let store = app.placement.detached_store().unwrap();
+    let snapshot = against_rome_maps::diagnostics::MapCheckSnapshot::new(Vec::new(), Vec::new(), Vec::new(), 0, None);
+    let parity_start = std::time::Instant::now();
+    let legacy = crate::design_check_ui::data_candidate_issues_legacy(&store, &snapshot, &mut None);
+    let legacy_time = parity_start.elapsed();
+    let parity_start = std::time::Instant::now();
+    let batch = crate::design_check_ui::data_candidate_issues(&store, &snapshot, &mut None);
+    eprintln!("Task42 相同 fixture 診斷：舊路徑={legacy_time:?}，批次={:?}", parity_start.elapsed());
+    assert_eq!(format!("{legacy:?}").as_bytes(), format!("{batch:?}").as_bytes());
+    assert_eq!(map_bytes(&map), disk_before);
     assert_eq!(loaded.scenario.document().events.len(), 256);
     assert_eq!(loaded.scenario.document().spawns.len(), 512);
     assert_eq!(spawn_save_tests::data_objects(&map), app.placement.objects());

@@ -2843,6 +2843,11 @@ impl ObjectStore {
         let index = FamilyDetailsIndex::new(self);
         self.family_details_with_index(slot, uid, &index)
     }
+    /// 同一個唯讀批次共用反向索引，避免每個根物件重新解碼全部資料池。
+    pub fn family_details_batch(&self, roots: &[(usize, u32)]) -> Vec<Result<FamilyDetails>> {
+        let index = FamilyDetailsIndex::new(self);
+        roots.iter().map(|&(slot, uid)| self.family_details_with_index(slot, uid, &index)).collect()
+    }
     fn family_details_with_index(
         &self,
         slot: usize,

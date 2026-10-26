@@ -21,16 +21,46 @@ pub(crate) fn data_candidate_issues(
     terrain: &against_rome_maps::diagnostics::MapCheckSnapshot,
     resolver: &mut Option<crate::building_footprint::FootprintResolver>,
 ) -> Vec<MapIssue> {
+    data_candidate_issues_impl(store, terrain, resolver, true)
+}
+
+#[cfg(test)]
+pub(crate) fn data_candidate_issues_legacy(
+    store: &against_rome_placement::ObjectStore,
+    terrain: &against_rome_maps::diagnostics::MapCheckSnapshot,
+    resolver: &mut Option<crate::building_footprint::FootprintResolver>,
+) -> Vec<MapIssue> {
+    data_candidate_issues_impl(store, terrain, resolver, false)
+}
+
+fn data_candidate_issues_impl(
+    store: &against_rome_placement::ObjectStore,
+    terrain: &against_rome_maps::diagnostics::MapCheckSnapshot,
+    resolver: &mut Option<crate::building_footprint::FootprintResolver>,
+    batch: bool,
+) -> Vec<MapIssue> {
     use against_rome_maps::diagnostics::{MapCheckObject, MapDiagnostics};
+    #[cfg(test)]
+    let timer = std::time::Instant::now();
     let mut snapshot = terrain.clone();
     snapshot.events.clear();
     snapshot.objects.clear();
     let mut issues = Vec::new();
     let mut footprints = std::collections::HashMap::new();
-    for object in store.objects().into_iter().filter(|o| o.parent.is_none()) {
+    let objects: Vec<_> = store.objects().into_iter().filter(|o| o.parent.is_none()).collect();
+    let roots: Vec<_> = objects.iter().map(|o| (o.slot, o.uid)).collect();
+    let families = if batch {
+        store.family_details_batch(&roots)
+    } else {
+        let legacy: Vec<_> = roots.iter().map(|&(slot, uid)| store.family_details(slot, uid)).collect();
+        #[cfg(test)]
+        assert_eq!(store.family_details_batch(&roots), legacy);
+        legacy
+    };
+    for (object, family) in objects.into_iter().zip(families) {
         // slot 與 UID 組成穩定識別，讓已儲存／候選結果可直接比對。
         let id = Uuid::from_u128((1u128 << 127) | ((object.slot as u128) << 32) | u128::from(object.uid));
-        if let Err(error) = store.family_details(object.slot, object.uid) {
+        if let Err(error) = family {
             let mut issue = MapIssue::new(MapIssueSeverity::Error, "family-link",
                 format!("DATA 家族連結無效：{error}"), format!("Invalid DATA family links: {error}"));
             issue.object_id = id;
@@ -44,8 +74,14 @@ pub(crate) fn data_candidate_issues(
             prebuilt: true, ..Default::default()
         }, footprints.contains_key(&id), true));
     }
+    #[cfg(test)]
+    eprintln!("Task42 family/footprints={:?}", timer.elapsed());
+    #[cfg(test)]
+    let timer = std::time::Instant::now();
     issues.extend(MapDiagnostics::check_with_footprints(&snapshot, &footprints).into_iter()
         .filter(|i| matches!(i.code.as_str(), "coordinates" | "overlap")));
+    #[cfg(test)]
+    eprintln!("Task42 data diagnostics={:?}", timer.elapsed());
     issues
 }
 /// One displayable row of the issue list (C# `MapEditorForm.Diagnostics` `_mapIssues`).
@@ -578,10 +614,14 @@ impl EditorApp {
 
     /// Pure (`&self`) computation of the report; used by the button and by tests.
     pub fn design_check_report(&self) -> DesignCheckReport {
+        #[cfg(test)]
+        let timer = std::time::Instant::now();
         let (path, staged) = match self.check_candidate_inputs() {
             Ok(v) => v,
             Err(e) => return DesignCheckReport::Unavailable(e),
         };
+        #[cfg(test)]
+        eprintln!("Task42 scenario staging={:?}", timer.elapsed());
         match self.candidate_diagnostics_with_pending_data(&path, &staged, true) {
             Err(e) => DesignCheckReport::Unavailable(e),
             Ok(c) => {
