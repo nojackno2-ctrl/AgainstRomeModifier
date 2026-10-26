@@ -1,3 +1,32 @@
+## 2026-10-26 Claude：暫停交接（使用者要求「先暫停，寫交接」）
+
+**目前狀態**
+- 分支 `主要開發`，最新已推送 `a4a43ae`。完整測試（Claude 正常環境，`cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target`）：**2,705 passed／0 failed／26 ignored**。
+- 工作樹未提交內容（刻意不提交）：`AGENTS.md`、`README.md`（使用者自己的修改，勿動）；`apps/against-rome-editor/src/app.rs` 只多一行 `mod ingame_prep_endl005;`，加上未追蹤的 `apps/against-rome-editor/src/app/tests/ingame_prep_endl005.rs`（**暫時**的 `#[ignore]` 實測準備測試，實測結束後應刪除這兩處，不要提交）。
+- 進行中工作：無。Codex #43（效能全面計時）已在開工 1 分鐘內取消，未改任何檔案；可原樣重派（內容見下方「下一步」）。
+
+**ENDL_005 遊戲實測（尚未進行，地圖目前是「已修改」狀態）**
+- 使用者已於 2026-10-26 授權由 Claude 操作遊戲實測（第一次權限視窗被拒，之後使用者在對話中明確授權），但隨即要求暫停，故尚未啟動遊戲。下次 `request_access` 申請 "Against Rome" 即可開始。
+- `C:\Program Files (x86)\Against Rome\MAPS\ENDL_005` 已被 Codex 用編輯器寫入測試內容並 Safe Save；**備份在 `C:\Users\nojac\AppData\Local\Temp\arm_ingame_backup_ENDL_005_20261026133517`**（55 檔，含 `manifest.sha256`）。改後檔案雜湊見 `re_workspace/ingame-prep-changed.sha256`。遊戲其他 5,095 檔未變。
+- 測試內容：`ARM hostile team 1`（0 秒敵對外交）；`Wave_03/04/05` 於 60/120/180 秒，隊伍 1、`HUN_KAVINF00` 5/7/9 隻，生成 X/Z 15200/10080，目的地＝主屋 10624/10112；`Survive_300s` 300 秒勝利（原 40 秒勝利事件已停用）；`ARM area test`：玩家步兵進入 X 10208–10336、Z 9568–9696 時顯示同名訊息。Design Check 0 Errors。
+- 實測要看：各波準時出現、紅色敵對血條、走向主屋並攻擊；5:00 勝利；步兵進入矩形才出現訊息。依 `docs/map-editor-ingame-checklist.md` 截圖記錄。
+- **實測後必做**：用上述備份還原 ENDL_005 並以 `manifest.sha256` 比對全部雜湊；刪除暫時測試兩處；把結果寫進本檔與驗收清單。若決定不測，同樣要還原。
+
+**本輪（2026-10-24～26）完成摘要**
+- 依「Agy／Codex 實作 → 另一方審查 → Claude 在正常環境重跑全測試後提交」流程，共約 40 批，全部已推送。主要成果：波次／勝負預設／事件範本／瀏覽器、畫布劇本標記、統一 undo/redo、當機復原、Safe Save 阻擋清單、設計檢查（未存 DATA、前往、搜尋、篩選、報告匯出）、APT 真實建築佔地（路徑與重疊）、對戰地圖精靈、地圖屬性、平衡摘要、準備測試面板、快捷鍵與指南一致性測試、全介面雙語化＋原始碼掃描測試、多組端到端工作流程測試。
+- 端到端測試抓到並修正的真錯誤（重要）：精靈地圖無法存檔、空白場景不認零售 particle.dat、自然物件第二次存檔失敗、區域選取擋存檔、原版地圖多處可被修改、Design Check 大地圖 62 s→0.6 s。
+
+**已知限制／未驗證**
+- 所有新功能僅自動化測試；**遊戲內與人工畫面皆未驗證**。
+- 存檔後無法 undo 回存檔前（各子系統存檔即清空歷程）；水位控制、戰役鏡頭無 undo。
+- APT 佔地僅用 group 0（預設狀態），塔樓無資料。
+- Codex `workspace-write` 沙箱 shell 常失敗（`helper_unknown_error`），需允許 `require_escalated`；在其升權環境 `install_resource_discovery` 4 項會失敗（正常環境通過）。Codex 偶爾「model at capacity」中斷，工作樹會留半成品，接手前先看 `git diff`。
+
+**下一步建議**
+1. 完成 ENDL_005 遊戲實測並還原（見上）。
+2. 重派 Codex #43：在大型 fixture 上量測開圖、首幀、Safe Save、Design Check、路徑 APT、平衡摘要、準備測試、BCI 編譯、大筆畫 undo/redo、當機快照寫入，>1 s 者找根因修正（輸出位元一致），並加速 51 s 的 fixture 建立。
+3. 持續端到端測試（最能抓到真錯誤），少做零碎按鈕類改進。
+
 ## 2026-10-26 Codex：批次 #42 Design Check 效能（已驗證）
 - 定位：大型 fixture 建立 56.435 s（計時之外）；Design Check 62.036 s，其中已儲存／候選家族索引重建分別 30.811／31.029 s；劇本 staging 40.289 ms、兩次幾何診斷各約 3.4 ms；Safe Save 439.676 ms、reload 34.837 ms。佐證：re_workspace/codex-batch-42-before.log。
 - 修正：ObjectStore::family_details_batch 在同一唯讀批次共用 FamilyDetailsIndex，避免每個根物件重掃／解碼全部資料池；新增同 fixture 新舊家族結果與診斷位元組一致性及磁碟不變檢查。首次測試編譯誤用不存在的 MapCheckSnapshot::empty，已改用 new。
