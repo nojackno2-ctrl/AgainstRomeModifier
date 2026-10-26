@@ -120,6 +120,85 @@ pub(in crate::app) fn sync(app: &mut EditorApp, map: &Path) {
     app.spawn_ui.sync_with_document(&app.scenario, Some(map));
 }
 
+fn install_two_object_family_with_light(map: &Path, bound_uid: u32) -> uuid::Uuid {
+    // Root slot 0 has a child in slot 1; the child's direct light link points at light slot 0.
+    write_data(map, 12, &[(232, None), (233, Some(0))], 100);
+    let mut objects = std::fs::read(map.join("DATA/objects.dat")).unwrap();
+    objects[16 + 3..16 + 7].copy_from_slice(&bound_uid.to_le_bytes());
+    let light_column = 16 + 12 * 79 + 12 * COLUMNS[..12].iter().sum::<usize>();
+    objects[light_column + 2..light_column + 4].copy_from_slice(&0u16.to_le_bytes());
+    std::fs::write(map.join("DATA/objects.dat"), objects).unwrap();
+
+    let mut light = std::fs::read(map.join("DATA/light.dat")).unwrap();
+    let widths = against_rome_data::pool::WIDTHS;
+    let column = |index: usize| 8 + 1024 * widths[..index].iter().sum::<usize>();
+    light[column(0)..column(0) + 4].copy_from_slice(&1u32.to_le_bytes());
+    for (index, value) in [(1, 4021.0f32), (2, 28.0), (3, 4002.0)] {
+        let offset = column(index);
+        light[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    for (index, value) in [(13, 1i16), (14, -1), (15, -1)] {
+        let offset = column(index);
+        light[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+    }
+    std::fs::write(map.join("DATA/light.dat"), light).unwrap();
+
+    let mut document = against_rome_scenario::ScenarioDocument::from_json(
+        &std::fs::read(map.join("arm_scenario.json")).unwrap(),
+    )
+    .unwrap();
+    document.spawns[0].x = 4000.0;
+    document.spawns[0].z = 4000.0;
+    let root_id = document.spawns[0].id;
+    std::fs::write(map.join("arm_scenario.json"), document.to_json().unwrap()).unwrap();
+    root_id
+}
+
+fn install_two_object_family_with_particle_light(map: &Path, bound_uid: u32) -> uuid::Uuid {
+    use against_rome_data::particle::{CAPACITY, CHILDREN, PAYLOAD_LEN};
+
+    let root_id = install_two_object_family_with_light(map, bound_uid);
+    let mut objects = std::fs::read(map.join("DATA/objects.dat")).unwrap();
+    let column_offset = |column: usize| 16 + 12 * 79 + 12 * COLUMNS[..column].iter().sum::<usize>();
+    // The root owns emitter 0; the child has no object-direct light backlink.
+    objects[column_offset(11)..column_offset(11) + 2].copy_from_slice(&0u16.to_le_bytes());
+    objects[column_offset(12) + 2..column_offset(12) + 4].copy_from_slice(&u16::MAX.to_le_bytes());
+    std::fs::write(map.join("DATA/objects.dat"), objects).unwrap();
+
+    let mut particle = vec![0u8; PAYLOAD_LEN];
+    particle[..4].copy_from_slice(&1i32.to_le_bytes());
+    particle[4..8].copy_from_slice(&(CAPACITY as i32).to_le_bytes());
+    particle[8..12].copy_from_slice(&(CHILDREN as i32).to_le_bytes());
+    let record = 12;
+    particle[record..record + 2].copy_from_slice(&1u16.to_le_bytes());
+    particle[record + 2..record + 6].copy_from_slice(&1i32.to_le_bytes());
+    particle[record + 6..record + 8].copy_from_slice(&0i16.to_le_bytes());
+    let child = record + 12;
+    particle[child] = 1;
+    for (axis, value) in [4021.75f32, 28.5, 4002.5].into_iter().enumerate() {
+        let fixed = (value * 65536.0) as i32;
+        let offset = child + 1 + axis * 4;
+        particle[offset..offset + 4].copy_from_slice(&fixed.to_le_bytes());
+    }
+    particle[child + 33..child + 35].copy_from_slice(&0i16.to_le_bytes());
+    std::fs::write(map.join("DATA/particle.dat"), particle).unwrap();
+
+    // Particle-linked lights have no object owner/parent; the emitter child's link owns them.
+    let mut light = std::fs::read(map.join("DATA/light.dat")).unwrap();
+    let widths = against_rome_data::pool::WIDTHS;
+    let column = |index: usize| 8 + 1024 * widths[..index].iter().sum::<usize>();
+    for (index, value) in [(1, 4021.75f32), (2, 28.5), (3, 4002.5)] {
+        let offset = column(index);
+        light[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    for (index, value) in [(13, -1i16), (14, -1), (15, -1)] {
+        let offset = column(index);
+        light[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+    }
+    std::fs::write(map.join("DATA/light.dat"), light).unwrap();
+    root_id
+}
+
 pub(in crate::app) fn data_objects(map: &Path) -> Vec<against_rome_placement::WorldObject> {
     ObjectStore::load(map).unwrap().objects()
 }
@@ -752,42 +831,8 @@ fn bound_family_with_child_light_survives_safe_save_reload_and_translation() {
     place_house(&mut app, (30, 30), 0);
     save_ok(&mut app);
 
-    // Build a valid native two-object family and attach light slot 0 to its child.
-    // Keep the root UID and scenario UUID created through the real EditorApp placement flow.
-    write_data(&map, 12, &[(232, None), (233, Some(0))], 100);
-    let mut objects = std::fs::read(map.join("DATA/objects.dat")).unwrap();
-    // Safe Save assigned the root UID from engine.dat's cursor; make the synthetic native root
-    // retain that same UID while keeping the child as a separate family member.
     let bound_uid = app.scenario.document().data_slots[0].uid;
-    objects[16 + 3..16 + 7].copy_from_slice(&bound_uid.to_le_bytes());
-    let light_column = 16 + 12 * 79 + 12 * COLUMNS[..12].iter().sum::<usize>();
-    objects[light_column + 2..light_column + 4].copy_from_slice(&0u16.to_le_bytes());
-    std::fs::write(map.join("DATA/objects.dat"), objects).unwrap();
-
-    let mut light = std::fs::read(map.join("DATA/light.dat")).unwrap();
-    let widths = against_rome_data::pool::WIDTHS;
-    let column = |index: usize| 8 + 1024 * widths[..index].iter().sum::<usize>();
-    light[column(0)..column(0) + 4].copy_from_slice(&1u32.to_le_bytes());
-    for (index, value) in [(1, 4021.0f32), (2, 28.0), (3, 4002.0)] {
-        let offset = column(index);
-        light[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
-    }
-    let owner = column(13);
-    light[owner..owner + 2].copy_from_slice(&1i16.to_le_bytes());
-    let parent = column(14);
-    light[parent..parent + 2].copy_from_slice(&(-1i16).to_le_bytes());
-    let definition = column(15);
-    light[definition..definition + 2].copy_from_slice(&(-1i16).to_le_bytes());
-    std::fs::write(map.join("DATA/light.dat"), light).unwrap();
-
-    let mut document = against_rome_scenario::ScenarioDocument::from_json(
-        &std::fs::read(map.join("arm_scenario.json")).unwrap(),
-    )
-    .unwrap();
-    let root_id = document.spawns[0].id;
-    document.spawns[0].x = 4000.0;
-    document.spawns[0].z = 4000.0;
-    std::fs::write(map.join("arm_scenario.json"), document.to_json().unwrap()).unwrap();
+    let root_id = install_two_object_family_with_light(&map, bound_uid);
 
     let mut reloaded = EditorApp::initial_state();
     reloaded.set_loaded_map(map.clone(), TerrainSession::create_blank(5, 32)).unwrap();
@@ -832,5 +877,160 @@ fn bound_family_with_child_light_survives_safe_save_reload_and_translation() {
     assert_eq!(saved.spawns[0].x, 4512.0);
 
     drop((app, reloaded));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn enabled_event_protects_composite_family_and_disabled_event_allows_atomic_removal() {
+    use against_rome_scenario::{Action, Condition, Event, ScenarioDocument};
+
+    let (mut app, root, map) = fixture("family_event_delete_guard", &[]);
+    place_house(&mut app, (30, 30), 0);
+    save_ok(&mut app);
+    let binding = app.scenario.document().data_slots[0].clone();
+    let root_id = install_two_object_family_with_light(&map, binding.uid);
+
+    let mut loaded = EditorApp::initial_state();
+    loaded.set_loaded_map(map.clone(), TerrainSession::create_blank(5, 32)).unwrap();
+    loaded.scenario.load_session(&map).unwrap();
+    loaded.placement.load_session(&map).unwrap();
+    sync(&mut loaded, &map);
+    assert_eq!(ObjectStore::load(&map).unwrap().family(binding.slot as usize, binding.uid).unwrap().len(), 2);
+    loaded.scenario.add_events(&[Event {
+        name: "保護複合建築的啟用事件".into(),
+        conditions: vec![Condition { kind: 0, target_id: root_id, ..Default::default() }],
+        actions: vec![Action { kind: 3, ..Default::default() }],
+        ..Default::default()
+    }]).unwrap();
+    save_ok(&mut loaded);
+    sync(&mut loaded, &map);
+
+    let objects_before = std::fs::read(map.join("DATA/objects.dat")).unwrap();
+    let light_before = std::fs::read(map.join("DATA/light.dat")).unwrap();
+    let document_before = loaded.scenario.document().clone();
+    loaded.spawn_ui.select_all();
+    loaded.spawn_ui.delete_selected(&mut loaded.scenario, &cx());
+    assert!(loaded.spawn_ui.status().1, "enabled event must protect its composite target");
+    assert_eq!(loaded.scenario.document(), &document_before);
+    assert!(!loaded.scenario.dirty());
+    assert_eq!(std::fs::read(map.join("DATA/objects.dat")).unwrap(), objects_before);
+    assert_eq!(std::fs::read(map.join("DATA/light.dat")).unwrap(), light_before);
+    assert_eq!(ObjectStore::load(&map).unwrap().family(binding.slot as usize, binding.uid).unwrap().len(), 2);
+
+    assert_eq!(loaded.scenario.set_events_enabled(&[0], false).unwrap(), 1);
+    loaded.spawn_ui.select_all();
+    loaded.spawn_ui.delete_selected(&mut loaded.scenario, &cx());
+    assert!(!loaded.spawn_ui.status().1, "{}", loaded.spawn_ui.status().0);
+    assert!(loaded.scenario.document().spawns.is_empty());
+    save_ok(&mut loaded);
+
+    let after = ObjectStore::load(&map).unwrap();
+    assert!(after.objects().is_empty(), "deleting the root removes its child family too");
+    let light_pool = against_rome_data::pool::LightPool::from_file_bytes(
+        &std::fs::read(map.join("DATA/light.dat")).unwrap(),
+    ).unwrap();
+    assert_eq!(light_pool.active_slots().count(), 0, "the child's linked light is removed with the family");
+    let saved = ScenarioDocument::from_json(&std::fs::read(map.join("arm_scenario.json")).unwrap()).unwrap();
+    assert!(saved.spawns.is_empty() && saved.data_slots.is_empty());
+    assert_eq!(saved.events.len(), 1);
+    assert!(!saved.events[0].enabled);
+    assert_eq!(saved.events[0].conditions[0].target_id, root_id);
+
+    let mut reloaded = EditorApp::initial_state();
+    reloaded.set_loaded_map(map.clone(), TerrainSession::create_blank(5, 32)).unwrap();
+    reloaded.scenario.load_session(&map).unwrap();
+    reloaded.placement.load_session(&map).unwrap();
+    sync(&mut reloaded, &map);
+    assert!(reloaded.scenario.document().spawns.is_empty());
+    assert!(reloaded.scenario.document().data_slots.is_empty());
+    assert!(!reloaded.scenario.document().events[0].enabled);
+    assert_eq!(reloaded.scenario.document().events[0].conditions[0].target_id, root_id);
+    assert!(ObjectStore::load(&map).unwrap().objects().is_empty());
+
+    drop((app, loaded, reloaded));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn particle_linked_light_family_moves_reloads_and_rolls_back_mult_pool_deletion() {
+    use against_rome_data::particle::ParticlePool;
+    use against_rome_maps::TransactionFailurePoint as Fail;
+
+    let (mut app, root, map) = fixture("family_particle_light_rollback", &[]);
+    place_house(&mut app, (30, 30), 0);
+    save_ok(&mut app);
+    let binding = app.scenario.document().data_slots[0].clone();
+    let root_id = install_two_object_family_with_particle_light(&map, binding.uid);
+
+    let mut loaded = EditorApp::initial_state();
+    loaded.set_loaded_map(map.clone(), TerrainSession::create_blank(5, 32)).unwrap();
+    loaded.scenario.load_session(&map).unwrap();
+    loaded.placement.load_session(&map).unwrap();
+    sync(&mut loaded, &map);
+    let initial_particle = ParticlePool::from_file_bytes(&std::fs::read(map.join("DATA/particle.dat")).unwrap()).unwrap();
+    let initial_child = initial_particle.capture(0).unwrap().child(0).unwrap();
+    assert_eq!(initial_particle.capture(0).unwrap().owner(), 0);
+    assert_eq!(initial_child.light_link(), 0);
+    assert_eq!(ObjectStore::load(&map).unwrap().family(binding.slot as usize, binding.uid).unwrap().len(), 2);
+    assert_eq!(loaded.scenario.document().data_slots.len(), 1);
+    assert_eq!(loaded.scenario.document().data_slots[0].spawn_id, root_id);
+
+    loaded.spawn_ui.select_all();
+    loaded.spawn_ui.move_selected(&mut loaded.scenario, &cx(), 512.0, 0.0, false);
+    assert!(!loaded.spawn_ui.status().1, "{}", loaded.spawn_ui.status().0);
+    save_ok(&mut loaded);
+
+    let moved_particle = ParticlePool::from_file_bytes(&std::fs::read(map.join("DATA/particle.dat")).unwrap()).unwrap();
+    let moved_child = moved_particle.capture(0).unwrap().child(0).unwrap();
+    let expected_fixed_x = initial_child.position_fixed()[0] + 512 * 65536;
+    assert_eq!(moved_child.position_fixed()[0], expected_fixed_x);
+    let moved_light = against_rome_data::pool::LightPool::from_file_bytes(
+        &std::fs::read(map.join("DATA/light.dat")).unwrap(),
+    ).unwrap().capture(0).unwrap();
+    let expected_light: [f32; 3] = std::array::from_fn(|axis| (moved_child.position_fixed()[axis] >> 16) as f32);
+    assert_eq!(moved_light.position(), expected_light, "particle-linked Light follows the native fixed-point child position");
+
+    let mut reloaded = EditorApp::initial_state();
+    reloaded.set_loaded_map(map.clone(), TerrainSession::create_blank(5, 32)).unwrap();
+    reloaded.scenario.load_session(&map).unwrap();
+    reloaded.placement.load_session(&map).unwrap();
+    sync(&mut reloaded, &map);
+    let round_trip = ParticlePool::from_file_bytes(&std::fs::read(map.join("DATA/particle.dat")).unwrap()).unwrap();
+    assert_eq!(round_trip.capture(0).unwrap().child(0).unwrap().position_fixed(), moved_child.position_fixed());
+    assert_eq!(reloaded.scenario.document().data_slots[0].spawn_id, root_id);
+
+    reloaded.spawn_ui.select_all();
+    reloaded.spawn_ui.delete_selected(&mut reloaded.scenario, &cx());
+    assert!(!reloaded.spawn_ui.status().1, "{}", reloaded.spawn_ui.status().0);
+    assert!(reloaded.scenario.document().spawns.is_empty());
+    let before_failed_commit = save_file_snapshot(&root);
+    reloaded.safe_save_current_using(|tx| {
+        let mut injected = std::mem::replace(tx, against_rome_maps::MapSaveTransaction::new("unused"))
+            .with_injected_failure(Fail::BeforeFinalCommit, "particle family deletion rollback");
+        injected.commit().map_err(|e| e.to_string())
+    });
+    assert!(reloaded.status_is_error, "{}", reloaded.status_message);
+    assert_eq!(save_file_snapshot(&root), before_failed_commit, "all DATA pools and scenario roll back together");
+    assert!(reloaded.scenario.document().spawns.is_empty(), "failed save keeps the in-memory deletion for retry");
+    assert!(ObjectStore::load(&map).unwrap().family(binding.slot as usize, binding.uid).unwrap().len() == 2);
+    assert_eq!(ParticlePool::from_file_bytes(&std::fs::read(map.join("DATA/particle.dat")).unwrap()).unwrap().active_slots().count(), 1);
+
+    save_ok(&mut reloaded);
+    assert!(ObjectStore::load(&map).unwrap().objects().is_empty());
+    assert_eq!(ParticlePool::from_file_bytes(&std::fs::read(map.join("DATA/particle.dat")).unwrap()).unwrap().active_slots().count(), 0);
+    assert_eq!(against_rome_data::pool::LightPool::from_file_bytes(
+        &std::fs::read(map.join("DATA/light.dat")).unwrap(),
+    ).unwrap().active_slots().count(), 0);
+
+    let mut final_reload = EditorApp::initial_state();
+    final_reload.set_loaded_map(map.clone(), TerrainSession::create_blank(5, 32)).unwrap();
+    final_reload.scenario.load_session(&map).unwrap();
+    final_reload.placement.load_session(&map).unwrap();
+    sync(&mut final_reload, &map);
+    assert!(final_reload.scenario.document().spawns.is_empty());
+    assert!(final_reload.scenario.document().data_slots.is_empty());
+    assert_eq!(ParticlePool::from_file_bytes(&std::fs::read(map.join("DATA/particle.dat")).unwrap()).unwrap().active_slots().count(), 0);
+
+    drop((app, loaded, reloaded, final_reload));
     std::fs::remove_dir_all(root).unwrap();
 }
