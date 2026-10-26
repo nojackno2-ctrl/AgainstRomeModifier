@@ -7,6 +7,20 @@ use crate::app::tr;
 use crate::terrain::TerrainSession;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, TextureHandle, Vec2};
 
+const MINIMAP_WINDOW_DEFAULT_SIZE: Vec2 = Vec2::new(240.0, 260.0);
+const MINIMAP_WINDOW_FRAME_RESERVE: Vec2 = Vec2::new(32.0, 48.0);
+const MINIMAP_WINDOW_SCREEN_MARGIN: f32 = 8.0;
+
+fn minimap_default_position(screen: Rect) -> Pos2 {
+    let reserved_size = MINIMAP_WINDOW_DEFAULT_SIZE + MINIMAP_WINDOW_FRAME_RESERVE;
+    Pos2::new(
+        (screen.right() - reserved_size.x - MINIMAP_WINDOW_SCREEN_MARGIN)
+            .max(screen.left() + MINIMAP_WINDOW_SCREEN_MARGIN),
+        (screen.bottom() - reserved_size.y - MINIMAP_WINDOW_SCREEN_MARGIN)
+            .max(screen.top() + MINIMAP_WINDOW_SCREEN_MARGIN),
+    )
+}
+
 /// 小地圖顯示之標記類型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MinimapMarkerKind {
@@ -291,7 +305,8 @@ impl MinimapUi {
         egui::Window::new(title)
             .id(egui::Id::new("minimap_overview_window"))
             .open(&mut self.open)
-            .default_size(Vec2::new(240.0, 260.0))
+            .default_pos(minimap_default_position(ctx.screen_rect()))
+            .default_size(MINIMAP_WINDOW_DEFAULT_SIZE)
             .resizable(true)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
@@ -664,5 +679,102 @@ mod tests {
         assert!(ui.open);
         assert!(ui.show_selection);
         assert!(ui.show_markers);
+    }
+
+    #[test]
+    fn minimap_window_defaults_to_bottom_right_without_overwriting_moved_position() {
+        let ctx = egui::Context::default();
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(673.0, 500.0));
+        let mut minimap = MinimapUi::default();
+        fn frame(
+            ctx: &egui::Context,
+            minimap: &mut MinimapUi,
+            screen: Rect,
+            events: Vec<egui::Event>,
+        ) {
+            let _ = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    events,
+                    ..Default::default()
+                },
+                |ctx| {
+                    minimap.show(
+                        ctx,
+                        None,
+                        None,
+                        screen,
+                        screen,
+                        1.0,
+                        AppLanguage::English,
+                        &[],
+                    );
+                },
+            );
+        }
+
+        frame(&ctx, &mut minimap, screen, vec![]);
+        let area_id = egui::Id::new("minimap_overview_window");
+        let first_rect = ctx
+            .memory(|memory| memory.area_rect(area_id))
+            .expect("minimap window area");
+        let expected = minimap_default_position(screen);
+        assert_eq!(first_rect.min, expected);
+        assert!(first_rect.right() <= screen.right() - MINIMAP_WINDOW_SCREEN_MARGIN);
+        assert!(first_rect.bottom() <= screen.bottom() - MINIMAP_WINDOW_SCREEN_MARGIN);
+
+        let drag_start = first_rect.min + Vec2::new(50.0, 10.0);
+        let drag_delta = Vec2::new(-90.0, -70.0);
+        let drag_end = drag_start + drag_delta;
+        frame(
+            &ctx,
+            &mut minimap,
+            screen,
+            vec![egui::Event::PointerMoved(drag_start)],
+        );
+        frame(
+            &ctx,
+            &mut minimap,
+            screen,
+            vec![egui::Event::PointerButton {
+                pos: drag_start,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        frame(
+            &ctx,
+            &mut minimap,
+            screen,
+            vec![egui::Event::PointerMoved(drag_end)],
+        );
+        frame(
+            &ctx,
+            &mut minimap,
+            screen,
+            vec![egui::Event::PointerButton {
+                pos: drag_end,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        let moved_rect = ctx
+            .memory(|memory| memory.area_rect(area_id))
+            .expect("moved minimap window area");
+        assert_ne!(moved_rect.min, first_rect.min, "test drag should move the minimap");
+
+        minimap.open = false;
+        frame(&ctx, &mut minimap, screen, vec![]);
+        minimap.open = true;
+        frame(&ctx, &mut minimap, screen, vec![]);
+        let reopened_rect = ctx
+            .memory(|memory| memory.area_rect(area_id))
+            .expect("reopened minimap window area");
+        assert_eq!(
+            reopened_rect.min, moved_rect.min,
+            "default position must not overwrite the user-moved position"
+        );
     }
 }
