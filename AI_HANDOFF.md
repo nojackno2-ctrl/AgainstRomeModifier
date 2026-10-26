@@ -2,6 +2,7 @@
 - 依既有授權啟動安裝版 `Against_Rome.exe`（PID 15568，安裝目錄作為 cwd），標題正常、`Responding=True`。程序載入系統 `ddraw.dll`、NVIDIA `nvd3dum.dll`、遊戲 `ds_andll.dll` 與系統 `Quartz.dll`；安裝版 SHA-256 仍為 `6AC85239EA3B87A4357ED8CE09A1818E68C09FE3C00E8D98831F473577B719BF`。
 - 取樣間隔約 12 秒：CPU 0.78→0.81 秒，執行緒 17→13；主執行緒處於 `Wait / UserRequest`。`Get-Counter '\GPU Engine(*)\Utilization Percentage'` 的 PID 15568 之 3D engine 三次取樣皆 0%。證據支持程序閒置且沒有可見 GPU 3D 工作，但無法辨認具體卡住的呼叫堆疊。
 - `wpr -start CPU -filemode` 因系統效能追蹤權限失敗（`0xc5585011`），`wpr -status` 確認未開始錄製；未安裝可用的 cdb／WinDbg／ProcDump。已結束本次啟動的程序，未修改安裝檔、設定或地圖。
+- 發現並修正 `docs/map-editor-completion-plan.md`、`docs/map-editor-roadmap.md` 過時地宣稱禁止安裝目錄驗收；兩者現與 `AGENTS.md` 一致，要求僅測試備份過的自製地圖並驗證還原雜湊，原版檔案唯讀。
 - 下一步需取得獲授權的 ETW／debugger stack capture，或在其他可觀察環境重測，才能區分 DirectDraw、DirectShow 與訊息迴圈。不要再以錯誤 cwd 作為假設。
 
 ## 2026-10-26 GPT-6 Luna：原生 DATA 群組副本編輯（已驗證）
