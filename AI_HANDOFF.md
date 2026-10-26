@@ -1,3 +1,16 @@
+## 2026-10-26 Agy：任務 #40 設計師端到端工作流程測試（已驗證）
+- 完成四組 TEMP 工作流程端到端測試（`apps/against-rome-editor/src/app/tests/designer_workflow_e2e.rs`）：
+  1. `terrain_heavy_workflow_undo_redo_safe_save_reload_byte_identical`：地形升降/平坦/平滑 + 水體 + 通行度筆刷 + 材質印章 + 自然地景種植/移除 + 懸崖/路網區域工具 → 統一復原清空至乾淨基準 → 全數重做 → Safe Save → 重載 → 驗證高度圖、碰撞圖、地表材質與地景位元組完全一致。
+  2. `placement_heavy_workflow_move_clone_delete_family_spawn_mirror_batch_edit`：DATA 建築移動/複製/刪除 + 家族成員複製 + 腳本生成鏡像複製 + 同類型批次編輯 → Safe Save → 重載 → 驗證 DATA 物件池與劇本生成物綁定。
+  3. `scenario_heavy_workflow_event_graph_templates_bulk_waves_objectives_bci`：事件節點圖編輯（新增節點、整齊排列、刪除、復原） + 事件範本匯入 + 批次啟用/停用 + 波次生成器 + 目標預設集 + 矩形條件觸發 → Safe Save → 編譯 BCI → 重載 → 驗證事件一致且可重新編譯為相同 BCI。
+  4. `readonly_original_map_attempts_refused_clean_safe_save_rejects`：載入非自製（原廠）TEMP 地圖，測試各項快捷鍵、3D 視角塗畫、坡道、自然筆刷、聚落生成與區域工具，確認未修改 dirty 狀態且 Safe Save 依安全政策拒絕存檔。
+- 修正 real bugs：
+  - `apps/against-rome-editor/src/app.rs:3145`：`NatureWorkflow::accept_saved` 原呼叫 `self.session.accept_changes()`，導致已從磁碟移除的 slot 保留在 `removals` 中，後續再次儲存時於 `replay_nature_candidate` 誤判「removed slot is not a known landscape object」而存檔失敗。改為重設 `self.session = NatureEditSession::new();`，正確對齊磁碟新基準。
+  - `apps/against-rome-editor/src/landscape_ui.rs:1716`：`apply_pending_region` 中 `RegionRequest::SelectObjects` 漏未重設 `self.dirty = false;`，導致選取物件區域操作後誤留 dirty 阻擋 Safe Save，已補正。
+  - `apps/against-rome-editor/src/app.rs:1895, 1951, 2174, 2855-2900, 4806, 4952, 12400, 12450`：補齊原廠唯讀地圖防護（快捷鍵、3D 視角筆刷、2D 畫布塗畫、坡道工具、聚落生成、區域工具等進入點阻擋）。
+  - `apps/against-rome-editor/src/event_graph/ui.rs:356, 360`：公開 `can_undo_draft` 與 `undo_draft` 供工作流程測試草稿單步復原驗證。
+- 驗證：執行 `cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/agy-target`，記錄於 `re_workspace/agy-batch-40-test.log`：**287 個測試套件全數通過，2,693 passed／0 failed／25 ignored**。`cargo check` 通過，`git diff --check` 通過。未修改／暫存 `AGENTS.md`、`README.md`，未提交／push／reset，遊戲安裝目錄唯讀。
+
 ## 2026-10-26 Codex：批次 #39 審查（已驗證）
 - 審查 HEAD 810cdec：移除 binding_context 對空 DATA／空綁定的寬鬆例外；真正空白劇本仍可載入，既存預放劇本必須已有可信綁定。Safe Save 保留最終候選 DATA 的 verify_binding_snapshot，禁止未綁定預放物件存檔。
 - reset_position_dat 補上 17 bytes／槽的精確長度與槽數驗證；objects／objdata 拒絕非法槽數，零售 objects 必須維持字串欄寬 30/30。對照 data::particle／pool 常數與 docs/reverse-engineering/map-data-pools.md；新增未知長度、非法槽數及欄寬回歸。

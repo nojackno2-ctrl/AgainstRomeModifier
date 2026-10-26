@@ -1714,6 +1714,7 @@ impl LandscapeUi {
             RegionRequest::SelectObjects(rect) => {
                 let ids = objects_in_rect(&rect, &objects());
                 self.region.plan = None;
+                self.dirty = false;
                 self.status_message = format!("Selected {} objects in the rectangle.", ids.len());
                 self.status_is_error = false;
                 RegionOutcome { textures_changed: 0, selected_objects: Some(ids) }

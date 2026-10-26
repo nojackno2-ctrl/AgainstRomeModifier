@@ -89,11 +89,11 @@ impl EventGraphUi {
         self.draft_undo = Some((before, self.graph.clone(), dirty));
     }
 
-    fn can_undo_draft(&self) -> bool {
+    pub fn can_undo_draft(&self) -> bool {
         self.is_dirty && self.draft_undo.as_ref().is_some_and(|(_, after, _)| after == &self.graph)
     }
 
-    fn undo_draft(&mut self) {
+    pub fn undo_draft(&mut self) {
         if !self.can_undo_draft() { return; }
         if let Some((before, _, dirty)) = self.draft_undo.take() {
             self.graph = before;

@@ -149,6 +149,10 @@ fn workflow_fixture(tag: &str) -> PathBuf {
 }
 
 fn wizard_map(root: &std::path::Path, slot: i32, blank: bool) -> EditorApp {
+    wizard_map_custom(root, slot, blank, false)
+}
+
+fn wizard_map_custom(root: &std::path::Path, slot: i32, blank: bool, nature: bool) -> EditorApp {
     let mut app = EditorApp::initial_state();
     app.recovery.root = Some(root.join("editor-data"));
     app.open_skirmish_wizard();
@@ -159,7 +163,7 @@ fn wizard_map(root: &std::path::Path, slot: i32, blank: bool) -> EditorApp {
     w.target_name = format!("Workflow {slot}");
     w.add_attack_waves = false;
     w.add_objectives = false;
-    w.include_nature = false;
+    w.include_nature = nature;
     if blank { w.template_kind = crate::skirmish_wizard_ui::SkirmishTemplateKind::EmptyScene; }
     app.execute_skirmish_wizard().unwrap();
     if blank {
@@ -384,6 +388,458 @@ fn existing_prebuilt_map_rejects_empty_missing_or_corrupt_data() {
     assert!(crate::scenario_ui::ScenarioUi::default().load_session(&map).is_err());
     std::fs::write(&objects, b"corrupt").unwrap();
     assert!(crate::scenario_ui::ScenarioUi::default().load_session(&map).is_err());
+    drop(app);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn terrain_heavy_workflow_undo_redo_safe_save_reload_byte_identical() {
+    use crate::terrain::{CollisionBrushOp, HeightBrushOp};
+
+    let root = workflow_fixture("terrain_heavy_e2e");
+    let mut app = wizard_map_custom(&root, 5, false, true);
+    let map = app.loaded_map_path.clone().unwrap();
+
+    app.textures.load_session(&map).unwrap();
+    app.placement.load_session(&map).unwrap();
+    app.ensure_nature_data().unwrap();
+    app.collect_pilot_receipts();
+    app.undo_journal.clear();
+
+    let clean_heights = app.session.as_ref().unwrap().heights().to_vec();
+    let clean_collision = app.session.as_ref().unwrap().collision().to_vec();
+    let clean_materials = app.textures.session_textures().unwrap().to_vec();
+    let clean_nature = app.nature.session.capture();
+
+    // 1. Raise
+    let terrain = app.session.as_mut().unwrap();
+    terrain.paint_height(20.0, 20.0, 5.0, HeightBrushOp::Raise, 15, None, 0).unwrap();
+    assert!(terrain.commit_stroke());
+
+    // 2. Lower
+    let terrain = app.session.as_mut().unwrap();
+    terrain.paint_height(45.0, 45.0, 5.0, HeightBrushOp::Lower, 10, None, 0).unwrap();
+    assert!(terrain.commit_stroke());
+
+    // 3. Flatten
+    let terrain = app.session.as_mut().unwrap();
+    terrain.paint_height(30.0, 30.0, 4.0, HeightBrushOp::Flatten, 12, Some(40), 0).unwrap();
+    assert!(terrain.commit_stroke());
+
+    // 4. Smooth
+    let terrain = app.session.as_mut().unwrap();
+    terrain.paint_height(20.0, 20.0, 6.0, HeightBrushOp::Smooth, 10, None, 0).unwrap();
+    assert!(terrain.commit_stroke());
+
+    // 5. Water
+    let terrain = app.session.as_mut().unwrap();
+    terrain.paint_water(55.0, 55.0, 4.0, 10, 2, 8.0).unwrap();
+    assert!(terrain.commit_stroke());
+
+    // 6. Passability brush (Collision Block & Clear)
+    let terrain = app.session.as_mut().unwrap();
+    terrain.paint_collision(15.0, 15.0, 3.0, CollisionBrushOp::Block).unwrap();
+    assert!(terrain.commit_stroke());
+
+    // 7. Material paint
+    let textures = app.textures.session_mut().unwrap();
+    assert!(textures.stamp_texture(6, 6, "4BB___51").is_some());
+    assert!(textures.commit_stroke());
+
+    // 8. Nature plant/remove
+    let nature_item = app.nature_palette().first().cloned().expect("nature palette has landscape items");
+    app.nature.session.plant(against_rome_environment::nature::NatureAddition::new(
+        nature_item.type_id, &nature_item.name, 2560.0, 0.0, 2560.0, 0.0,
+    ));
+    assert!(app.nature.session.commit_stroke());
+    let to_remove = against_rome_environment::nature::NatureAddition::new(
+        nature_item.type_id, &nature_item.name, 2816.0, 0.0, 2816.0, 0.0,
+    );
+    app.nature.session.plant(to_remove.clone());
+    assert!(app.nature.session.commit_stroke());
+    assert!(app.nature.session.remove(&[], &[to_remove]));
+    assert!(app.nature.session.commit_stroke());
+
+    // 9. Cliff / road region tool
+    let heights_snapshot = app.session.as_ref().unwrap().heights().to_vec();
+    let _ = app.landscape.run_cliff_detection(257, Some(&heights_snapshot));
+    app.landscape.clear_dirty();
+
+    app.landscape.region.op = crate::landscape_ui::RegionOperation::SelectObjects;
+    app.landscape.region.vertices_text = "0,0\n63,63".into();
+    let known_names = app.textures.known_textures().to_vec();
+    let cx = crate::landscape_ui::LandscapeContext {
+        vertex_size: 257,
+        heights: Some(app.session.as_ref().unwrap().heights()),
+        textures: app.textures.session_textures(),
+        texture_names: &known_names,
+    };
+    app.landscape.plan_region(&cx).unwrap();
+    app.landscape.request_region_apply().unwrap();
+    app.apply_region_request();
+    assert!(!app.landscape.is_dirty());
+
+    // 10. Unified undo all the way back to clean
+    app.collect_pilot_receipts();
+    assert!(app.undo_journal.can_undo());
+    while app.undo_journal.can_undo() {
+        app.navigate_journal(false);
+    }
+    assert_eq!(app.session.as_ref().unwrap().heights(), clean_heights);
+    assert_eq!(app.session.as_ref().unwrap().collision(), clean_collision);
+    assert_eq!(app.textures.session_textures().unwrap(), clean_materials);
+    assert_eq!(app.nature.session.capture(), clean_nature);
+    assert!(!app.undo_journal.can_undo());
+
+    // 11. Redo all
+    assert!(app.undo_journal.can_redo());
+    while app.undo_journal.can_redo() {
+        app.navigate_journal(true);
+    }
+    assert!(!app.undo_journal.can_redo());
+
+    let pre_save_heights = app.session.as_ref().unwrap().heights().to_vec();
+    let pre_save_collision = app.session.as_ref().unwrap().collision().to_vec();
+    let pre_save_materials = app.textures.session_textures().unwrap().to_vec();
+    let pre_save_nature_additions = app.nature.session.additions().to_vec();
+
+    // 12. Safe Save
+    spawn_save_tests::save_ok(&mut app);
+    assert!(!app.has_unsaved_changes());
+
+    // 13. Reload
+    let mut loaded = reopen(&root, &map);
+    loaded.textures.load_session(&map).unwrap();
+    loaded.placement.load_session(&map).unwrap();
+
+    // 14. Verify byte-identical state
+    assert_eq!(loaded.session.as_ref().unwrap().heights(), pre_save_heights);
+    assert_eq!(loaded.session.as_ref().unwrap().collision(), pre_save_collision);
+    assert_eq!(loaded.textures.session_textures().unwrap(), pre_save_materials);
+    let reloaded_objects = spawn_save_tests::data_objects(&map);
+    for add in &pre_save_nature_additions {
+        assert!(reloaded_objects.iter().any(|o| (o.position[0] - add.x).abs() < 0.1 && (o.position[2] - add.z).abs() < 0.1));
+    }
+
+    drop((app, loaded));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn placement_heavy_workflow_move_clone_delete_family_spawn_mirror_batch_edit() {
+    let root = workflow_fixture("placement_heavy_e2e");
+    let mut app = wizard_map(&root, 5, true);
+    let map = app.loaded_map_path.clone().unwrap();
+
+    app.placement.load_session(&map).unwrap();
+    let objects_before = app.placement.objects();
+    let house = objects_before.iter().find(|o| o.parent.is_none() && o.slot < 500).unwrap();
+    let key = (house.slot, house.uid);
+    let orig_x = house.position[0];
+    let orig_z = house.position[2];
+    app.placement.select_object(Some(key));
+
+    // 1. DATA building move
+    app.placement.set_delta(["256".into(), "0".into(), "256".into()]);
+    app.placement.move_family().unwrap();
+    let moved = app.placement.objects().into_iter().find(|o| o.slot == house.slot).unwrap();
+    assert_eq!(moved.position[0], orig_x + 256.0);
+    assert_eq!(moved.position[2], orig_z + 256.0);
+
+    // 2. Family copy (clone family)
+    app.placement.set_delta(["512".into(), "0".into(), "512".into()]);
+    app.placement.clone_family().unwrap();
+    let cloned_keys = app.placement.selected_objects();
+    assert!(!cloned_keys.is_empty());
+
+    // 3. DATA building delete
+    app.placement.delete_selection().unwrap();
+    assert!(app.placement.selected_objects().is_empty());
+
+    // 4. Script spawn mirror copy
+    app.spawn_ui.sync_with_document(&app.scenario, Some(&map));
+    app.spawn_ui.select_type("FigGerInf02_Zweihandaxt");
+    app.spawn_ui.set_placement_values(0, 1, 0);
+    let cx = spawn_save_tests::cx();
+    app.spawn_ui.place_at_tile(&mut app.scenario, &cx, 12, 12);
+    assert!(!app.spawn_ui.status().1, "{}", app.spawn_ui.status().0);
+    let count_before = app.scenario.document().spawns.len();
+    app.spawn_ui.duplicate_opposite_selected(&mut app.scenario, &cx);
+    assert!(!app.spawn_ui.status().1, "{}", app.spawn_ui.status().0);
+    assert_eq!(app.scenario.document().spawns.len(), count_before + 1);
+    let opposite_spawn = app.scenario.document().spawns.last().unwrap();
+    assert_eq!(opposite_spawn.alias, "TROOP");
+
+    // 5. Select-same-type batch edit
+    let target_type = house.type_id;
+    app.placement.select_object(Some((house.slot, house.uid)));
+    let count = app.placement.select_all_of_type();
+    assert!(count >= 1);
+    app.placement.batch_edit(Some(3), Some(90.0)).unwrap();
+    for obj in app.placement.objects().iter().filter(|o| o.type_id == target_type) {
+        assert_eq!(obj.team, 3);
+        assert!((obj.rotation_degrees - 90.0).abs() < 0.1);
+    }
+
+    // 6. Safe Save
+    spawn_save_tests::save_ok(&mut app);
+
+    // 7. Reload and verify DATA pools and scenario spawns/bindings
+    let mut loaded = reopen(&root, &map);
+    loaded.placement.load_session(&map).unwrap();
+    let doc = loaded.scenario.document();
+    let data_objs = spawn_save_tests::data_objects(&map);
+    assert!(!data_objs.is_empty());
+    let active: Vec<_> = data_objs.iter().map(|o| (o.slot as i32, o.uid)).collect();
+    against_rome_scenario::verify_binding_snapshot(doc, &active).unwrap();
+    assert_eq!(doc.spawns.len(), app.scenario.document().spawns.len());
+    let loaded_house = data_objs.iter().find(|o| o.slot == house.slot).unwrap();
+    assert_eq!(loaded_house.team, 3);
+    assert!((loaded_house.rotation_degrees - 90.0).abs() < 0.1);
+
+    drop((app, loaded));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn scenario_heavy_workflow_event_graph_templates_bulk_waves_objectives_bci() {
+    let root = workflow_fixture("scenario_heavy_e2e");
+    let mut app = wizard_map(&root, 5, false);
+    let map = app.loaded_map_path.clone().unwrap();
+
+    // 1. Event graph edits (add nodes, tidy, delete, undo)
+    app.scenario.open_graph();
+    let trigger = crate::event_graph::model::GraphNode::new_event_trigger("Graph Trigger", 0, false, true);
+    let tr_id = trigger.id;
+    let msg_node = crate::event_graph::model::GraphNode::new_message_action("Tidy Message");
+    let msg_id = msg_node.id;
+    let extra_node = crate::event_graph::model::GraphNode::new_message_action("To Delete");
+    let extra_id = extra_node.id;
+    app.scenario.graph_ui_mut().graph.add_node(trigger);
+    app.scenario.graph_ui_mut().graph.add_node(msg_node);
+    app.scenario.graph_ui_mut().graph.add_node(extra_node);
+    app.scenario.graph_ui_mut().mark_dirty();
+    let tr_out = app.scenario.graph_ui().graph.find_node(tr_id).unwrap().find_port_by_name("ExecOut").unwrap().id;
+    let msg_in = app.scenario.graph_ui().graph.find_node(msg_id).unwrap().find_port_by_name("ExecIn").unwrap().id;
+    app.scenario.graph_ui_mut().graph.connect(tr_out, msg_in).unwrap();
+
+    // Tidy (auto_layout)
+    app.scenario.graph_ui_mut().auto_layout();
+    assert!(app.scenario.graph_ui().graph.find_node(tr_id).is_some());
+
+    // Delete node and undo
+    app.scenario.graph_ui_mut().selected_nodes.insert(extra_id);
+    app.scenario.graph_ui_mut().delete_selected();
+    assert!(app.scenario.graph_ui().graph.find_node(extra_id).is_none());
+    assert!(app.scenario.graph_ui_mut().can_undo_draft());
+    app.scenario.graph_ui_mut().undo_draft();
+    assert!(app.scenario.graph_ui().graph.find_node(extra_id).is_some());
+
+    // Apply graph to scenario
+    let mut graph_ui = std::mem::take(app.scenario.graph_ui_mut());
+    app.scenario.apply_from_graph_ui(&mut graph_ui).unwrap();
+    *app.scenario.graph_ui_mut() = graph_ui;
+
+    // 2. Event templates import
+    let template_file = root.join("flow3_template.arm-events.json");
+    let template_ev = against_rome_scenario::Event {
+        name: "Imported Flow3 Event".into(),
+        actions: vec![against_rome_scenario::Action {
+            kind: 1, team: 1, other_team: 2, hostile: true, ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let (template, _) = crate::event_templates::EventTemplate::capture(&[template_ev]);
+    crate::layout_io::write_json_atomic(&template_file, &template.serialize().unwrap()).unwrap();
+    let imported_count = app.scenario.import_events_from(&template_file, None).unwrap();
+    assert_eq!(imported_count, 1);
+
+    // 3. Bulk enable/disable
+    let total = app.scenario.document().events.len();
+    assert!(total >= 2);
+    let all_indices: Vec<_> = (0..total).collect();
+    assert_eq!(app.scenario.set_events_enabled(&all_indices, false).unwrap(), total);
+    assert!(app.scenario.document().events.iter().all(|e| !e.enabled));
+    assert_eq!(app.scenario.set_events_enabled(&all_indices, true).unwrap(), total);
+    assert!(app.scenario.document().events.iter().all(|e| e.enabled));
+
+    // 4. Wave generator
+    app.scenario.wave_generator.waves = 2;
+    app.scenario.wave_generator.first = 300;
+    app.scenario.wave_generator.interval = 60;
+    app.scenario.wave_generator.alias = "GER_INF02".into();
+    app.scenario.generate_attack_waves().unwrap();
+
+    // 5. Objective presets
+    app.scenario.add_objective(Some(1200), None, 0).unwrap();
+
+    // 6. Condition rectangle
+    let spawn_target = uuid::Uuid::new_v4();
+    app.scenario.apply_spawns(vec![against_rome_scenario::Spawn {
+        alias: "GER_INF02".into(),
+        x: 1000.0,
+        z: 1000.0,
+        team: 1,
+        count: 1,
+        angle: 0,
+        y: 20.0,
+        prebuilt: false,
+        id: spawn_target,
+        raw_rotation: None,
+    }]).unwrap();
+    app.scenario.add_events(&[against_rome_scenario::Event {
+        name: "Condition Rectangle Event".into(),
+        conditions: vec![against_rome_scenario::Condition {
+            kind: 2,
+            target_id: spawn_target,
+            min_x: 500,
+            min_z: 500,
+            max_x: 2500,
+            max_z: 2500,
+        }],
+        actions: vec![against_rome_scenario::Action {
+            text: "Entered rectangle".into(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    }]).unwrap();
+
+    // 7. Safe Save and compile BCI
+    spawn_save_tests::save_ok(&mut app);
+    let expected_events = app.scenario.document().events.clone();
+    let disk_bci = std::fs::read(map.join("SCRIPT/ak_level.bci")).unwrap();
+    assert!(!disk_bci.is_empty());
+    against_rome_scenario::BciImage::parse(&disk_bci).unwrap();
+
+    // 8. Reload and verify events identical & BCI compiles again identically
+    let mut loaded = reopen(&root, &map);
+    assert_eq!(loaded.scenario.document().events, expected_events);
+    let original_bci = std::fs::read(map.join("SCRIPT/ak_level.arm_original")).unwrap();
+    let recompiled = against_rome_scenario::compile_script_verified(
+        &original_bci,
+        loaded.scenario.document(),
+        Some(loaded.scenario.start_camera()),
+        Some(loaded.scenario.known_aliases()),
+        None,
+    ).unwrap();
+    let recompiled_raw = if recompiled.starts_with(b"PFIL") {
+        against_rome_data::lzss::decompress_pfil(&recompiled, None).unwrap()
+    } else {
+        recompiled
+    };
+    assert_eq!(recompiled_raw, disk_bci);
+
+    assert_eq!(loaded.scenario.set_events_enabled(&[0], false).unwrap(), 1);
+    let staged = loaded.scenario.stage_transaction_files(&map).unwrap();
+    let (_, bci_bytes) = staged.iter().find(|(p, _)| p.ends_with("ak_level.bci")).unwrap();
+    against_rome_scenario::BciImage::parse(bci_bytes).unwrap();
+
+    drop((app, loaded));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn readonly_original_map_attempts_refused_clean_safe_save_rejects() {
+    let root = workflow_fixture("readonly_heavy_e2e");
+    std::fs::write(root.join("Against_Rome.exe"), b"GAME_EXE").unwrap();
+    let source = root.join("MAPS/ENDL_001");
+    assert!(crate::app::is_original_map_dir(&source));
+    let before_bytes = map_bytes(&source);
+
+    let mut app = EditorApp::initial_state();
+    app.recovery.root = Some(root.join("editor-data"));
+    app.set_loaded_map(source.clone(), crate::storage::load_map(&source).unwrap()).unwrap();
+    app.scenario.load_session(&source).unwrap();
+    app.textures.load_session(&source).unwrap();
+    app.placement.load_session(&source).unwrap();
+
+    assert!(app.current_map_is_original());
+    assert!(!app.has_unsaved_changes());
+
+    // 1. Mutating Shortcuts are refused
+    app.handle_shortcut_action(ShortcutAction::Save);
+    assert!(app.status_is_error);
+    assert!(!app.has_unsaved_changes());
+
+    app.handle_shortcut_action(ShortcutAction::Delete);
+    assert!(!app.has_unsaved_changes());
+
+    app.handle_shortcut_action(ShortcutAction::Duplicate);
+    assert!(!app.has_unsaved_changes());
+
+    app.handle_shortcut_action(ShortcutAction::Nudge { dx: 1.0, dz: 1.0 });
+    assert!(!app.has_unsaved_changes());
+
+    assert!(!app.eyedrop_material_at_cursor());
+    assert!(!app.has_unsaved_changes());
+
+    assert!(!app.sample_flatten_at_cursor());
+    assert!(!app.has_unsaved_changes());
+
+    app.handle_shortcut_action(ShortcutAction::RegenerateSettlement);
+    assert!(app.status_is_error);
+    assert!(!app.has_unsaved_changes());
+
+    // 2. Viewport 3D actions refused
+    app.handle_viewport_3d_action(crate::viewport_3d::ViewportAction::Paint { grid_x: 20.0, grid_y: 20.0 });
+    assert!(!app.terrain_is_dirty());
+
+    app.active_tool = ActiveTool::Material;
+    app.handle_viewport_3d_action(crate::viewport_3d::ViewportAction::Paint { grid_x: 20.0, grid_y: 20.0 });
+    assert!(!app.textures.is_dirty());
+
+    app.nature.enabled = true;
+    app.handle_viewport_3d_action(crate::viewport_3d::ViewportAction::Paint { grid_x: 20.0, grid_y: 20.0 });
+    assert!(!app.nature_is_dirty());
+
+    // 3. Ramp point refused
+    app.handle_ramp_point((10.0, 10.0));
+    assert!(!app.terrain_is_dirty());
+
+    // 4. Spawn placement refused
+    let cx = crate::spawn_placement_ui::SpawnContext {
+        lang: app.lang(),
+        heights: Some(app.session.as_ref().unwrap().heights()),
+        vertex_size: app.session.as_ref().unwrap().vertex_size,
+        height_step: app.height_step,
+        read_only: true,
+    };
+    app.spawn_ui.place_at_tile(&mut app.scenario, &cx, 10, 10);
+    assert!(!app.scenario.dirty());
+
+    // 6. Bulk / Macro operations refused
+    assert!(!app.reset_terrain_now());
+    assert!(!app.terrain_is_dirty());
+    assert!(!app.apply_flat_terrain_now());
+    assert!(!app.terrain_is_dirty());
+    assert!(app.apply_settlement().is_err());
+    assert!(!app.environment.is_dirty());
+
+    // 7. Landscape tool operations refused
+    app.handle_landscape_apply(crate::landscape_ui::LandscapeApply::Cliff);
+    assert!(!app.terrain_is_dirty() && !app.textures.is_dirty());
+
+    app.handle_landscape_apply(crate::landscape_ui::LandscapeApply::River);
+    assert!(!app.terrain_is_dirty() && !app.textures.is_dirty());
+
+    app.handle_landscape_apply(crate::landscape_ui::LandscapeApply::Road);
+    assert!(!app.textures.is_dirty());
+
+    app.handle_landscape_apply(crate::landscape_ui::LandscapeApply::Wall);
+    assert!(!app.terrain_is_dirty());
+
+    app.apply_region_request();
+    assert!(!app.textures.is_dirty());
+
+    // Assert completely clean
+    assert!(!app.has_unsaved_changes());
+
+    // 8. Safe Save refuses
+    app.safe_save_current();
+    assert!(app.status_is_error);
+    assert!(app.status_message.contains("Safe Save Rejected") || app.status_message.contains("安全拒絕"));
+    assert_eq!(map_bytes(&source), before_bytes);
+
     drop(app);
     std::fs::remove_dir_all(root).unwrap();
 }

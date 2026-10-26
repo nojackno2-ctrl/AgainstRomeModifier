@@ -1883,7 +1883,12 @@ impl EditorApp {
     }
 
     /// Applies a pending Region Tools request (texture fill or object selection).
-    fn apply_region_request(&mut self) {
+    pub(crate) fn apply_region_request(&mut self) {
+        if self.current_map_is_original() {
+            let msg = tr(self.lang(), "Original maps are read-only; copy to a custom map first.", "原版地圖唯讀；請先複製為自訂地圖。");
+            self.landscape.apply_failed(msg);
+            return;
+        }
         let objects: Vec<(usize, f32, f32)> = self
             .placement
             .objects()
@@ -1934,7 +1939,12 @@ impl EditorApp {
         self.landscape.paint_region_overlay(painter, to_screen);
     }
 
-    fn handle_landscape_apply(&mut self, apply: LandscapeApply) {
+    pub(crate) fn handle_landscape_apply(&mut self, apply: LandscapeApply) {
+        if self.current_map_is_original() {
+            let msg = tr(self.lang(), "Original maps are read-only; copy to a custom map first.", "原版地圖唯讀；請先複製為自訂地圖。");
+            self.landscape.apply_failed(msg);
+            return;
+        }
         match apply {
             LandscapeApply::Cliff => {
                 let Some(detection) = self.landscape.last_cliff_result.clone() else {
@@ -2155,6 +2165,14 @@ impl EditorApp {
     }
 
     fn handle_ramp_point(&mut self, point: (f32, f32)) {
+        if self.current_map_is_original() {
+            let msg = tr(self.lang(), "Original maps are read-only; copy to a custom map first.", "原版地圖唯讀；請先複製為自訂地圖。");
+            self.status_message = format!("Ramp rejected: {msg}");
+            self.status_is_error = true;
+            self.ramp_selecting = false;
+            self.ramp_start = None;
+            return;
+        }
         let Some(start) = self.ramp_start.take() else {
             self.ramp_start = Some(point);
             self.status_message = format!(
@@ -2857,6 +2875,9 @@ impl EditorApp {
                 }
             }
             ViewportAction::PickTerrain { grid_x, grid_y } => {
+                if self.current_map_is_original() {
+                    return;
+                }
                 if self.ramp_selecting && self.pending_action.is_none() {
                     self.handle_ramp_point((grid_x, grid_y));
                 }
@@ -2865,7 +2886,7 @@ impl EditorApp {
                 self.placement.select_object(key);
             }
             ViewportAction::Paint { grid_x, grid_y } if self.nature.enabled => {
-                if self.pending_action.is_some() || self.ramp_selecting {
+                if self.pending_action.is_some() || self.ramp_selecting || self.current_map_is_original() {
                     return;
                 }
                 if let Some((tx, ty)) = self.nature_tile_from_grid(grid_x, grid_y) {
@@ -2876,7 +2897,7 @@ impl EditorApp {
                 self.nature_end_stroke();
             }
             ViewportAction::Paint { grid_x, grid_y } if self.active_tool == ActiveTool::Material => {
-                if self.pending_action.is_some() || self.ramp_selecting {
+                if self.pending_action.is_some() || self.ramp_selecting || self.current_map_is_original() {
                     return;
                 }
                 let english = self.lang() == AppLanguage::English;
@@ -2887,7 +2908,7 @@ impl EditorApp {
                     .paint_material_at_grid(grid_x, grid_y, span, english);
             }
             ViewportAction::Paint { grid_x, grid_y } => {
-                if self.pending_action.is_some() || self.ramp_selecting {
+                if self.pending_action.is_some() || self.ramp_selecting || self.current_map_is_original() {
                     return;
                 }
                 if !self.is_painting {
@@ -3118,7 +3139,7 @@ impl NatureWorkflow {
 
     /// A committed Safe Save made the disk the new baseline; the snapshot is rebuilt lazily.
     fn accept_saved(&mut self) {
-        self.session.accept_changes();
+        self.session = against_rome_environment::nature::NatureEditSession::new();
         self.driver = NatureStrokeDriver::new();
         self.data = None;
         self.last_action = false;
@@ -4780,8 +4801,10 @@ impl EditorApp {
     /// 隨機遞增種子碼並即時重新生成聚落配置（支援快捷鍵 Ctrl+R / Alt+R）。
     /// 遵循 shortcuts_blocked() 保護。
     pub fn regenerate_settlement(&mut self) -> Result<i32, String> {
-        if self.shortcuts_blocked() {
-            return Err("Shortcuts blocked.".into());
+        if self.shortcuts_blocked() || self.current_map_is_original() {
+            let msg = tr(self.lang(), "Original maps are read-only; copy to a custom map first.", "原版地圖唯讀；請先複製為自訂地圖。");
+            self.set_status(msg.to_string(), true);
+            return Err(msg.to_string());
         }
         let Some(session) = &self.session else {
             let msg = tr(
@@ -4922,7 +4945,11 @@ impl EditorApp {
                 }
             }
             ShortcutAction::RegenerateSettlement => {
-                let _ = self.regenerate_settlement();
+                if read_only {
+                    self.set_status(read_only_msg.into(), true);
+                } else {
+                    let _ = self.regenerate_settlement();
+                }
             }
             ShortcutAction::Save => {
                 if read_only {
@@ -12358,7 +12385,7 @@ impl EditorApp {
                 if self.show_objects {
                     self.scene.paint_scene_overlay(&painter, &screen_from_world);
                 }
-                if !tool_busy {
+                if !tool_busy && !self.current_map_is_original() {
                     self.scene
                         .scene_canvas_input(&response, &world_from_screen, &screen_from_world);
                 } else if self.scene.is_capturing() {
@@ -12411,7 +12438,9 @@ impl EditorApp {
                     );
 
                     // 筆刷塗畫
-                    if self.pending_action.is_none() && self.ramp_selecting {
+                    if self.current_map_is_original() {
+                        // 原版地圖為唯讀，禁止滑鼠筆刷塗畫
+                    } else if self.pending_action.is_none() && self.ramp_selecting {
                         if response.clicked_by(egui::PointerButton::Primary) {
                             self.handle_ramp_point((grid_x, grid_y));
                         } else if response.clicked_by(egui::PointerButton::Secondary) {
