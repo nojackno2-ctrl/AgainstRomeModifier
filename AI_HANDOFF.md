@@ -1,3 +1,7 @@
+## 2026-10-27 Codex：3D Ramp Safe Save 與重載桌面驗收
+- 先備份 TEMP `ENDL_005`（64 檔，SHA-256 基準），以 3D viewport 裸地形完成 Ramp `(46,200)`→`(196,58)`，UI 顯示 `Ramp applied: 1283 height samples modified.`。Safe Save 首次依預期因 Wave_01／Wave_02／自然物件 wave 缺移動目的地而顯示 playability warnings；確認只對 TEMP 測試副本繼續後，UI 回報 `Saved safely in one transaction (6 files, 0 cache deletions).`。再按 Load Folder，UI 回報已載入同一路徑，重載無未儲存標記。未啟動遊戲。
+- Safe Save 新建的 3 個 `.arm_backup.*` 交易回復檔未刪除，移至同一 TEMP 備份根目錄 `safe-save-recovery-artifacts` 保留。將 64 檔基準覆回測試副本並重新載入後，來源／副本 SHA-256 差異 0；3 個交易備份另行保存。安裝目錄未觸碰。
+- 驗收證明 3D Ramp → playability gate → Safe Save transaction → 同路徑 reload 的桌面流程可完成。尚未證明在全新 EditorApp 啟動後的跨程序重開、坡道遊戲內顯示、遊戲玩法與 DPI／多螢幕；遊戲畫面可觀察性仍是遊戲內 gate 的阻礙。整體目標未完成。
 ## 2026-10-27 Codex：3D Ramp 真實桌面端點與復原驗收
 - 在新建置桌面視窗開啟 TEMP `ENDL_005`，先關閉「Show buildings and objects」以在本機檢查裸地形點選，保留 DATA 內容不變。Ramp 起點 `(46,200)`、終點 `(196,58)`，UI 顯示 `Ramp applied: 1283 height samples modified.` 與 `[Unsaved Changes]`；按頂端 Undo 後 UI 顯示 `Undo performed.` 且未儲存標記消失。未 Safe Save、未啟動遊戲。
 - 操作前後 TEMP 地圖與基準副本皆 64 檔，逐檔 SHA-256 差異 0。此為真實 3D viewport 的坡道建立／復原證據，不代表坡道存檔後重載或遊戲內渲染驗收；桌面程序使用的地形物件顯示選項只影響視圖。
