@@ -1,3 +1,7 @@
+## 2026-10-27 Codex / GPT-6 Luna：3D 筆刷游標連續對位
+- 稽核發現 3D 筆刷實際筆畫使用連續 `hover_grid`，但共用 draw list 的 perimeter cursor 仍以 `hover_tile` 的整數方格中心及整數尺寸生成。`BrushCursorOptions` 新增可選連續地形中心／浮點半徑；3D app 將 ray hit vertex 座標轉成 field tile 座標，draw list 以地形取樣高度產生 64 點圓周。原整數 tile／selection rectangle 路徑保持相容。
+- 新增 `frame_continuous_brush_cursor_tracks_raycast_point_and_fractional_radius` 驗證中心與半徑。定向測試通過；完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-cont-brush -- --test-threads=1 --quiet` 通過（editor app 878 passed／6 ignored，所有 workspace targets 通過）；workspace `cargo check`、`cargo build` 及 `git diff --check` 通過。尚未以桌面截圖驗證圓周與實際筆刷視覺完全重合，也未驗遊戲內效果。
+
 ## 2026-10-27 Codex / GPT-6 Luna：3D Ramp 連續端點桌面驗收
 - 以最新建置 `re_workspace/codex-ramp-pick-target/debug/against-rome-editor.exe` 開啟 TEMP 測試副本 `C:\Users\nojac\AppData\Local\Temp\arm_ramp_gui_acceptance_20261027\Against Rome\MAPS\ENDL_005`。3D Ramp 起點顯示 `(123,125)`；鄰近終點點擊仍落在相同 3D 粗格 `(30,31)`，操作修改 30 個高度樣本，證明實際桌面能在同一粗 terrain cell 內操作 Ramp。
 - 按 Undo 後 UI 回報 `Undo performed.`，未儲存標記清除。以來源 `arm_gui_acceptance_20261026\Against Rome` 比較 TEMP 副本：66 檔對 66 檔，SHA-256 差異 0；只改記憶體、未 Safe Save、未啟動遊戲，來源與安裝資料未變。程式／workspace check、test、build 已由前一里程碑驗證；本次補真實桌面操作證據。遊戲內坡道外觀、實體 DPI／多螢幕及其他工具對位仍待驗收。

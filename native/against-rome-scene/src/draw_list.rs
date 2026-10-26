@@ -60,6 +60,10 @@ impl SelectionRect {
 pub struct BrushCursorOptions {
     pub hover_tile_x: i32,
     pub hover_tile_y: i32,
+    /// Continuous terrain coordinate `(x, z)` for editors whose brush is not tile-snapped.
+    pub hover_point: Option<(f32, f32)>,
+    /// Continuous brush radius in terrain tiles, used with `hover_point`.
+    pub hover_radius: Option<f32>,
     pub brush_size: i32,
     pub selection: Option<SelectionRect>,
     pub color: [f32; 4],
@@ -71,6 +75,8 @@ impl Default for BrushCursorOptions {
         Self {
             hover_tile_x: -1,
             hover_tile_y: -1,
+            hover_point: None,
+            hover_radius: None,
             brush_size: 1,
             selection: None,
             color: BRUSH_CURSOR_COLOR,
@@ -1147,7 +1153,27 @@ pub fn prepare_scene_frame(
 
     // 9. Brush Cursor
     let cursor_cmd = if let Some(ref c) = options.brush_cursor {
-        if c.hover_tile_x >= 0 && c.hover_tile_y >= 0 {
+        if let (Some((center_x, center_y)), Some(radius)) = (c.hover_point, c.hover_radius) {
+            if !center_x.is_finite() || !center_y.is_finite() || !radius.is_finite() || radius < 0.0 {
+                None
+            } else {
+                let max_x = heights.tile_width.max(0.0);
+                let max_y = heights.tile_height.max(0.0);
+                let perimeter = (0..64)
+                    .map(|i| {
+                        let angle = std::f32::consts::TAU * i as f32 / 64.0;
+                        let x = (center_x + radius * angle.cos()).clamp(0.0, max_x);
+                        let y = (center_y + radius * angle.sin()).clamp(0.0, max_y);
+                        Vec3::new(x, heights.sample_height(x, y) + 0.15, y)
+                    })
+                    .collect();
+                Some(BrushCursorDraw {
+                    perimeter_points: perimeter,
+                    color: c.color,
+                    line_width: c.line_width,
+                })
+            }
+        } else if c.hover_tile_x >= 0 && c.hover_tile_y >= 0 {
             let (x0, y0, x1, y1) = if let Some(sel) = c.selection {
                 (sel.left, sel.top, sel.right, sel.bottom)
             } else {

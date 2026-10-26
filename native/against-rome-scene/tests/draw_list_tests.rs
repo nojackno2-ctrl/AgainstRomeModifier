@@ -609,6 +609,8 @@ fn frame_brush_cursor_perimeter_generation_and_selection() {
     options.brush_cursor = Some(BrushCursorOptions {
         hover_tile_x: 20,
         hover_tile_y: 20,
+        hover_point: None,
+        hover_radius: None,
         brush_size: 4,
         selection: None,
         color: BRUSH_CURSOR_COLOR,
@@ -640,6 +642,8 @@ fn frame_brush_cursor_perimeter_generation_and_selection() {
     sel_options.brush_cursor = Some(BrushCursorOptions {
         hover_tile_x: 10,
         hover_tile_y: 10,
+        hover_point: None,
+        hover_radius: None,
         brush_size: 1,
         selection: Some(SelectionRect::new(5, 5, 10, 10)),
         color: [1.0, 0.0, 0.0, 1.0],
@@ -664,6 +668,43 @@ fn frame_brush_cursor_perimeter_generation_and_selection() {
     // Rect from (5, 5) to (10, 10):
     // top: 5..=10 (6), right: 6..=10 (5), bottom: 9..=5 (5), left: 9..=6 (4) = 20 points
     assert_eq!(sel_cursor.perimeter_points.len(), 20);
+}
+
+#[test]
+fn frame_continuous_brush_cursor_tracks_raycast_point_and_fractional_radius() {
+    let heights = create_test_terrain();
+    let mut options = SceneFrameOptions::default();
+    options.brush_cursor = Some(BrushCursorOptions {
+        hover_tile_x: 0,
+        hover_tile_y: 0,
+        hover_point: Some((1.25, 2.5)),
+        hover_radius: Some(0.5),
+        brush_size: 1,
+        selection: None,
+        color: BRUSH_CURSOR_COLOR,
+        line_width: 2.0,
+    });
+
+    let frame = prepare_scene_frame(
+        &EditorCamera::default(),
+        Vec2::new(800.0, 600.0),
+        &heights,
+        &[],
+        &[],
+        &[],
+        None,
+        None,
+        &options,
+    )
+    .unwrap();
+
+    let perimeter = &frame.cursor.as_ref().expect("continuous cursor").perimeter_points;
+    assert_eq!(perimeter.len(), 64);
+    assert!((perimeter[0].x - 1.75).abs() < 1e-5);
+    assert!((perimeter[0].z - 2.5).abs() < 1e-5);
+    let opposite = perimeter[32];
+    assert!((opposite.x - 0.75).abs() < 1e-5);
+    assert!((opposite.z - 2.5).abs() < 1e-5);
 }
 
 #[test]

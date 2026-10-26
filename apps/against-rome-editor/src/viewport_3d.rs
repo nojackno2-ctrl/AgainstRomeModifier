@@ -751,6 +751,11 @@ impl Viewport3d {
         options.brush_cursor = self.hover_tile.map(|(tx, ty)| BrushCursorOptions {
             hover_tile_x: tx,
             hover_tile_y: ty,
+            hover_point: self.hover_grid.map(|(gx, gy)| (
+                gx * field.tile_width / (field.width().saturating_sub(1).max(1) as f32),
+                gy * field.tile_height / (field.height().saturating_sub(1).max(1) as f32),
+            )),
+            hover_radius: Some(brush_radius_tiles),
             brush_size: (brush_radius_tiles * 2.0).round().max(1.0) as i32,
             selection: None,
             color: BRUSH_CURSOR_COLOR,
