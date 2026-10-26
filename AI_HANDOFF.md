@@ -1,3 +1,11 @@
+## 2026-10-26 Codex：自主批次 #34–#36（六項完成；完整測試通過）
+- 起始 HEAD ccbfcd4；指南 3.3／4.1／5.4 與交接均未記載本次六項操作；缺口：起始 textures_ui.rs:2160 只有搜尋欄、spawn_placement_ui.rs:1200 只有搜尋／類別／民族篩選、campaign_ui.rs:982／1138 只有新增／編譯／套用。未進行逆向工程或修改 Design Check。
+- #34：清除材質搜尋、複製目前材質／印章原始識別碼（textures_ui.rs:2172、2176）；#35：重設調色盤三種篩選、複製可見原始別名（spawn_placement_ui.rs:1222、1225）；#36：複製目標標題／說明清單、複製目前波次設定（campaign_ui.rs:1001、1160）。新增三組無頭回歸測試，指南 3.3／4.1／5.4 同步更新。
+- 自審修正：波次摘要依編譯相同規則優先使用即時別名，避免草稿別名與實際輸入不一致；測試涵蓋雙語、即時變動、停用目的地、空清單、篩選交集、選取與歷程保留及材質／印章切換。操作只改檢視／剪貼簿，不改地圖或繞過 journal；沒有新快捷鍵、匯出寫入、APPDATA 寫入或持久化翻譯值；無新增快取，搜尋依既有 palette key 更新；複製字串只在點擊時計算，文字經 tr()/tl()。既有 shortcuts_blocked()／packaging_ui::default_export_dir／is_game_maps_dir 不變。
+- 驗證：每輪 cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target，均 287 組；#34 為 2673 passed／0 failed／25 ignored，#35、#36 各 2675 passed／0 failed／25 ignored，最終均 exit 0。install_resource_discovery 12 passed，提權環境限定失敗 0。ui_literal_sweep／guide_shortcuts 均通過；最終 cargo check／cargo build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 均 exit 0；git diff --check 通過。
+- 執行修正：先前重疊啟動測試造成 LNK1104／os error 32（#35 有 15 個目標無法啟動）；所有先前程序結束後，改同一 Shell 循序完整重跑 #35、#36 並通過，未變更產品或測試斷言規避。最終日誌 re_workspace/codex-batch-34-36-test.log；另存 codex-batch-34-test.log、codex-batch-35-test.log、codex-batch-34-36-check.log、codex-batch-34-36-build.log（均為忽略的驗證產物）。
+- 本次變更：上述三份來源檔、docs/map-editor-user-guide.md、AI_HANDOFF.md；無未追蹤檔案。未委派／暫存／提交；AGENTS.md、README.md 既有變更保留；遊戲安裝唯讀。GUI 人工點擊與遊戲內效果未驗收。
+
 ## 2026-10-26 Codex：自主批次 #31、#32、#33（六項完成；環境失敗另列）
 - 缺口依據（本次起始 HEAD 1fea085）：apps/against-rome-editor/src/design_check_ui.rs:406–420 僅有層級／搜尋篩選，:780–800 沒有重設、可見筆數或複製，:814–835 僅能直接選取與閱讀詳細說明；指南第 6.1 節與既有交接紀錄未記載本次六項功能，未進行逆向工程。
 - #31：①「僅顯示可定位問題」依有效世界座標或事件索引篩選（design_check_ui.rs:454、829）；②「重設篩選」還原搜尋／層級／可定位開關（:409、830）。無頭測試涵蓋非有限座標、事件索引 0、層級／搜尋交集及設定保留。

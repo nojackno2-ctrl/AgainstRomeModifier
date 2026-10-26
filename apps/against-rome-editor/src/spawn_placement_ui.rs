@@ -1027,6 +1027,16 @@ impl SpawnPlacementUi {
 
     // ---- window ---------------------------------------------------------------------------
 
+    fn reset_palette_filters(&mut self) {
+        self.search.clear();
+        self.category_filter = None;
+        self.tribe_filter = None;
+    }
+
+    fn visible_aliases_text(&self) -> String {
+        self.visible_types().into_iter().map(crate::spawn_placement::alias_of).collect::<Vec<_>>().join("\n")
+    }
+
     fn visible_types(&self) -> Vec<&SdlObjectType> {
         self.catalog
             .iter()
@@ -1207,6 +1217,14 @@ impl SpawnPlacementUi {
                             "名稱／別名（空白分隔多條件）",
                         )),
                     );
+                });
+                ui.horizontal(|ui| {
+                    if ui.button(tr(lang, "Reset palette filters", "重設調色盤篩選")).clicked() {
+                        self.reset_palette_filters();
+                    }
+                    if ui.button(tr(lang, "Copy visible aliases", "複製可見別名")).clicked() {
+                        ui.output_mut(|o| o.copied_text = self.visible_aliases_text());
+                    }
                 });
                 if self.catalog.is_empty() {
                     ui.colored_label(
@@ -2009,5 +2027,35 @@ mod palette_thumbnail_tests {
         let image = sprite_color_image(&sprite);
         assert_eq!(image.size, [1, 1]);
         assert_eq!(image.pixels[0].to_srgba_unmultiplied(), [0x11, 0x22, 0x33, 0x80]);
+    }
+}
+
+#[cfg(test)]
+mod batch35_tests {
+    use super::*;
+    #[test]
+    fn palette_reset_and_copy_preserve_placement_and_history() {
+        let mut panel = SpawnPlacementUi::default();
+        panel.set_catalog(vec![
+            SdlObjectType::new("wolf", 1, SdlObjectCategory::Other, "", 0, Default::default()),
+            SdlObjectType::new("bear", 2, SdlObjectCategory::Other, "", 0, Default::default()),
+        ]);
+        panel.search = "wolf".into();
+        let filtered = panel.visible_aliases_text();
+        assert!(!filtered.contains("bear"));
+        assert_eq!(panel.visible_types().len(), 1);
+        let token = panel.history_token();
+        panel.category_filter = Some(SdlObjectCategory::Other);
+        panel.tribe_filter = Some("absent".into());
+        assert!(panel.visible_aliases_text().is_empty());
+        panel.selected_type = Some("wolf".into());
+        panel.reset_palette_filters();
+        assert_eq!(panel.selected_type.as_deref(), Some("wolf"));
+        assert_eq!(panel.visible_types().len(), 2);
+        assert_eq!(panel.visible_aliases_text().lines().count(), 2);
+        assert_eq!(panel.history_token(), token);
+        assert!(panel.session.is_empty());
+        panel.search = "missing".into();
+        assert!(panel.visible_aliases_text().is_empty());
     }
 }

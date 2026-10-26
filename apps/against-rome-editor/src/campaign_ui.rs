@@ -253,6 +253,25 @@ impl Default for CampaignUi {
 }
 
 impl CampaignUi {
+    fn objectives_text(&self) -> String {
+        self.objectives.iter().enumerate().map(|(i, obj)| {
+            format!("{}. {}\n{}", i + 1, obj.title, obj.description)
+        }).collect::<Vec<_>>().join("\n\n")
+    }
+
+    fn wave_settings_text(&self, aliases: &[String]) -> String {
+        format!("{}: {}\n{}: {}\n{}: {} / {}\n{}: {}\n{}: {}\nX, Z: {}, {}\n{}: {}\n{}",
+            tl(self.english, "作戰風格", "Archetype"), self.selected_archetype_id,
+            tl(self.english, "波次數", "Waves"), self.wave_count,
+            tl(self.english, "首波／間隔秒數", "First / interval seconds"), self.first_delay_seconds, self.interval_seconds,
+            tl(self.english, "每隊人數", "Squad size"), self.squad_count,
+            tl(self.english, "隊伍", "Team"), self.wave_team,
+            self.wave_spawn_x, self.wave_spawn_z,
+            tl(self.english, "目的地", "Destination"),
+            if self.move_after_spawn { format!("{}, {}", self.dest_x, self.dest_z) }
+            else { tl(self.english, "停用", "Disabled").to_owned() },
+            self.resolved_wave_aliases(aliases).join("\n"))
+    }
     pub fn is_dirty(&self) -> bool {
         self.camera_dirty || self.camera_candidate.is_some() || self.has_unsupported_edits()
     }
@@ -979,6 +998,9 @@ impl CampaignUi {
 
         ui.add_space(8.0);
         ui.horizontal(|ui| {
+            if ui.add_enabled(!self.objectives.is_empty(), egui::Button::new(tl(self.english, "複製目標清單", "Copy objective list"))).clicked() {
+                ui.output_mut(|o| o.copied_text = self.objectives_text());
+            }
             if ui.button(tl(self.english, "新增目標", "Add Objective")).clicked() {
                 self.add_objective();
             }
@@ -1135,6 +1157,9 @@ impl CampaignUi {
             });
 
         ui.add_space(8.0);
+        if ui.button(tl(self.english, "複製波次設定", "Copy wave settings")).clicked() {
+            ui.output_mut(|o| o.copied_text = self.wave_settings_text(aliases));
+        }
         if ui.button(tl(self.english, "編譯 AI 波次", "Compile AI Waves")).clicked() {
             let _ = self.compile_wave_attack(scenario, aliases);
         }
@@ -2093,5 +2118,34 @@ mod tests {
         assert_eq!(tl(true, "任務目標工作室", "Objectives Studio"), "Objectives Studio");
         ui.english = true;
         assert!(ui.english);
+    }
+}
+
+#[cfg(test)]
+mod batch36_tests {
+    use super::*;
+    #[test]
+    fn copy_summaries_are_live_localized_and_do_not_compile_or_dirty() {
+        let mut panel = CampaignUi::default();
+        assert!(panel.objectives_text().is_empty());
+        panel.add_objective();
+        assert!(panel.objectives_text().starts_with("1. "));
+        let dirty = panel.is_dirty();
+        panel.wave_aliases_text = "raw_alias".into();
+        panel.wave_count = 7;
+        panel.move_after_spawn = false;
+        assert!(panel.wave_settings_text(&[]).contains("停用"));
+        panel.english = true;
+        let text = panel.wave_settings_text(&[]);
+        assert!(text.contains("Waves: 7"));
+        assert!(text.contains("Disabled"));
+        assert!(text.ends_with("raw_alias"));
+        assert!(panel.wave_settings_text(&["live_alias".into()]).ends_with("live_alias"));
+        panel.move_after_spawn = true;
+        panel.dest_x = 123.; panel.dest_z = 456.;
+        assert!(panel.wave_settings_text(&[]).contains("123, 456"));
+        assert_eq!(panel.is_dirty(), dirty);
+        assert!(panel.last_wave_result.is_none());
+        assert!(panel.last_compiled_objective_events.is_empty());
     }
 }
