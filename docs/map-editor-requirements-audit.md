@@ -2,7 +2,7 @@
 
 ## 2026-10-27 最新 Rust 驗收補記
 
-- AI 工作室繁中模式曾在未產生企劃時直接顯示英文 `Ready.`；現僅於呈現層依介面語系顯示「就緒。」或 `Ready.`，且保留內部狀態及生成流程。新增實際 egui 無視窗雙語渲染回歸，聚焦 1 passed；完整 workspace check／序列 test／build 均 exit 0，editor app 864 passed／6 ignored。
+- AI 工作室狀態訊息現於呈現層依介面語系翻譯固定狀態、模型掃描、進度、完成／套用統計及已知錯誤前綴；保留內部狀態、模型名稱／數值與未知錯誤細節。egui 雙語渲染回歸覆蓋狀態家族及錯誤細節；聚焦 23 passed。完整 workspace check／序列 test／build 均 exit 0；桌面與遊戲內驗收未執行。詳見 `AI_HANDOFF.md` 2026-10-27 AI 工作室狀態訊息雙語化。
 - 空白場景現在於 staging 發布前驗證完整 terrain output：六張 BMP 的格式與全部像素值、列 stride/padding，以及 `boden.txt` 的 4096 格材質；建置後 `verify_disk_artifacts` 共用相同 verifier。新增像素／材質污染與失敗 rollback／無 manifest 登錄案例，maps 聚焦 10 passed。workspace check／序列完整 test／build 均 exit 0，editor app 863 passed／6 ignored，maps lib 86 passed／3 ignored、`maps_tests` 52 passed；此 gate 不代表保留 DATA／SDL 可由遊戲載入。
 - `PlacementUi::batch_edit` 與單筆隊伍設定／批次欄位提交現在共用物件類別隊伍驗證，避免 Squad 從公開批次入口改至 team 8 等非法隊伍。拒絕同批角度變更時 store payload、dirty、undo/redo、history token／receipt 均不變；team 7 加旋轉可 undo/redo。聚焦 3 passed；workspace check、完整序列 test（editor app 863 passed／6 ignored）及 build 通過。詳見 `AI_HANDOFF.md` 2026-10-27 批次物件編輯隊伍類別驗證。
 - `4T` 三材質 junction 不再只依名稱 shape 推測：有 floortex 像素 probe 時以三個 base material 代表色與圖塊四角像素推斷，僅在三材質且每角 RGB 距離不超過 32 時收錄，無把握就拒絕。合成測試覆蓋 4 個 shape × 2 順序、像素推斷覆寫名稱 fallback、native resolver 回烘及低信心 fail-safe。只讀安裝版 `floortex.dat` 稽核 333 張 `4T`：308 張推斷並可回烘原生三材質角點，202 張改正名稱 shape 推測，25 張未通過像素證據門檻；來源封存檔未修改。`against-rome-textures` 13 unit／69 integration tests 通過（3 個安裝素材／地圖測試略過）。這不是遊戲渲染驗收；25 張仍保留未解析，遊戲內混合素材外觀待驗。詳見 `AI_HANDOFF.md` 2026-10-27 4T 三材質圖塊像素推斷。

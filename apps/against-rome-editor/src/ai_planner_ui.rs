@@ -987,13 +987,118 @@ impl AiPlannerUi {
         }
     }
 
-    fn localized_status_message(&self) -> &str {
-        if self.status_message == "Ready." {
-            tl(self.english, "就緒。", "Ready.")
-        } else {
-            &self.status_message
+    fn localized_status_message(&self) -> String {
+        let message = self.status_message.as_str();
+        let fixed = match message {
+            "Ready." => Some(("就緒。", "Ready.")),
+            "Connecting to Ollama and listing models…" => Some(("正在連線至 Ollama 並列出模型…", "Connecting to Ollama and listing models…")),
+            "Ollama endpoint changed; list models again to refresh." => Some(("Ollama 端點已變更，請重新列出模型。", "Ollama endpoint changed; list models again to refresh.")),
+            "No Ollama models found. Install one or enter a known model name." => Some(("找不到 Ollama 模型，請先安裝模型或手動輸入名稱。", "No Ollama models found. Install one or enter a known model name.")),
+            "Model discovery worker stopped unexpectedly; retry." => Some(("模型探索工作意外停止，請重試。", "Model discovery worker stopped unexpectedly; retry.")),
+            "Generation already running." => Some(("企劃正在產生中。", "Generation already running.")),
+            "Select at least one specialist." => Some(("請至少選取一個專家角色。", "Select at least one specialist.")),
+            "Terrain, water and materials plan in order, one local inference at a time; this may take several minutes." => Some(("將依序規劃地形、水域與材質，每次執行一項本機推論；可能需要數分鐘。", "Terrain, water and materials plan in order, one local inference at a time; this may take several minutes.")),
+            "Generation cancelled; you can retry." => Some(("已取消企劃產生；可重試。", "Generation cancelled; you can retry.")),
+            "Generation worker stopped unexpectedly; retry." => Some(("企劃產生工作意外停止，請重試。", "Generation worker stopped unexpectedly; retry.")),
+            "Roles, area, locks or description changed; the old plan is invalid. Generate again." => Some(("角色、區域、鎖定範圍或描述已變更；舊企劃已失效，請重新產生。", "Roles, area, locks or description changed; the old plan is invalid. Generate again.")),
+            "All specialists failed. Review diagnostics and retry." => Some(("所有專家角色皆失敗。請查看診斷資訊後重試。", "All specialists failed. Review diagnostics and retry.")),
+            "Some specialists failed: this is a partial plan. Review diagnostics before applying or retrying." => Some(("部分專家角色失敗：目前是部分企劃。套用或重試前請查看診斷資訊。", "Some specialists failed: this is a partial plan. Review diagnostics before applying or retrying.")),
+            "Plan generated and awaiting review. Click Apply to change the map." => Some(("企劃已產生，等待檢視。按下「套用」以修改地圖。", "Plan generated and awaiting review. Click Apply to change the map.")),
+            "Generation timed out." => Some(("企劃產生逾時。", "Generation timed out.")),
+            "Generation is still running." => Some(("企劃仍在產生中。", "Generation is still running.")),
+            "No AI plan generated to apply." => Some(("沒有可套用的 AI 企劃。", "No AI plan generated to apply.")),
+            "This plan paints materials; load the map's textures (boden.txt) before applying." => Some(("此企劃會繪製材質；套用前請先載入地圖材質（boden.txt）。", "This plan paints materials; load the map's textures (boden.txt) before applying.")),
+            _ => None,
+        };
+        if let Some((zh, en)) = fixed {
+            return tl(self.english, zh, en).to_string();
+        }
+
+        if let Some(detail) = message.strip_prefix("Connecting to Ollama and listing models…") {
+            return format!("{}{}", tl(self.english, "正在連線至 Ollama 並列出模型…", "Connecting to Ollama and listing models…"), detail);
+        }
+        if let Some(detail) = message.strip_prefix("Discovered ").and_then(|s| s.strip_suffix(" Ollama models.")) {
+            return if self.english { message.to_string() } else { format!("已找到 {detail} 個 Ollama 模型。") };
+        }
+        if let Some(detail) = message.strip_prefix("Failed to list Ollama models: ") {
+            return format!("{}{}", tl(self.english, "列出 Ollama 模型失敗：", "Failed to list Ollama models: "), detail);
+        }
+        for (prefix, zh, en) in [
+            ("Generation failed to start: ", "企劃無法開始產生：", "Generation failed to start: "),
+            ("AI Plan Generation Failed: ", "AI 企劃產生失敗：", "AI Plan Generation Failed: "),
+        ] {
+            if let Some(detail) = message.strip_prefix(prefix) {
+                let localized_detail = if detail == "Select at least one specialist." {
+                    tl(self.english, "請至少選取一個專家角色。", "Select at least one specialist.")
+                } else { detail };
+                return format!("{}{localized_detail}", tl(self.english, zh, en));
+            }
+        }
+        if let Some(rest) = message.strip_prefix("Planning ") {
+            if let Some((role_and_model, progress)) = rest.split_once("; completed ") {
+                if let Some((role, model)) = role_and_model.split_once(" / ") {
+                    return if self.english {
+                        message.to_string()
+                    } else {
+                        format!("規劃中：{}／{}；已完成 {}", Self::localized_role_name(role), model, progress)
+                    };
+                }
+            }
+        }
+        if let Some(rest) = message.strip_prefix("Completed ") {
+            if let Some((counts, role_model_status)) = rest.split_once(": ") {
+                if let Some((role_model, status)) = role_model_status.rsplit_once(" (") {
+                    if let Some((role, model)) = role_model.split_once(" / ") {
+                        let status = status.strip_suffix(')').unwrap_or(status);
+                        return if self.english { message.to_string() } else {
+                            format!("已完成 {counts}：{}／{}（{}）", Self::localized_role_name(role), model, Self::localized_status_name(status))
+                        };
+                    }
+                }
+            }
+        }
+        if let Some(rest) = message.strip_prefix("Applied plan changed nothing: all ") {
+            if let Some(count) = rest.strip_suffix(" operations fell outside the edit area or locks. Generate again or widen the area.") {
+                return tl(self.english,
+                    &format!("套用企劃後沒有變更：{count} 項操作都落在生效區域之外或鎖定範圍內。請重新產生或擴大區域。"),
+                    message).to_string();
+            }
+        }
+        if let Some(rest) = message.strip_prefix("Applied plan: ") {
+            let parts: Vec<_> = rest.trim_end_matches('.').split(", ").collect();
+            if parts.len() == 4 {
+                let material_counts = parts[2].strip_suffix(" material strokes").unwrap_or(parts[2]);
+                if let Some((accepted, total)) = material_counts.split_once(" of ") {
+                    return if self.english { message.to_string() } else {
+                        format!("已套用企劃：{} 個高度取樣點、{} 個阻擋像素、{}／{} 個材質筆刷、{} 項操作。", numeric_prefix(parts[0]), numeric_prefix(parts[1]), accepted, total, numeric_prefix(parts[3]))
+                    };
+                }
+            }
+        }
+        message.to_string()
+    }
+
+    fn localized_role_name(role: &str) -> &str {
+        match role {
+            "Terrain" => "地形",
+            "Water" => "水域",
+            "Materials" => "材質",
+            other => other,
         }
     }
+
+    fn localized_status_name(status: &str) -> &str {
+        match status {
+            "Succeeded" => "成功",
+            "Failed" => "失敗",
+            "Cancelled" => "已取消",
+            other => other,
+        }
+    }
+}
+
+fn numeric_prefix(value: &str) -> &str {
+    value.split_once(' ').map_or(value, |(number, _)| number)
 }
 
 #[cfg(test)]
@@ -1526,5 +1631,43 @@ mod tests {
         });
         assert!(english.contains("Ready."), "{english}");
         assert!(!english.contains("就緒。"), "{english}");
+    }
+
+    #[test]
+    fn all_planner_status_families_are_localized_in_rendered_ui_and_keep_details() {
+        let mut ui = test_ui();
+        ui.open = true;
+        let cases = [
+            ("Ready.", "就緒。", "Ready."),
+            ("Terrain, water and materials plan in order, one local inference at a time; this may take several minutes.", "將依序規劃地形", "Terrain, water and materials plan in order"),
+            ("Generation cancelled; you can retry.", "已取消企劃產生", "Generation cancelled; you can retry."),
+            ("Roles, area, locks or description changed; the old plan is invalid. Generate again.", "舊企劃已失效", "Roles, area, locks or description changed"),
+            ("Some specialists failed: this is a partial plan. Review diagnostics before applying or retrying.", "部分企劃", "Some specialists failed: this is a partial plan"),
+            ("All specialists failed. Review diagnostics and retry.", "所有專家角色皆失敗", "All specialists failed"),
+            ("Plan generated and awaiting review. Click Apply to change the map.", "企劃已產生，等待檢視", "Plan generated and awaiting review"),
+            ("Applied plan changed nothing: all 7 operations fell outside the edit area or locks. Generate again or widen the area.", "沒有變更：7 項操作", "Applied plan changed nothing: all 7 operations"),
+            ("Connecting to Ollama and listing models…", "正在連線至 Ollama", "Connecting to Ollama and listing models…"),
+            ("Discovered 3 Ollama models.", "已找到 3 個 Ollama 模型", "Discovered 3 Ollama models."),
+            ("Planning Terrain / llama-custom:7; completed 2/3.", "地形／llama-custom:7；已完成 2/3", "Planning Terrain / llama-custom:7; completed 2/3."),
+            ("Failed to list Ollama models: HTTP 503 raw body", "列出 Ollama 模型失敗：HTTP 503 raw body", "Failed to list Ollama models: HTTP 503 raw body"),
+            ("AI Plan Generation Failed: provider detail 42", "AI 企劃產生失敗：provider detail 42", "AI Plan Generation Failed: provider detail 42"),
+            ("Generation failed to start: bounds parse detail", "企劃無法開始產生：bounds parse detail", "Generation failed to start: bounds parse detail"),
+            ("No AI plan generated to apply.", "沒有可套用的 AI 企劃", "No AI plan generated to apply."),
+            ("Applied plan: 12 height samples, 4 collision pixels, 3 of 5 material strokes, 8 operations.", "已套用企劃：12 個高度取樣點", "Applied plan: 12 height samples"),
+        ];
+        for (status, zh_expected, en_expected) in cases {
+            ui.status_message = status.to_string();
+            ui.english = false;
+            let chinese = crate::batch20_localization_tests::render(|ctx| ui.show(ctx, None, None, 0.0));
+            assert!(chinese.contains(zh_expected), "expected {zh_expected:?} in {chinese}");
+            if en_expected.contains("raw body") || en_expected.contains("provider detail") {
+                let detail = if en_expected.contains("raw body") { "HTTP 503 raw body" } else { "provider detail 42" };
+                assert!(chinese.contains(detail), "detail {detail:?} lost in {chinese}");
+            }
+            ui.english = true;
+            let english = crate::batch20_localization_tests::render(|ctx| ui.show(ctx, None, None, 0.0));
+            assert!(english.contains(en_expected), "expected {en_expected:?} in {english}");
+            assert!(!english.contains("就緒。"), "{english}");
+        }
     }
 }
