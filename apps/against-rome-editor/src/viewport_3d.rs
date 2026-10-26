@@ -489,6 +489,29 @@ impl Viewport3d {
         )
     }
 
+    fn collision_cell_at_world(
+        session: &TerrainSession,
+        field: &TerrainHeightField,
+        world: SceneVec3,
+    ) -> Option<(usize, usize, bool)> {
+        let size = session.collision_size;
+        if size == 0
+            || !world.x.is_finite()
+            || !world.z.is_finite()
+            || !field.tile_width.is_finite()
+            || !field.tile_height.is_finite()
+            || field.tile_width <= 0.0
+            || field.tile_height <= 0.0
+        {
+            return None;
+        }
+
+        let cell_x = ((world.x / field.tile_width * size as f32).floor() as usize).min(size - 1);
+        let cell_z = ((world.z / field.tile_height * size as f32).floor() as usize).min(size - 1);
+        let value = *session.collision().get(cell_z * size + cell_x)?;
+        Some((cell_x, cell_z, value > 0))
+    }
+
     /// Builds a `TerrainHeightField` from the current `TerrainSession`.
     pub fn build_height_field(
         session: &TerrainSession,
@@ -703,9 +726,6 @@ impl Viewport3d {
     ) -> ViewportAction {
         let mut action = ViewportAction::None;
 
-        // 1. Top controls toolbar
-        self.render_toolbar(ui, session, objects, selected_object);
-
         // 1b. Synchronize floor texture atlas to GPU texture handle if not yet loaded
         if self.floor_atlas.is_some() && self.floor_atlas_texture.is_none() {
             self.sync_floor_atlas_texture(ctx);
@@ -720,6 +740,9 @@ impl Viewport3d {
                 return action;
             }
         };
+
+        // 1. Top controls toolbar
+        self.render_toolbar(ui, session, &field, objects, selected_object);
 
         // 3. Allocate canvas area
         let available = ui.available_size();
@@ -1269,6 +1292,7 @@ impl Viewport3d {
         &mut self,
         ui: &mut Ui,
         session: &TerrainSession,
+        field: &TerrainHeightField,
         objects: &[WorldObject],
         selected_object: Option<(usize, u32)>,
     ) {
@@ -1383,6 +1407,26 @@ impl Viewport3d {
                 } else {
                     format!("圖塊：({tx}, {ty}) 高度：{h:.2}")
                 });
+            }
+
+            if self.shading_mode == ShadingMode::Collision {
+                if let Some(world) = self.hover_world {
+                    if let Some((cell_x, cell_z, blocked)) =
+                        Self::collision_cell_at_world(session, field, world)
+                    {
+                        ui.label(if self.english {
+                            format!(
+                                "Collision cell: ({cell_x}, {cell_z}) {}",
+                                if blocked { "Blocked" } else { "Passable" }
+                            )
+                        } else {
+                            format!(
+                                "通行格：({cell_x}, {cell_z}) {}",
+                                if blocked { "阻擋" } else { "可通行" }
+                            )
+                        });
+                    }
+                }
             }
 
             if let Some(ref atlas) = self.floor_atlas {
@@ -2622,6 +2666,66 @@ mod tests {
         assert!(
             red_terrain_polygons > 0,
             "blocked collision data should produce red terrain polygons in egui's paint output"
+        );
+    }
+
+    #[test]
+    fn collision_hover_readout_matches_terrain_picker_cell_and_passability() {
+        let mut collision = vec![0; 256 * 256];
+        collision[129 * 256 + 129] = 255;
+        let session = TerrainSession::new(
+            257,
+            vec![32; 257 * 257],
+            256,
+            collision,
+            None,
+            None,
+        );
+        let field = Viewport3d::build_height_field(&session, 6.0, 4.0).unwrap();
+        let pick_x = 32.375;
+        let pick_z = 32.375;
+        let pick_y = field.sample_height(pick_x, pick_z);
+        let ray = TerrainRay {
+            origin: SceneVec3::new(pick_x, pick_y + 1.0, pick_z),
+            direction: SceneVec3::new(0.0, -1.0, 0.0),
+        };
+        let blocked_world = TerrainRayPicker::try_pick_point(&field, ray)
+            .expect("vertical picker ray should hit the terrain");
+        assert!((blocked_world.x - pick_x).abs() < 1e-4);
+        assert!((blocked_world.z - pick_z).abs() < 1e-4);
+        assert_eq!(
+            Viewport3d::collision_cell_at_world(&session, &field, blocked_world),
+            Some((129, 129, true))
+        );
+        assert_eq!(
+            Viewport3d::collision_cell_at_world(
+                &session,
+                &field,
+                SceneVec3::new(32.5, 0.0, 32.5)
+            ),
+            Some((130, 130, false))
+        );
+
+        let mut vp = Viewport3d::new();
+        vp.shading_mode = ShadingMode::Collision;
+        vp.hover_tile = Some((32, 32));
+        vp.hover_world = Some(blocked_world);
+        let chinese = crate::batch20_localization_tests::render(|ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                vp.render_toolbar(ui, &session, &field, &[], None);
+            });
+        });
+        assert!(chinese.contains("通行格：(129, 129) 阻擋"), "{chinese}");
+
+        vp.english = true;
+        let english = crate::batch20_localization_tests::render(|ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                vp.render_toolbar(ui, &session, &field, &[], None);
+            });
+        });
+        assert!(
+            english.contains("Collision cell: (129, 129) Blocked"),
+            "{english}"
         );
     }
 
