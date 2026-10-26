@@ -433,9 +433,20 @@ impl ObjectStore {
 impl ObjectStore {
     /// Native editor radians converted from saved degrees exactly as the managed reader.
     pub fn native_rotation(&self, slot: usize, uid: u32) -> Result<f32> {
-        self.family_details(slot, uid)?;
+        if !self.active(slot) || u32at(&self.pools["objects"].bytes, self.record(slot) + 3) != uid {
+            return Err("stale object UID".into());
+        }
+        if uid == 0 || self.col(slot, 13) != 65535 {
+            return Err("select family root".into());
+        }
         let p = self.link(slot, 67);
-        Ok((f32at(&self.pools["position"].bytes, 21 + p * 17) as f64
+        let position = &self.pools["position"].bytes;
+        let position_count = u32at(position, 4) as usize;
+        let record = 8 + p * 17;
+        if p >= position_count || position.len() < record + 17 || position[record] == 0 {
+            return Err("position slot out of range".into());
+        }
+        Ok((f32at(position, record + 13) as f64
             * (std::f64::consts::PI / 180.)) as f32)
     }
     /// A detached, safe singleton template (including aliased positions and direct light).

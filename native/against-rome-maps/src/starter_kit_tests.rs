@@ -89,3 +89,65 @@ fn starter_kit_scenario_retain_move_rebuild_delete_and_skip() {
     let mut skip=ScenarioDocument::default();skip.spawns.push(Spawn{alias:"missing".into(),prebuilt:true,id:Uuid::new_v4(),..Default::default()});
     let result=transaction::apply_to_candidate(&ObjectStore::load(&f.map).unwrap(),&empty,&skip,&|_|None).unwrap();assert_eq!(result.skipped.len(),1);assert!(result.scenario.data_slots.is_empty());
 }
+
+#[test]
+fn spawn_transaction_preserves_unchanged_legacy_binding_with_inactive_camp_link() {
+    use crate::starter_kit::transaction::Template;
+
+    let f = fixture();
+    let source_map = f.root.join("MAPS/A_FIRST");
+    let mut objects = fs::read(source_map.join("DATA/objects.dat")).unwrap();
+    let capacity = u32::from_le_bytes(objects[4..8].try_into().unwrap()) as usize;
+    let camp_col = 16 + capacity * 79 + capacity * COLUMNS[..5].iter().sum::<usize>();
+    objects[camp_col..camp_col + 2].copy_from_slice(&0u16.to_le_bytes());
+    fs::write(source_map.join("DATA/objects.dat"), objects).unwrap();
+    let mut lager = vec![0u8; 144016];
+    lager[..16].copy_from_slice(&[
+        1u32.to_le_bytes(),
+        3200u32.to_le_bytes(),
+        6u32.to_le_bytes(),
+        10u32.to_le_bytes(),
+    ].concat());
+    fs::write(source_map.join("DATA/lager.dat"), lager).unwrap();
+    let source = ObjectStore::load(&source_map).unwrap();
+    assert_eq!(source.family(0, 1).unwrap_err(), "inactive lager camp");
+
+    let id = Uuid::from_u128(0x101);
+    let copy_id = Uuid::from_u128(0x102);
+    let rotation = source.native_rotation(0, 1).unwrap();
+    let angle = transaction::display_angle(rotation);
+    let root = source.objects().into_iter().find(|o| o.slot == 0).unwrap();
+    let original = Spawn {
+        alias: "GER_HAU00".into(), x: root.position[0], y: root.position[1], z: root.position[2],
+        team: root.team as i32, count: 0, angle, prebuilt: true, id, raw_rotation: None,
+    };
+    let previous = ScenarioDocument {
+        spawns: vec![original.clone()],
+        data_slots: vec![against_rome_scenario::model::DataSlot { slot: 0, uid: 1, spawn_id: id }],
+        ..Default::default()
+    };
+    let copy = Spawn {
+        alias: original.alias.clone(), x: root.position[0] + 500.0, y: root.position[1],
+        z: root.position[2], team: 1, count: 0, angle: 45, prebuilt: true, id: copy_id,
+        raw_rotation: None,
+    };
+    let next = ScenarioDocument { spawns: vec![original, copy], ..previous.clone() };
+    let template_map = f.root.join("MAPS/SINGLETON");
+    map(&template_map, 3, &[(232, None)], 10);
+    let template = Template { store: ObjectStore::load(template_map).unwrap(), slot: 0, uid: 1 };
+    let candidate = transaction::apply_to_candidate_with_copies(
+        &source, &previous, &next, &|_| Some(template.clone()), None, None,
+    ).unwrap();
+
+    assert_eq!(candidate.scenario.data_slots.len(), 2);
+    assert_eq!(candidate.scenario.data_slots[0], previous.data_slots[0]);
+    assert_eq!(candidate.store.family(0, 1).unwrap_err(), "inactive lager camp");
+    assert_eq!(candidate.store.payload("lager"), source.payload("lager"));
+    assert_eq!(candidate.store.objects().iter().find(|o| o.slot == 0).unwrap().position, root.position);
+
+    let mut moved = next;
+    moved.spawns[0].x += 1.0;
+    assert!(transaction::apply_to_candidate_with_copies(
+        &source, &previous, &moved, &|_| Some(template.clone()), None, None,
+    ).is_err());
+}

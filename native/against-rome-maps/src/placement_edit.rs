@@ -202,7 +202,8 @@ pub fn build_family_copy_requests(
                 .filter(|r| r.uid == uid)
                 .ok_or_else(|| format!("原生副本來源槽位 {slot} 的 root UID 無效或物件已不存在。"))?;
             if store.family(root.slot, uid).is_err() {
-                return Err(format!("副本來源槽位 {slot} 的群組無效或非獨立支援群組。"));
+                // 保留空複製請求，讓交易流程改用可信範本或劇本建物後備方案。
+                continue;
             }
             let resolved = resolver(root.type_id as i32);
             let alias = item_alias(item);
@@ -257,7 +258,8 @@ pub fn build_family_copy_requests(
                 .filter(|r| r.uid == binding.uid)
                 .ok_or_else(|| format!("副本來源槽位 {} 的 root UID 無效或物件已不存在。", binding.slot))?;
             if store.family(root.slot, binding.uid).is_err() {
-                return Err(format!("副本來源槽位 {} 的群組無效或非獨立支援群組。", binding.slot));
+                // 來源含不透明或無效群組連結；不深層複製，改由一般範本流程建立獨立副本。
+                continue;
             }
             if !spawn.alias.eq_ignore_ascii_case(item_alias(item)) {
                 return Err("副本物件的別名必須與來源一致。".into());
@@ -452,6 +454,47 @@ mod tests {
         let mut stale = native;
         stale.native_source_identity = Some(NativeObjectIdentity { slot: 0, uid: 2 });
         assert!(build_family_copy_requests(&[stale], &prev, &store, Some(&resolver)).is_err());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn malformed_bound_family_copy_falls_back_to_singleton_rebuild() {
+        use crate::starter_kit::native::COLUMNS;
+        let (clean, dir) = synthetic_store(0);
+        let n = 4usize;
+        let mut objects = std::fs::read(dir.join("DATA/objects.dat")).unwrap();
+        let camp_col = 16 + n * 79 + n * COLUMNS[..5].iter().sum::<usize>();
+        objects[camp_col..camp_col + 2].copy_from_slice(&0u16.to_le_bytes());
+        std::fs::write(dir.join("DATA/objects.dat"), objects).unwrap();
+        let mut lager = vec![0u8; 144016];
+        lager[..16].copy_from_slice(&[
+            1u32.to_le_bytes(),
+            3200u32.to_le_bytes(),
+            6u32.to_le_bytes(),
+            10u32.to_le_bytes(),
+        ].concat());
+        std::fs::write(dir.join("DATA/lager.dat"), lager).unwrap();
+        drop(clean);
+        let store = ObjectStore::load(&dir).unwrap();
+        assert_eq!(store.family(0, 1).unwrap_err(), "inactive lager camp");
+
+        let id = Uuid::from_u128(17);
+        let root = store.objects().into_iter().find(|o| o.slot == 0).unwrap();
+        let rotation = store.native_rotation(0, 1).unwrap();
+        let source = against_rome_scenario::model::Spawn {
+            alias: "BauX".into(), x: root.position[0], y: root.position[1], z: root.position[2],
+            team: 0, count: 0, angle: radians_to_display_angle(rotation), prebuilt: true,
+            id, raw_rotation: None,
+        };
+        let previous = ScenarioDocument {
+            spawns: vec![source],
+            data_slots: vec![against_rome_scenario::model::DataSlot { slot: 0, uid: 1, spawn_id: id }],
+            ..Default::default()
+        };
+        let mut copy = obj("BauX", SdlObjectCategory::Building, 1, 0);
+        copy.copy_source_scenario_id = id;
+        copy.angle = 45.0;
+        assert!(build_family_copy_requests(&[copy], &previous, &store, None).unwrap().is_empty());
         let _ = std::fs::remove_dir_all(dir);
     }
 

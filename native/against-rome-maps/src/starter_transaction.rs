@@ -144,8 +144,31 @@ fn apply_core(store: &ObjectStore, previous: &ScenarioDocument,
             owned.insert(current.id, Template { store: store.clone(), slot: root.slot, uid: root.uid });
             continue;
         }
-        let family = store.family(root.slot, root.uid)?;
         let radians = store.native_rotation(root.slot, root.uid)?;
+        let family = match store.family(root.slot, root.uid) {
+            Ok(family) => family,
+            Err(error) if old == current => {
+                // 部分零售地圖的舊 binding 含不透明或未啟用的 side pool 連結。
+                // 僅在位置與原生身分未變時逐位元保留 root；不可移動或作為複製來源。
+                let position_unchanged = root.position[0].to_bits() == current.x.to_bits()
+                    && root.position[1].to_bits() == current.y.to_bits()
+                    && root.position[2].to_bits() == current.z.to_bits();
+                let rotation_unchanged = match current.raw_rotation {
+                    Some(raw) => raw.to_bits() == radians.to_bits()
+                        && angle(raw) == current.angle.rem_euclid(360),
+                    None => {
+                        let actual = radians as f64 * 180.0 / std::f64::consts::PI;
+                        actual.is_finite()
+                            && ((actual - current.angle as f64 + 180.0).rem_euclid(360.0) - 180.0).abs() <= 0.001
+                    }
+                };
+                if !position_unchanged || root.team as i32 != current.team || !rotation_unchanged {
+                    return Err(error);
+                }
+                vec![root.slot]
+            }
+            Err(error) => return Err(error),
+        };
         if old.team != current.team || root.team as i32 != current.team || old.angle.rem_euclid(360) != current.angle.rem_euclid(360) {
             return Err("retained family only supports translation".into());
         }

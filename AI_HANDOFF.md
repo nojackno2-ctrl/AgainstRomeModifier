@@ -1,3 +1,9 @@
+## 2026-10-26 Codex：零售原生 DATA 舊連結容錯與回歸驗證
+- GUI Safe Save 在未修改的零售 `[DATA]` 建物連結 `inactive lager camp` 上遭拒；以 TEMP 與安裝版 `ENDL_005` 11 個 DATA pool SHA-256 比對一致，確認異常來自零售來源資料。
+- `native_rotation` 原先要求整個 family 有效，阻擋保留未變更 root；現改為獨立驗證 root UID／position slot 並讀取旋轉。Safe Save 交易允許未移動、改隊伍或旋轉的壞連結 root 原樣保留；壞 family 複製不深拷貝，改走可信 singleton template 或 script fallback。
+- 新增 2 個回歸測試，驗證舊 root 原樣保留、移動遭拒及副本回退。`against-rome-maps` 86 passed／3 ignored；完整 workspace 測試通過（編輯器 851 passed／6 ignored，其餘無失敗）；`cargo check --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target`、`cargo build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target` 與 `git diff --check` 均通過。測試時編輯器 exe 被桌面程序鎖定（`os error 5`），關閉後重跑成功。
+- TEMP 桌面驗收：副本安全儲存回報 `Saved safely in one transaction (12 files, 0 cache deletions)`；關閉重開後顯示 T1／45°，原三個 `[DATA]` 物件仍在。缺少可用 DATA 範本的副本依 fallback 存為 script spawn；安裝資料夾唯讀，未啟動遊戲。狀態：Safe Save／重載已驗證；遊戲內效果未驗證。
+
 ## 2026-10-26 GPT-6 Luna：原生 DATA 建築副本隊伍／方向桌面驗收
 - 實際啟動 Rust 編輯器載入 TEMP `ENDL_005`，複製 `[DATA]` 日耳曼主屋後，以「隊伍／方向」批次對話框將副本設為 T1、45°；清單顯示副本 `(42,40) T1 45°`，原始 `[DATA]` 主屋仍為 T0、0°。工具列 Undo 回復副本為 T0、0°，Redo 再現 T1、45°；其他 DATA 物件及部隊列值不變。
 - 中途一次失焦鍵盤輸入改變了粗糙筆刷 UI 選擇，未作用於畫布；最終關閉時選擇「捨棄未儲存的變更」，未執行 Safe Save。TEMP 地圖關閉前後逐檔 SHA-256：64 檔、64 檔、差異 0。僅完成記憶體層 GUI 編輯／復原驗收；DATA 檔案輸出與重載、遊戲內效果仍未驗證。
