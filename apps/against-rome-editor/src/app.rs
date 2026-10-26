@@ -7432,18 +7432,38 @@ mod tests {
         app.ai_planner.open = true;
         app.sync_ai_materials();
         assert!(!app.ai_planner.material_options.is_empty(), "catalog materials offered");
-        // ARM_AI_MATERIALS_ONLY / ARM_AI_PROMPT narrow a run to collect material evidence.
-        app.ai_planner.role_checks = if std::env::var("ARM_AI_MATERIALS_ONLY").is_ok() { [false, false, true] } else { [false, true, true] };
+        // ARM_AI_MATERIALS_ONLY narrows to Materials; ARM_AI_ALL_ROLES enables all specialists. ARM_AI_PROMPT sets the live request.
+        app.ai_planner.role_checks = if std::env::var("ARM_AI_MATERIALS_ONLY").is_ok() {
+            [false, false, true]
+        } else if std::env::var("ARM_AI_ALL_ROLES").is_ok() {
+            [true, true, true]
+        } else {
+            [false, true, true]
+        };
         app.ai_planner.bounds_text = "8,8,48,48".into();
         app.ai_planner.prompt_description = std::env::var("ARM_AI_PROMPT").unwrap_or_else(|_| "Add a small lake near the middle of the area and paint a dirt road (PFAD) leading to its shore.".into());
         let water = app.water_surface;
+        let preview_heights = app.session.as_ref().unwrap().heights().to_vec();
+        let preview_collision = app.session.as_ref().unwrap().collision().to_vec();
+        let preview_textures = app.textures.session_textures().unwrap().to_vec();
         app.ai_planner.start_generation(water).unwrap();
         assert!(app.ai_planner.wait_generation(std::time::Duration::from_secs(20 * 60)), "timed out");
+        if std::env::var("ARM_AI_ALL_ROLES").is_ok() {
+            assert_eq!(app.ai_planner.progress_total, 3);
+            assert_eq!(app.ai_planner.progress_done, 3);
+            assert!(!app.ai_planner.status_is_error, "one or more specialist roles failed: {}", app.ai_planner.status_message);
+        }
         eprintln!("status: {}\n{}", app.ai_planner.status_message, app.ai_planner.plan_summary);
         let plan = app.ai_planner.current_plan.clone().expect("plan");
+        assert_eq!(app.session.as_ref().unwrap().heights(), &preview_heights[..], "preview changed terrain");
+        assert_eq!(app.session.as_ref().unwrap().collision(), &preview_collision[..], "preview changed passability");
+        assert_eq!(app.textures.session_textures().unwrap(), &preview_textures[..], "preview changed materials");
+        assert!(!app.session.as_ref().unwrap().can_undo(), "preview added terrain history");
+        assert!(!app.textures.can_material_undo(), "preview added material history");
         eprintln!("plan: {}", serde_json::to_string(&plan).unwrap());
 
         let heights_before = app.session.as_ref().unwrap().heights().to_vec();
+        let collision_before = app.session.as_ref().unwrap().collision().to_vec();
         let textures_before = app.textures.session_textures().unwrap().to_vec();
         let result = app
             .ai_planner
@@ -7451,6 +7471,24 @@ mod tests {
             .unwrap();
         eprintln!("{result:#?}");
         let heights_after = app.session.as_ref().unwrap().heights().to_vec();
+        for y in 0..257 {
+            for x in 0..257 {
+                if x <= 8 * 4 || x >= 56 * 4 || y <= 8 * 4 || y >= 56 * 4 {
+                    let index = y * 257 + x;
+                    assert_eq!(heights_after[index], heights_before[index], "height vertex ({x},{y}) outside the edit area changed");
+                }
+            }
+        }
+        let collision_after = app.session.as_ref().unwrap().collision().to_vec();
+        let collision_size = app.session.as_ref().unwrap().collision_size;
+        for y in 0..collision_size {
+            for x in 0..collision_size {
+                if !(8..56).contains(&(x / 4)) || !(8..56).contains(&(y / 4)) {
+                    let index = y * collision_size + x;
+                    assert_eq!(collision_after[index], collision_before[index], "collision pixel ({x},{y}) outside the edit area changed");
+                }
+            }
+        }
         let textures_after = app.textures.session_textures().unwrap().to_vec();
         let changed_tiles = textures_before.iter().zip(&textures_after).filter(|(a, b)| a != b).count();
         eprintln!("material tiles changed: {changed_tiles}; height samples changed: {}", result.height_samples_changed);
@@ -7463,6 +7501,15 @@ mod tests {
         }
         assert!(changed_tiles > 0 || heights_after != heights_before, "plan changed nothing");
 
+        // Terrain/passability layer: one undo reverts the complete AI terrain plan, redo restores it.
+        if heights_after != heights_before || collision_after != collision_before {
+            assert!(app.session.as_mut().unwrap().undo());
+            assert_eq!(app.session.as_ref().unwrap().heights(), &heights_before[..]);
+            assert_eq!(app.session.as_ref().unwrap().collision(), &collision_before[..]);
+            assert!(app.session.as_mut().unwrap().redo());
+            assert_eq!(app.session.as_ref().unwrap().heights(), &heights_after[..]);
+            assert_eq!(app.session.as_ref().unwrap().collision(), &collision_after[..]);
+        }
         // Material layer: one undo reverts every AI material stroke, redo restores it.
         if changed_tiles > 0 {
             assert!(app.textures.material_undo());
