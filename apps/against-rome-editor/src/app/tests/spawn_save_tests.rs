@@ -200,6 +200,61 @@ fn bound_building_region_victory_event_survives_safe_save_and_reload() {
 }
 
 #[test]
+fn deleting_event_target_requires_disabling_event_before_save_and_reload() {
+    use against_rome_scenario::{Action, Condition, Event};
+
+    let (mut app, root, map) = fixture("delete_event_target", &[]);
+    place_house(&mut app, (30, 30), 0);
+    let target_id = app.scenario.document().spawns[0].id;
+    app.scenario.add_events(&[Event {
+        name: "被刪除主屋的存活事件".into(),
+        conditions: vec![Condition {
+            kind: 0,
+            target_id,
+            ..Default::default()
+        }],
+        actions: vec![Action { kind: 3, ..Default::default() }],
+        ..Default::default()
+    }]).unwrap();
+    save_ok(&mut app);
+    sync(&mut app, &map);
+
+    app.spawn_ui.select_all();
+    app.spawn_ui.delete_selected(&mut app.scenario, &cx());
+    assert!(app.spawn_ui.status().1, "啟用事件引用的目標必須拒絕刪除");
+    assert!(app.spawn_ui.status().0.contains("missing condition target"), "{}", app.spawn_ui.status().0);
+    assert_eq!(app.scenario.document().spawns.len(), 1, "拒絕後物件仍保留");
+    assert_eq!(app.scenario.document().spawns[0].id, target_id);
+    assert!(!app.scenario.dirty(), "拒絕後劇本文件仍維持乾淨");
+    assert_eq!(data_objects(&map).len(), 1, "拒絕後 DATA 建物仍保留");
+
+    assert_eq!(app.scenario.set_events_enabled(&[0], false).unwrap(), 1);
+    app.spawn_ui.select_all();
+    app.spawn_ui.delete_selected(&mut app.scenario, &cx());
+    assert!(!app.spawn_ui.status().1, "{}", app.spawn_ui.status().0);
+    assert!(app.scenario.document().spawns.is_empty(), "停用事件後可移除目標");
+    save_ok(&mut app);
+    assert!(data_objects(&map).is_empty(), "停用事件後重試可提交建物刪除");
+    let saved = against_rome_scenario::ScenarioDocument::from_json(
+        &std::fs::read(map.join("arm_scenario.json")).unwrap(),
+    ).unwrap();
+    assert!(saved.spawns.is_empty() && saved.data_slots.is_empty());
+    assert_eq!(saved.events.len(), 1);
+    assert!(!saved.events[0].enabled, "已停用的懸空目標事件應保留供設計者修復");
+
+    let mut reloaded = EditorApp::initial_state();
+    reloaded.set_loaded_map(map.clone(), TerrainSession::create_blank(5, 32)).unwrap();
+    reloaded.scenario.load_session(&map).unwrap();
+    reloaded.placement.load_session(&map).unwrap();
+    assert!(reloaded.scenario.document().spawns.is_empty());
+    assert!(!reloaded.scenario.document().events[0].enabled);
+    assert_eq!(reloaded.scenario.document().events[0].conditions[0].target_id, target_id);
+
+    drop((app, reloaded));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn four_tribes_all_team_slots_and_squad_targets_survive_two_safe_save_reload_cycles() {
     use against_rome_scenario::{Action, Condition, DataBindingSource, Event, ScenarioDocument};
 
