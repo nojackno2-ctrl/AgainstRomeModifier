@@ -548,3 +548,200 @@ fn building_without_any_template_falls_back_to_a_construction_site() {
     assert!(!saved.spawns[0].prebuilt && saved.data_slots.is_empty());
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn invalid_event_data_is_rejected_before_safe_save_without_losing_edits() {
+    use against_rome_scenario::{Action, Condition, Event};
+
+    fn valid_event(target_id: uuid::Uuid) -> Event {
+        Event {
+            name: "安全儲存拒絕後可修復".into(),
+            conditions: vec![Condition {
+                kind: 0,
+                target_id,
+                ..Default::default()
+            }],
+            actions: vec![Action {
+                kind: 3,
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    for (case, invalid_action, missing_target) in [
+        (
+            "invalid_team",
+            Some(Action {
+                kind: 2,
+                alias: "TROOP".into(),
+                team: 8,
+                count: 1,
+                ..Default::default()
+            }),
+            false,
+        ),
+        (
+            "invalid_position",
+            Some(Action {
+                kind: 2,
+                alias: "TROOP".into(),
+                x: 16384.0,
+                count: 1,
+                ..Default::default()
+            }),
+            false,
+        ),
+        ("missing_target", None, true),
+    ] {
+        let (mut app, root, map) = fixture(&format!("invalid_event_{case}"), &[]);
+        place_house(&mut app, (30, 30), 0);
+        let target_id = app.scenario.document().spawns[0].id;
+        let valid = valid_event(target_id);
+        app.scenario.add_events(std::slice::from_ref(&valid)).unwrap();
+        let before = save_file_snapshot(&root);
+
+        let mut invalid = valid.clone();
+        if let Some(action) = invalid_action {
+            invalid.actions = vec![action];
+        }
+        if missing_target {
+            invalid.conditions[0].target_id = uuid::Uuid::new_v4();
+        }
+        app.scenario.replace_event(0, invalid.clone()).unwrap();
+        assert!(app.scenario.dirty(), "注入 {case} 後應保留未儲存編輯");
+
+        app.safe_save_current();
+        assert!(app.status_is_error, "{case} 必須被 Safe Save 拒絕：{}", app.status_message);
+        assert!(app.status_message.contains("Safe Save Rejected"), "{}", app.status_message);
+        assert_eq!(save_file_snapshot(&root), before, "{case} 驗證失敗不得改寫地圖檔案");
+        assert!(app.scenario.dirty(), "拒絕 {case} 後劇本編輯仍須保留");
+        assert_eq!(app.scenario.document().events[0], invalid, "拒絕後仍保留可修復的錯誤編輯");
+
+        app.scenario.replace_event(0, valid.clone()).unwrap();
+        save_ok(&mut app);
+        assert!(!app.scenario.dirty(), "修復 {case} 後重試應建立乾淨儲存基準");
+        let saved = against_rome_scenario::ScenarioDocument::from_json(
+            &std::fs::read(map.join("arm_scenario.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(saved.events, vec![valid], "修復後事件必須正常寫入");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[test]
+fn bound_spawn_edits_after_reload_keep_event_identity_and_reconcile_data_bindings() {
+    use against_rome_scenario::{Action, Condition, Event};
+
+    let (mut app, root, map) = fixture("post_reload_mutation", &[]);
+    place_house(&mut app, (30, 30), 0);
+    let original_id = app.scenario.document().spawns[0].id;
+    let event = Event {
+        name: "原主屋存活勝利".into(),
+        conditions: vec![Condition {
+            kind: 0,
+            target_id: original_id,
+            ..Default::default()
+        }],
+        actions: vec![Action {
+            kind: 3,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    app.scenario.add_events(std::slice::from_ref(&event)).unwrap();
+    save_ok(&mut app);
+
+    // 第二個 EditorApp 從磁碟重建場景與 DATA binding，再執行編輯。
+    let mut reloaded = EditorApp::initial_state();
+    reloaded.set_loaded_map(map.clone(), TerrainSession::create_blank(5, 32)).unwrap();
+    reloaded.scenario.load_session(&map).unwrap();
+    reloaded.placement.load_session(&map).unwrap();
+    sync(&mut reloaded, &map);
+    assert_eq!(reloaded.scenario.document().events, vec![event.clone()]);
+
+    reloaded.spawn_ui.select_all();
+    reloaded.spawn_ui.duplicate_selected(&mut reloaded.scenario, &cx());
+    assert!(!reloaded.spawn_ui.status().1, "{}", reloaded.spawn_ui.status().0);
+    let clone_id = reloaded
+        .scenario
+        .document()
+        .spawns
+        .iter()
+        .find(|spawn| spawn.id != original_id)
+        .expect("duplicate gets a new permanent UUID")
+        .id;
+    assert_ne!(clone_id, original_id);
+    reloaded.spawn_ui.move_selected(&mut reloaded.scenario, &cx(), 512.0, 0.0, false);
+    reloaded.spawn_ui.apply_batch(&mut reloaded.scenario, &cx(), Some(3), Some(90.0));
+    assert!(!reloaded.spawn_ui.status().1, "{}", reloaded.spawn_ui.status().0);
+    assert_eq!(reloaded.scenario.document().events[0].conditions[0].target_id, original_id);
+    save_ok(&mut reloaded);
+
+    let after_duplicate = against_rome_scenario::ScenarioDocument::from_json(
+        &std::fs::read(map.join("arm_scenario.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(after_duplicate.events, vec![event.clone()], "duplicate must not retarget the original event");
+    assert_eq!(after_duplicate.spawns.len(), 2);
+    assert!(after_duplicate.spawns.iter().all(|spawn| spawn.prebuilt));
+    assert_eq!(after_duplicate.data_slots.len(), 2, "both reloaded original and duplicate are DATA-bound");
+    assert_eq!(data_objects(&map).len(), 2);
+    assert_eq!(
+        after_duplicate.data_slots.iter().map(|binding| binding.spawn_id).collect::<std::collections::HashSet<_>>(),
+        [original_id, clone_id].into_iter().collect(),
+    );
+    let moved_clone = after_duplicate.spawns.iter().find(|spawn| spawn.id == clone_id).unwrap();
+    assert_eq!(moved_clone.team, 3);
+    assert_eq!(moved_clone.x, 7808.0 + 256.0 + 512.0, "duplicate offset plus the post-reload move");
+    assert_eq!(moved_clone.angle, 90);
+
+    // 同一組已重載物件在 script-only team 12 與 DATA team 1 間升降級，事件 UUID 不變。
+    let mut after_reload = EditorApp::initial_state();
+    after_reload.set_loaded_map(map.clone(), TerrainSession::create_blank(5, 32)).unwrap();
+    after_reload.scenario.load_session(&map).unwrap();
+    after_reload.placement.load_session(&map).unwrap();
+    sync(&mut after_reload, &map);
+    after_reload.spawn_ui.select_all();
+    after_reload.spawn_ui.apply_batch(&mut after_reload.scenario, &cx(), Some(12), None);
+    assert!(!after_reload.spawn_ui.status().1, "{}", after_reload.spawn_ui.status().0);
+    save_ok(&mut after_reload);
+    assert!(after_reload.scenario.document().spawns.iter().all(|spawn| !spawn.prebuilt));
+    assert!(after_reload.scenario.document().data_slots.is_empty());
+    assert!(data_objects(&map).is_empty(), "降級至 script team 後要移除 DATA 物件");
+    assert_eq!(after_reload.scenario.document().events[0].conditions[0].target_id, original_id);
+
+    let mut promoted = EditorApp::initial_state();
+    promoted.set_loaded_map(map.clone(), TerrainSession::create_blank(5, 32)).unwrap();
+    promoted.scenario.load_session(&map).unwrap();
+    promoted.placement.load_session(&map).unwrap();
+    sync(&mut promoted, &map);
+    promoted.spawn_ui.select_all();
+    promoted.spawn_ui.apply_batch(&mut promoted.scenario, &cx(), Some(1), None);
+    assert!(!promoted.spawn_ui.status().1, "{}", promoted.spawn_ui.status().0);
+    save_ok(&mut promoted);
+    let final_doc = against_rome_scenario::ScenarioDocument::from_json(
+        &std::fs::read(map.join("arm_scenario.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(final_doc.spawns.iter().all(|spawn| spawn.prebuilt && spawn.team == 1));
+    assert_eq!(final_doc.events, vec![event], "升級 DATA binding 後原事件仍指向原 UUID");
+    assert_eq!(final_doc.data_slots.len(), 2);
+    assert_eq!(data_objects(&map).len(), 2);
+
+    let mut final_reload = EditorApp::initial_state();
+    final_reload.set_loaded_map(map.clone(), TerrainSession::create_blank(5, 32)).unwrap();
+    final_reload.scenario.load_session(&map).unwrap();
+    final_reload.placement.load_session(&map).unwrap();
+    sync(&mut final_reload, &map);
+    assert_eq!(final_reload.scenario.document(), &final_doc);
+    against_rome_scenario::verify_binding_snapshot(
+        final_reload.scenario.document(),
+        against_rome_scenario::DataBindingSource::load(&map).unwrap().active_bindings(),
+    )
+    .unwrap();
+
+    drop((app, reloaded, after_reload, promoted, final_reload));
+    std::fs::remove_dir_all(root).unwrap();
+}

@@ -2,6 +2,7 @@
 
 ## 2026-10-27 最新 Rust 驗收補記
 
+- Safe Save 現有 app 層回歸覆蓋無效事件隊伍、超界生成座標、缺失目標 UUID：拒絕前後地圖全檔快照一致、編輯仍保留，修復後重試成功。跨全新 `EditorApp` 重載案例再覆蓋建築複製／移動／隊伍變更及 team 12↔1 的 DATA 降級／升級，驗證事件仍以原 UUID 為目標、bindings 清理重建後可再次載入。`spawn_save_tests` 13 passed；完整 workspace check／序列 test／build 均 exit 0，editor app 868 passed／6 ignored。此為合成資料證據；多部件 family 尚缺 app 層跨重載驗收，零售範本及遊戲內行為未驗。詳見 `AI_HANDOFF.md` 2026-10-27 Safe Save 無效事件拒絕與重載後物件編輯。
 - Maps 狀態列現在只在呈現層依介面語系翻譯地圖目錄、複製／刪除、驗證與診斷訊息，保留錯誤細節；兩種地圖目錄同時掃描失敗時會保留兩邊錯誤。實際 egui 雙語狀態列測試通過，聚焦 maps UI 18 passed；完整 workspace check／序列 test／build 均 exit 0，editor app 866 passed／6 ignored，maps lib 86 passed／3 ignored、`maps_tests` 52 passed。桌面與遊戲驗收未執行。詳見 `AI_HANDOFF.md` 2026-10-27 Maps 狀態列雙語化與目錄錯誤保留。
 - AI 工作室狀態訊息現於呈現層依介面語系翻譯固定狀態、模型掃描、進度、完成／套用統計及已知錯誤前綴；保留內部狀態、模型名稱／數值與未知錯誤細節。egui 雙語渲染回歸覆蓋狀態家族及錯誤細節；聚焦 23 passed。完整 workspace check／序列 test／build 均 exit 0；桌面與遊戲內驗收未執行。詳見 `AI_HANDOFF.md` 2026-10-27 AI 工作室狀態訊息雙語化。
 - 空白場景現在於 staging 發布前驗證完整 terrain output：六張 BMP 的格式與全部像素值、列 stride/padding，以及 `boden.txt` 的 4096 格材質；建置後 `verify_disk_artifacts` 共用相同 verifier。新增像素／材質污染與失敗 rollback／無 manifest 登錄案例，maps 聚焦 10 passed。workspace check／序列完整 test／build 均 exit 0，editor app 863 passed／6 ignored，maps lib 86 passed／3 ignored、`maps_tests` 52 passed；此 gate 不代表保留 DATA／SDL 可由遊戲載入。
@@ -62,7 +63,7 @@
 | 完整還原保留／刪除自製圖 | 新dialog→PatchEngine→CustomMapRestoreService；15項合成流程/STA/真正runner與engine測試 | 已實作預設保留、受控刪除、目錄/manifest回滾；僅完整還原跳過custom腳本/team基準，正常AI仍涵蓋custom；原版成功還原與新dialog視覺仍待驗收 |
 | AI 修補涵蓋新 ENDL 圖 | `EndlessAiAdditionalMapTests` 真正 P1 七槽位 Detect／Apply／Save／fresh reload／還原 | 已修正式數字槽位搜尋；排除非數字、暫存、刪除中與巢狀複本；SDL 僅搜尋地圖根目錄 |
 | 地形、材質、通行、歷史／儲存交易 | 驗收矩陣列出的 session、真正表單及 AI 跨模式測試 | 合成路徑已驗證；原版輸出仍有遊戲內 gate |
-| 自然物件／人物／部隊／建築與事件 | 單兵與nature fail/retry、身份、VM／dialog；四部族建築0–8/部隊0–7與事件的STA共同儲存矩陣；缺建築範本中英提示/目標/retry/重開/範本恢復 | 合成資料整合與工地提示已補；接著完成AI預覽；不推定多人同步或真實範本已驗證 |
+| 自然物件／人物／部隊／建築與事件 | 單兵與nature fail/retry、身份、VM／dialog；四部族建築0–8/部隊0–7與事件的共同儲存矩陣；新增重載後複製／移動／改隊伍與DATA降級升級，無效事件 Safe Save 零寫入／修復重試 | 合成資料跨重載與寫入保護已驗；下一步補多部件建築 family 的 EditorApp 整合；不推定多人同步、零售範本或遊戲內行為已驗 |
 | 空白地圖語意 | Flat Template／平坦範本地圖維持既有整平流程；獨立「空白場景（實驗）」清來源物件／事件、13份runtime池（含光源與特效）與原生成腳本，以新idle main與backup取代 | 真實TEMP建立／保存／重開／新放置及事件／移除後回復bootstrap已驗證；其餘原生DATA池與遊戲開局仍未驗證，詳見空白契約；未宣稱可玩 |
 | 3D 真貼圖、水面、光照、標記、筆刷與 fallback | `MapEditorOpenGlTests.cs` 真實 GPU 離屏擷取（RTX 4080／GL 3.3） | 高度/undo/材質/水面更新已有真實畫面證據；2026-10-26 真實桌面 TEMP ENDL_005 3D 材質貼圖模式選「土路」並拖曳筆刷，材質鄰接篩選由隱藏 72 種變為 60 種；工具列 Undo／Redo 均顯示已套用統一復原紀錄，篩選隨之回復／重現，最後 Undo 回原狀。缺少 `floortex.dat` 的 fallback 及中英診斷複製按鈕已由 TEMP 桌面操作驗證；切換 UI 語言後訊息同步更新，兩語剪貼簿文字逐字正確；TEMP 55 檔未變。新增 headless egui 回歸並完成新建置桌面切換驗證：3D 顯示 fallback 診斷與複製按鈕，2D 隱藏；無 GPU fallback、筆刷效能及高 DPI 尚待驗收 |
 | UI 中英／尺寸／DPI | 96 DPI 證據；`MapEditorHighDpiTests.cs` 100/150/200% 模擬 | 編輯器視窗（AI 對話框除外）改 AutoScaleMode.Dpi 並修正截字；實體高 DPI 螢幕未驗證 |
@@ -74,6 +75,6 @@
 1. 本輪建立／刪除修正已提交 `b9b9965`；獨立 git archive 快照 build 0 警告/0 錯誤，完整測試 536 通過/21 略過/0 失敗，已確認不依賴 AI 預覽 WIP。
 2. 原廠圖 catalog 與 SaveMap 前置驗證已補9項測試；最新完整build 0警告/0錯誤，545通過/21略過/0失敗。
 3. 地圖文字、環境、備份／完整還原、額外槽位 AI 修補與平坦範本命名已補專屬合成證據；真實遊戲與新對話框視覺缺口仍保留。
-4. 接著進入第 3 階段物件／部隊／事件整合，補部族、隊伍槽位與共同儲存／重新載入矩陣；第 4 階段再完成 AI 預覽 WIP。
+4. 第 3 階段已有四部族／隊伍矩陣與重載後變更證據；下一步補多部件建築 family 的 EditorApp 儲存／重載整合，之後進行第 5 階段 OpenGL／DPI 驗收。遊戲內驗收仍待可觀察的遊戲畫面或進程證據。
 
 尚未完成的項目保留在清單中，不以目前可通過的測試重新定義成功。所有執行驗證只使用 repository／TEMP 合成資料。
