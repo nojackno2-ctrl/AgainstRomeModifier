@@ -199,3 +199,55 @@ fn successful_3d_floor_atlas_clears_only_exact_fallback_statuses() {
     assert_eq!(app.status_message, unrelated);
     assert!(app.status_is_error);
 }
+
+#[test]
+fn repaired_floortex_archive_at_same_path_retries_atlas_load() {
+    use std::fs;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    let root = std::env::temp_dir().join(format!(
+        "arm-floor-atlas-retry-{}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let map_dir = root.join("MAPS").join("TEST");
+    fs::create_dir_all(&map_dir).unwrap();
+    fs::write(
+        map_dir.join("boden.txt"),
+        "[Dimension]\n2\n[Texturen]\n4BA___51\n4BA___51\n4BA___51\n4BA___51\n",
+    )
+    .unwrap();
+
+    let archive_path = root.join("floortex.dat");
+    fs::write(&archive_path, b"broken archive").unwrap();
+    let mut app = EditorApp::initial_state();
+    app.loaded_map_path = Some(map_dir);
+    app.refresh_3d_floor_atlas();
+    assert!(app.viewport_3d.floor_atlas.is_none());
+    assert!(app.status_is_error);
+    let first_error = app.status_message.clone();
+
+    // An unchanged failed archive is memoized, so rendering another frame does not retry it.
+    app.refresh_3d_floor_atlas();
+    assert_eq!(app.status_message, first_error);
+    assert!(app.viewport_3d.floor_atlas.is_none());
+
+    // Replace the same path with a valid empty ZIP. Its length changes even on filesystems
+    // whose modification timestamps have coarse resolution, invalidating the failed signature.
+    fs::write(
+        &archive_path,
+        b"PK\x05\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+    )
+    .unwrap();
+    app.refresh_3d_floor_atlas();
+    assert!(app.viewport_3d.floor_atlas.is_some());
+    assert!(app.status_message.is_empty());
+    assert!(!app.status_is_error);
+
+    fs::remove_dir_all(root).unwrap();
+}

@@ -1,3 +1,7 @@
+## 2026-10-27 Codex / GPT-6 Luna：同路徑 floortex 失敗後重試
+- `EditorApp::refresh_3d_floor_atlas` 的快取來源納入 `floortex.dat` 路徑、檔案長度與修改時間；相同檔案狀態會命中快取，檔案狀態更新後才重試，避免每幀重試及重複覆寫診斷。archive 改變時也重設該地圖 `TexturesUi::load_session` 的一次性嘗試，覆蓋初始材質載入因損壞 archive 失敗的情況。成功時只清除本流程最近寫入且仍在狀態列的精確錯誤，其他訊息保留。新增合成 app 回歸：初始壞 ZIP 使材質載入失敗、再次 refresh 維持失敗狀態、同路徑換成有效空 ZIP 後 session 與圖集載入成功並清除錯誤。
+- 父端聚焦測試 1/1、`batch7_tests::` 9/9；workspace `cargo check`、序列完整 `cargo test`（editor app 874 passed／6 ignored；所有 workspace targets 通過）及 `cargo build` 均 exit 0，`git diff --check` 通過。只做合成 archive 驗證，未做桌面／零售遊戲驗收。限制：若同一路徑檔案長度與修改時間都維持不變，cache 無法偵測內容替換；未逐幀計算大型 archive 的內容雜湊。
+
 ## 2026-10-27 Codex：零售 4T 角點自適應取樣補完（workspace 驗證完成）
 - 重新跑唯讀安裝版素材 audit，確認舊有 25 張 unresolved 都不是缺名稱／底材／BMP，而是 1/4 角區平均只辨識出兩種材質；全圖像素均能找到三個檔名所列材質。改用 1/8、1/16 角區分別推斷時，21 張得到完全相同三材質角點排列，且兩種窗口都通過每角 RGB 距離 32 門檻。
 - `register_three_material_transitions` 保持原 1/4 推斷優先；僅在其未達三材質時，才試 1/8 與 1/16，兩者排列相同、恰三材質且所有角距皆 <=32 才採納。其餘 fail-safe 拒收。新增合成窄角材質 fixture，驗證小窗口一致性與 native resolver roundtrip；retail audit 將 `installed_maps_tests` 擴充為列印拒收分類、替代窗口覆蓋數與全圖顏色存在情形。
@@ -1821,4 +1825,4 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 ## 2026-10-27 Codex / GPT-6 Luna：150% DPI 3D 工具列覆蓋複核
 - 曾觀察到約 1010px 寬、150% DPI 的 3D 工具列右側控制似乎遭裁切；headless egui 以 673 與 420 logical px 測量時，Textured／LOD 控制皆在 clip rect 範圍內，無法重現程式裁切。
 - 定位為首次開啟的 Minimap Overview 浮窗落在 viewport 左上角，覆蓋工具列換行區。`minimap_ui.rs` 現以螢幕可用範圍計算右下預設位置，為標題列與邊界留空；egui area 已有使用者位置時仍尊重該位置。新增回歸測試驗證右下位置、安全邊界及拖曳後關閉重開保留位置。
-- 聚焦測試 1 passed；`cargo check --workspace --locked --offline --target-dir re_workspace/codex-minimap-dpi-target`、序列完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-minimap-dpi-target -- --test-threads=1 --quiet`（editor app 873 passed／6 ignored／0 failed；其餘 workspace tests 均通過）與 `cargo build --workspace --locked --offline --target-dir re_workspace/codex-minimap-dpi-target` 完成。新建置實際開啟 TEMP ENDL_005，預設 Minimap 位於右下，3D toolbar Textured／LOD 1/2/4 未被遮擋且 UIA 可操作；未畫布操作或 Safe Save。最小視窗、多螢幕及其他 UI 的實體 DPI 驗收仍待處理；既存 AGENTS.md／README.md 修改保留。
+- 聚焦測試 1 passed；`cargo check --workspace --locked --offline --target-dir re_workspace/codex-minimap-dpi-target`、序列完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-minimap-dpi-target -- --test-threads=1 --quiet`（editor app 873 passed／6 ignored／0 failed；其餘 workspace tests 均通過）與 `cargo build --workspace --locked --offline --target-dir re_workspace/codex-minimap-dpi-target` 完成。新建置實際開啟 TEMP ENDL_005；144 DPI、1295×837 視窗中 Minimap 預設位於右下，英文與繁中畫面皆可見 3D Textured／LOD 1/2/4。未畫布操作或 Safe Save。最小視窗、多螢幕及其他 UI 的實體 DPI 驗收仍待處理；既存 AGENTS.md／README.md 修改保留。

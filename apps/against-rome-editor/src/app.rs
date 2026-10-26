@@ -14,6 +14,7 @@ use against_rome_environment::DotNetRandom;
 use eframe::egui::{self, Color32, ColorImage, Pos2, Rect, Sense, Stroke, TextureHandle, Vec2};
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use against_rome_ambience::{Language as AppLanguage, Loc};
 use crate::ambience_ui::AmbienceUi;
@@ -204,7 +205,9 @@ pub struct EditorApp {
     pub modifier: ModifierUi,
     pub viewport_3d: Viewport3d,
     /// Game archive and map material names used to build the current 3D floor atlas.
-    floor_atlas_source: Option<(PathBuf, u64, Option<PathBuf>)>,
+    floor_atlas_source: Option<FloorAtlasSource>,
+    /// Exact status written by the last failed floor-atlas load, so recovery can clear only it.
+    floor_atlas_error_status: Option<String>,
     pub tech_doc: TechDocUi,
     pub minimap: MinimapUi,
     pub(crate) design_check: crate::design_check_ui::DesignCheckUi,
@@ -229,6 +232,20 @@ pub struct EditorApp {
     troops: TroopDisplay,
     pub(crate) skirmish_wizard: crate::skirmish_wizard_ui::SkirmishWizardUi,
     pub getting_started: GettingStartedUi,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct FloorAtlasSource {
+    map_path: PathBuf,
+    material_revision: u64,
+    archive: Option<FloorAtlasArchiveSource>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct FloorAtlasArchiveSource {
+    path: PathBuf,
+    length: Option<u64>,
+    modified: Option<SystemTime>,
 }
 
 /// Background-loaded squad catalog plus the fingerprint of the spawns last expanded for the 3D
@@ -261,12 +278,16 @@ impl EditorApp {
 
     fn install_3d_floor_atlas(&mut self, atlas: against_rome_textures::FloorTextureAtlas) {
         self.viewport_3d.set_floor_atlas(Some(std::sync::Arc::new(atlas)));
-        if self.status_message == Self::floor_atlas_fallback_message(true)
+        let is_previous_atlas_error = self.floor_atlas_error_status.as_deref()
+            == Some(self.status_message.as_str());
+        if is_previous_atlas_error
+            || self.status_message == Self::floor_atlas_fallback_message(true)
             || self.status_message == Self::floor_atlas_fallback_message(false)
         {
             self.status_message.clear();
             self.status_is_error = false;
         }
+        self.floor_atlas_error_status = None;
     }
 
     fn refresh_3d_floor_atlas(&mut self) {
@@ -276,6 +297,33 @@ impl EditorApp {
             }
             return;
         };
+        let archive_path = map_path
+            .ancestors()
+            .map(|parent| parent.join("floortex.dat"))
+            .find(|path| path.is_file());
+        let archive_source = archive_path.as_ref().map(|path| {
+            let metadata = std::fs::metadata(path).ok();
+            FloorAtlasArchiveSource {
+                path: path.clone(),
+                length: metadata.as_ref().map(std::fs::Metadata::len),
+                modified: metadata.and_then(|metadata| metadata.modified().ok()),
+            }
+        });
+        let source_before_autoload = FloorAtlasSource {
+            map_path: map_path.clone(),
+            material_revision: self.textures.material_revision(),
+            archive: archive_source,
+        };
+        if self.floor_atlas_source.as_ref() == Some(&source_before_autoload) {
+            return;
+        }
+
+        let archive_changed_for_map = self.floor_atlas_source.as_ref().is_some_and(|cached| {
+            cached.map_path == map_path && cached.archive != source_before_autoload.archive
+        });
+        if archive_changed_for_map {
+            self.material_autoload_tried = None;
+        }
         if self.textures.session_textures().is_none()
             && self.material_autoload_tried.as_ref() != Some(&map_path)
         {
@@ -285,14 +333,14 @@ impl EditorApp {
                     "3D floor textures unavailable / 3D 地表材質無法載入：{error}"
                 );
                 self.status_is_error = true;
+                self.floor_atlas_error_status = Some(self.status_message.clone());
             }
         }
-        let revision = self.textures.material_revision();
-        let archive_path = map_path
-            .ancestors()
-            .map(|parent| parent.join("floortex.dat"))
-            .find(|path| path.is_file());
-        let source = (map_path.clone(), revision, archive_path.clone());
+        let source = FloorAtlasSource {
+            map_path: map_path.clone(),
+            material_revision: self.textures.material_revision(),
+            archive: source_before_autoload.archive,
+        };
         if self.floor_atlas_source.as_ref() == Some(&source) {
             return;
         }
@@ -335,6 +383,7 @@ impl EditorApp {
                     archive_path.display()
                 );
                 self.status_is_error = true;
+                self.floor_atlas_error_status = Some(self.status_message.clone());
             }
         }
     }
@@ -558,6 +607,7 @@ impl EditorApp {
             modifier: ModifierUi::default(),
             viewport_3d: Viewport3d::new(),
             floor_atlas_source: None,
+            floor_atlas_error_status: None,
             tech_doc: TechDocUi::default(),
             minimap: MinimapUi::default(),
             design_check: Default::default(),
