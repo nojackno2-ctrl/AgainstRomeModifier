@@ -1,3 +1,8 @@
+## 2026-10-26 Codex：水深功能真實桌面驗收（已完成；遊戲內未驗）
+- 首次以單獨 `--map` 開啟的 TEMP 副本因缺遊戲別名目錄而被 Safe Save 擋下，保留在 TEMP 記憶體中。改以 TEMP 遊戲根目錄（`MAPS\ENDL_005` 複本、`SYSTEM`／`ToEng` 連至安裝資料的 junction）及 `--game <TEMP> --map ENDL_005` 重新驗收，未將安裝版地圖作為儲存目標。
+- `laguna-xs-2.1:latest` 三角色規劃成功；預覽顯示地形與水域，方案含湖泊 amount 12、河流 amount 16／16。套用報告：35,025 個高度取樣點、5,245 個阻擋像素、1 個材質筆刷、62 個操作。Safe Save 提示既有設計警告（不可通行物件與事件缺少目的地），確認後回報 `Saved safely in one transaction (6 files, 0 cache deletions)`。關閉再以同一 TEMP 遊戲根目錄重開，狀態為 `Loaded ...game_root\MAPS\ENDL_005` 且無 dirty 標記；`boden.bmp`、`collision.bmp`、`arm_scenario.json`、`SCRIPT\ak_level.bci` 均與安裝版來源內容不同，寫入目標為 TEMP 副本。AI 套用→Safe Save→關閉→重載已完成；尚未進遊戲驗證水面效果。
+- 另一先前未儲存的 TEMP 視窗仍保留在記憶體中，測試目標為 `water_depth_run_02\ENDL_005`，不要將它當成已儲存結果。整體地圖編輯器目標未完成。
+
 ## 2026-10-26 Codex：AI 湖泊／河流水深落實至筆刷與預覽（已驗證）
 - `amount` 現正式代表水面下高度差單位；lake／river 缺省 16，正規化範圍 5–30。`EditorBrushStroke` 與 replayable `/brush --depth` 傳遞水深；AI 湖泊、河流各執行一次筆刷，水域預覽依深度調整藍色明暗。
 - 新增 lake／river amount 缺省與 clamp、筆刷命令 roundtrip／無效值拒絕、不同深度水床精確值與預覽色差測試。`cargo test -p against-rome-ai-planner --locked --offline` 全數通過；`cargo check --workspace --locked --offline --target-dir re_workspace/codex-ai-visual-preview-target`、`cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-ai-visual-preview-target -- --test-threads=1 --quiet`（exit 0；editor app 855 passed／6 ignored，workspace 其餘 target 無失敗）、`cargo build --workspace --locked --offline --target-dir re_workspace/codex-ai-visual-preview-target` 與 `git diff --check` 均通過。桌面視覺／AI 生成套用與 Safe Save 重載尚未驗收。

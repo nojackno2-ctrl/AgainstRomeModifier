@@ -2,7 +2,7 @@
 
 ## 2026-10-26 最新 Rust 驗收補記
 
-- AI 工作室已接入 `AiMapPlanPreviewBuilder`，方案審查新增目前地形／水域視覺圖、變更統計及材質／阻擋／拒絕／保護區圖例；方案與底圖來源未變時重用 texture，來源變更後重建。無視窗 UI 測試通過：預覽未改高度、碰撞、dirty 或 undo，底圖修改後快取更新。真實桌面視覺與高 DPI、真實 AI 預覽完整互動仍待驗收。
+- AI 工作室已接入 `AiMapPlanPreviewBuilder`，方案審查新增目前地形／水域視覺圖、變更統計及材質／阻擋／拒絕／保護區圖例；方案與底圖來源未變時重用 texture，來源變更後重建。無視窗 UI 測試通過：預覽未改高度、碰撞、dirty 或 undo，底圖修改後快取更新。2026-10-26 實際桌面以 Ollama `laguna-xs-2.1:latest` 完成 3 角色企劃、含湖泊／河流水深的預覽、套用、Safe Save、關閉重開；詳見 `AI_HANDOFF.md` 最新紀錄。真實桌面完整互動已驗，高 DPI／多螢幕仍待驗收。
 - AI 工作室「連線並列出模型」改由背景 worker 執行，UI 逐幀輪詢；端點 URL 納入方案輸入指紋，切換端點後會丟棄舊模型清單回應並清除舊方案。mock 延遲傳輸及端點切換測試通過；接入視覺預覽後 AI 工作室 21 項測試通過；完整 workspace 序列測試、check、build 通過。實際 Ollama 網路延遲／桌面操作仍需 live／GUI 驗收。
 - 新增物件／事件整合回歸：Safe Save 將新放置主屋轉為 DATA 預建物件，同時儲存以該物件 UUID 為目標的矩形區域勝利事件；重載後核對 DATA slot／UID、UUID、事件條件與勝利動作均一致，且 BCI 可解析。聚焦測試 1 passed、workspace check/build 通過、編輯器 app 852 passed／6 ignored。完整 workspace 測試僅 `ollama_wire_tests` 兩項固定連接埠測試在並行執行時互相干擾；該測試檔序列隔離重跑 16 passed。遊戲內觸發未驗證。詳見 `AI_HANDOFF.md` 2026-10-26 DATA 建築區域勝利事件整合重載。
 - 原生 DATA 群組副本可批次變更隊伍／方向；來源 family 不變，既有 root binding 仍拒絕直接更改。遇到零售圖既存的無效 lager 連結時，Safe Save 會原樣保留未變更 root，壞 family 副本不深拷貝，改用可信 singleton template 或 script fallback。新增 2 個回歸測試。完整 workspace app 851 passed／6 ignored、`against-rome-maps` 86 passed／3 ignored，workspace check／test／build 均通過。2026-10-26 真實 TEMP 桌面複製 DATA 農場並設 T1／45°，Safe Save 12 files 成功；關閉重開後副本值與原三個 DATA 物件皆保留。該副本使用 script fallback，未驗證遊戲內效果。詳見 `AI_HANDOFF.md` 2026-10-26 零售原生 DATA 舊連結容錯與回歸驗證。
@@ -58,7 +58,7 @@
 | 空白地圖語意 | Flat Template／平坦範本地圖維持既有整平流程；獨立「空白場景（實驗）」清來源物件／事件、13份runtime池（含光源與特效）與原生成腳本，以新idle main與backup取代 | 真實TEMP建立／保存／重開／新放置及事件／移除後回復bootstrap已驗證；其餘原生DATA池與遊戲開局仍未驗證，詳見空白契約；未宣稱可玩 |
 | 3D 真貼圖、水面、光照、標記、筆刷與 fallback | `MapEditorOpenGlTests.cs` 真實 GPU 離屏擷取（RTX 4080／GL 3.3） | 高度/undo/材質/水面更新已有真實畫面證據；2026-10-26 真實桌面 TEMP ENDL_005 3D 材質貼圖模式選「土路」並拖曳筆刷，材質鄰接篩選由隱藏 72 種變為 60 種；工具列 Undo／Redo 均顯示已套用統一復原紀錄，篩選隨之回復／重現，最後 Undo 回原狀。關閉視窗後地圖每檔 SHA-256 與開啟前一致，未 Safe Save。資源失敗診斷、無 GPU fallback、筆刷效能及高 DPI 尚待驗收 |
 | UI 中英／尺寸／DPI | 96 DPI 證據；`MapEditorHighDpiTests.cs` 100/150/200% 模擬 | 編輯器視窗（AI 對話框除外）改 AutoScaleMode.Dpi 並修正截字；實體高 DPI 螢幕未驗證 |
-| AI 正式生成／預覽／套用 | 序列鎖、取消、部分失敗、套用與儲存；視覺預覽接UI，隔離/拒絕區域/統計/圖片釋放、角色進度合成測試；`tests/ai_planner_live.rs` | 2026-10-26 以實際 `laguna-xs-2.1:latest` 重跑無材質 TEMP 地圖：修復前 Ollama 400（空 `baseMaterial.enum`）；修復後一角色真實生成→預覽（未改高度／歷史）→套用→undo/redo→Safe Save→重載通過（5186 高度樣本／8 操作）。Terrain、Water+Materials 及三角色同輪均有 2026-10-26 現版 live gate。三角色 gate 以 `ARM_AI_ALL_ROLES=1` 驗證三專家成功、預覽不改三層資料／歷史、範圍外高度／collision／材質不變、地形通行單步 undo/redo、Safe Save 與重載一致；最新嚴格三角色 gate 改變 20,436 高度樣本與 37 PFAD 格（0 拒絕；另一次回應未改材質，模型輸出存在變動）。Water+Materials gate 實改 97 PFAD 格、0 材質拒絕；Materials-only gate 實改 37 格。AI 視窗已完成 1280×830 真實桌面操作；實體 DPI／多螢幕及 GPU 畫面仍待驗收。模型提示有超量特徵被正規化；方案 JSON 僅含 1 湖、1 河，現行 operator 對各水域特徵執行兩次筆刷，設計意圖與可視深度仍待確認 |
+| AI 正式生成／預覽／套用 | 序列鎖、取消、部分失敗、套用與儲存；視覺預覽接UI，隔離／拒絕區域／統計／圖片釋放、角色進度合成測試；`tests/ai_planner_live.rs` | 2026-10-26 現版以實際 `laguna-xs-2.1:latest` 完成單角色與三角色 live gate；另於桌面完成三角色生成→含水域預覽→套用→undo/redo 操作→Safe Save→關閉重開。三角色方案實際含 1 湖 amount 12、2 河 amount 16／16；套用 35,025 高度取樣、5,245 碰撞像素、1 材質筆刷、62 操作，Safe Save 一交易寫入 6 檔並由 TEMP 遊戲根目錄重載成功。首次 `--map` 無別名目錄的測試未能 Safe Save，後以 `--game <TEMP> --map ENDL_005` 修正。角色範圍外特徵會被忽略；遊戲內水面表現、實體 DPI／多螢幕與 GPU 畫面仍待驗收 |
 | 遊戲載入、存讀檔、原版品質 | 2026-10-22 舊輪未執行遊戲；10-26 已依授權啟動安裝版並檢查模組、CPU、執行緒及 GPU counters，畫面黑且 WPR 無權錄製 | 遊戲內 gate 未完成；依 `AGENTS.md` 僅能改動先備份的自製測試地圖，原版檔案唯讀；追蹤權限或可觀察環境仍待解決 |
 
 ## 下一批優先工作
