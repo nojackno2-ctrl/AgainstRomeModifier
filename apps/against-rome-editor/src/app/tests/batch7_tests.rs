@@ -163,3 +163,39 @@ fn three_d_material_fallback_status_tracks_language_switches() {
         "3D floor textures unavailable / 3D 地表材質無法載入: invalid archive"
     );
 }
+
+#[test]
+fn successful_3d_floor_atlas_clears_only_exact_fallback_statuses() {
+    for (language, fallback) in [
+        (
+            AppLanguage::English,
+            "3D floor texture archive floortex.dat not found; showing relief fallback.",
+        ),
+        (
+            AppLanguage::TraditionalChinese,
+            "找不到 3D 地表材質檔 floortex.dat；目前以地形起伏色彩替代顯示。",
+        ),
+    ] {
+        let mut app = EditorApp::initial_state();
+        app.set_app_language(language);
+        app.status_message = fallback.into();
+        app.install_3d_floor_atlas(
+            against_rome_textures::FloorTextureAtlas::create_with_decoder(vec!["4BA___51"], |_| None)
+                .unwrap(),
+        );
+        assert!(app.viewport_3d.floor_atlas.is_some());
+        assert!(app.status_message.is_empty());
+        assert!(!app.status_is_error);
+    }
+
+    let mut app = EditorApp::initial_state();
+    let unrelated = "3D floor textures unavailable / 3D 地表材質無法載入：invalid archive";
+    app.status_message = unrelated.into();
+    app.status_is_error = true;
+    app.install_3d_floor_atlas(
+        against_rome_textures::FloorTextureAtlas::create_with_decoder(vec!["4BA___51"], |_| None)
+            .unwrap(),
+    );
+    assert_eq!(app.status_message, unrelated);
+    assert!(app.status_is_error);
+}

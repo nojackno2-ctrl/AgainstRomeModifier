@@ -259,6 +259,16 @@ impl EditorApp {
         }
     }
 
+    fn install_3d_floor_atlas(&mut self, atlas: against_rome_textures::FloorTextureAtlas) {
+        self.viewport_3d.set_floor_atlas(Some(std::sync::Arc::new(atlas)));
+        if self.status_message == Self::floor_atlas_fallback_message(true)
+            || self.status_message == Self::floor_atlas_fallback_message(false)
+        {
+            self.status_message.clear();
+            self.status_is_error = false;
+        }
+    }
+
     fn refresh_3d_floor_atlas(&mut self) {
         let Some(map_path) = self.loaded_map_path.clone() else {
             if self.floor_atlas_source.take().is_some() {
@@ -317,7 +327,7 @@ impl EditorApp {
                 .map_err(|error| error.to_string())
         })();
         match result {
-            Ok(atlas) => self.viewport_3d.set_floor_atlas(Some(std::sync::Arc::new(atlas))),
+            Ok(atlas) => self.install_3d_floor_atlas(atlas),
             Err(error) => {
                 self.viewport_3d.set_floor_atlas(None);
                 self.status_message = format!(
