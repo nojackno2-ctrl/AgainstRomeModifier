@@ -1,5 +1,282 @@
 use super::*;
 
+// 儲存建立新的復原界線；逐項驗證清空歷程後的 Undo 不會復活舊資料。
+
+fn cycle_edit(app: &mut EditorApp, system: &str, cycle: usize) {
+    match system {
+        "terrain" => {
+            let s = app.session.as_mut().unwrap();
+            let before = s.heights()[0];
+            s.apply_height_changes(&[crate::terrain::SampleChange { index: 0, before, after: before + 1 }]);
+            assert!(s.commit_stroke());
+        }
+        "materials" => {
+            let s = app.textures.session_mut().unwrap();
+            assert!(s.stamp_texture(cycle, 0, "4BB___51").is_some());
+            assert!(s.commit_stroke());
+        }
+        "nature" => {
+            app.ensure_nature_data().unwrap();
+            let item = app.nature_palette().first().cloned().unwrap();
+            let old = app.placement.objects().into_iter().find(|o| i32::from(o.type_id) == item.type_id).unwrap();
+            assert!(app.nature.session.remove(&[old.slot as i32], &[]));
+            app.nature.session.plant(against_rome_environment::nature::NatureAddition::new(
+                item.type_id, &item.name, 3000.0 + cycle as f32 * 256.0, 0.0, 3000.0, 0.0));
+            assert!(app.nature.session.commit_stroke());
+        }
+        "placement" | "families" => {
+            let o = app.placement.objects().into_iter().find(|o| o.parent.is_none()).unwrap();
+            app.placement.select_object(Some((o.slot, o.uid)));
+            app.placement.set_delta(["128".into(), "0".into(), "128".into()]);
+            if system == "families" {
+                let store = app.placement.store_mut().unwrap();
+                let source = crate::family_ui::validate_native_source(store, o.slot, &Default::default()).unwrap();
+                assert_eq!(source.light_count, 1);
+                crate::family_ui::copy_family(store, &source, &Default::default(), [128 * 65536, 0, 128 * 65536]).unwrap();
+                app.placement.note_external_store_edit();
+            }
+            else { app.placement.move_family().unwrap(); }
+        }
+        "scene" => app.scene.set_team(0, cycle as i32 + 1).unwrap(),
+        "spawns" => {
+            app.spawn_ui.sync_with_document(&app.scenario, app.loaded_map_path.as_deref());
+            app.spawn_ui.select_type("FigGerInf02_Zweihandaxt");
+            app.spawn_ui.set_placement_values(1, 1, 0);
+            app.spawn_ui.place_at_tile(&mut app.scenario, &spawn_save_tests::cx(), 20 + cycle as i32, 20);
+            assert!(!app.spawn_ui.status().1, "{}", app.spawn_ui.status().0);
+        }
+        "events" => { app.scenario.add_events(&[against_rome_scenario::Event {
+            name: format!("循環 {cycle}"), actions: vec![against_rome_scenario::Action {
+                kind: 1, team: 1, other_team: 2, hostile: true, ..Default::default()
+            }], ..Default::default()
+        }]).unwrap(); }
+        "ambience" => {
+            app.ambience.briefing_title = format!("Cycle {cycle}");
+            app.ambience.briefing_body = format!("Briefing {cycle}");
+            app.ambience.profile.boden.waterlevel = cycle as f32 + 1.0;
+            app.ambience.mark_dirty();
+        }
+        "camera" => {
+            app.campaign.start_camera.enabled = true;
+            app.campaign.start_camera.x = 4096.0 + cycle as f64 * 256.0;
+            app.apply_start_camera_candidate().unwrap();
+        }
+        _ => unreachable!(),
+    }
+    assert!(app.has_unsaved_changes(), "{system} {cycle}");
+}
+
+fn cycle_state(app: &EditorApp) -> Vec<String> {
+    vec![format!("{:?}", app.session.as_ref().unwrap().heights()),
+        format!("{:?}", app.textures.session_textures()),
+        format!("{:?}", app.placement.objects()),
+        serde_json::to_string(app.scenario.document()).unwrap(),
+        format!("{:?}", app.scene.objects()),
+        format!("{:?}", (&app.ambience.briefing_title, &app.ambience.briefing_body, app.ambience.profile.boden.waterlevel)),
+        format!("{:?}", app.campaign.start_camera)]
+}
+
+fn cycle_load_layers(app: &mut EditorApp, map: &std::path::Path) {
+    app.textures.load_session(map).unwrap();
+    app.placement.load_session(map).unwrap();
+}
+
+fn subsystem_three_safe_saves_reload_and_save_boundary_undo(system: &str) {
+        let root = workflow_fixture(&format!("cycles_{system}"));
+        let mut app = wizard_map(&root, 5, false);
+        let map = app.loaded_map_path.clone().unwrap();
+        // 直接建立小型地景來源，避免聚落產生器的隨機森林搜尋干擾儲存測試。
+        spawn_save_tests::write_data(&map, 200, &[(232, None), (234, Some(0)), (10, None)], 100);
+        let mut columns = vec!["0".to_owned(); 53];
+        columns[0] = "10".into();
+        columns[1] = "1".into();
+        columns[52] = "LanGerNad00_Tanne".into();
+        let defs = root.join("SYSTEM/DATA_MP/DEFAULTS/objdef.dau");
+        let mut text = std::fs::read_to_string(&defs).unwrap();
+        text.push_str(&format!("\n{}\n", columns.join(",")));
+        std::fs::write(defs, text).unwrap();
+        // 根物件連結一盞光源，讓 Families & Effects 真正跨池複製並儲存。
+        let path = map.join("DATA/objects.dat");
+        let mut objects = std::fs::read(&path).unwrap();
+        let light_ref = 16 + 200 * 79 + 200 * against_rome_placement::COLUMNS[..12].iter().sum::<usize>();
+        objects[light_ref..light_ref + 2].copy_from_slice(&0u16.to_le_bytes());
+        std::fs::write(path, objects).unwrap();
+        let mut lights = std::fs::read(map.join("DATA/light.dat")).unwrap();
+        lights[8..12].copy_from_slice(&1u32.to_le_bytes());
+        let mut offset = 8;
+        for (column, width) in against_rome_data::pool::WIDTHS.iter().enumerate() {
+            if column >= 13 { lights[offset..offset + 1024 * width].fill(255); }
+            offset += 1024 * width;
+        }
+        let owner = 8 + 1024 * against_rome_data::pool::WIDTHS[..13].iter().sum::<usize>();
+        lights[owner..owner + 2].copy_from_slice(&0u16.to_le_bytes());
+        std::fs::write(map.join("DATA/light.dat"), lights).unwrap();
+        std::fs::write(map.join("cycle.sdl"), "[settlement]\nrefpos=1000,0,1000\n[object0000]\ndef=232\nnamedef=BauGerHau00_Haupthaus\npos=100,0,100\nteam=0\nangle=0\n").unwrap();
+        app.scene.reset_session(Some(&map));
+        cycle_load_layers(&mut app, &map);
+        app.nature.names = None;
+        app.nature.data = None;
+        for cycle in 0..3 {
+            eprintln!("Task41 {system}: 儲存循環 {}", cycle + 1);
+            cycle_edit(&mut app, system, cycle);
+            app.collect_pilot_receipts();
+            let before_objects = spawn_save_tests::data_objects(&map).len();
+            let nature = app.nature.session.additions().to_vec();
+            let edited = cycle_state(&app);
+            spawn_save_tests::save_ok(&mut app);
+            assert!(!app.has_unsaved_changes(), "{system} {cycle}");
+            let saved = cycle_state(&app);
+            if system != "nature" {
+                assert_eq!(saved, edited, "儲存保留編輯：{system} {cycle}");
+            }
+            let lights = std::fs::read(map.join("DATA/light.dat")).unwrap();
+            if system == "families" {
+                assert_eq!(against_rome_data::LightPool::from_payload(&lights).unwrap().active_slots().count(), cycle + 2);
+            }
+            let disk = map_bytes(&map);
+            app.navigate_journal(false);
+            assert_eq!(cycle_state(&app), saved, "儲存界線 Undo：{system} {cycle}");
+            assert!(!app.has_unsaved_changes(), "{system} {cycle}");
+            assert_eq!(map_bytes(&map), disk);
+            // 即使 Undo 在新界線沒有項目，再次儲存仍須成功。
+            spawn_save_tests::save_ok(&mut app);
+            let mut loaded = reopen(&root, &map);
+            cycle_load_layers(&mut loaded, &map);
+            assert_eq!(cycle_state(&loaded), saved, "重載：{system} {cycle}");
+            assert!(!loaded.has_unsaved_changes());
+            if system == "nature" {
+                let objects = spawn_save_tests::data_objects(&map);
+                assert_eq!(objects.len(), before_objects);
+                for a in nature { assert!(objects.iter().any(|o| o.position[0] == a.x && o.position[2] == a.z)); }
+            }
+        }
+        drop(app);
+        std::fs::remove_dir_all(root).unwrap();
+}
+
+macro_rules! save_cycle_test {
+    ($name:ident, $system:literal) => {
+        #[test]
+        fn $name() { subsystem_three_safe_saves_reload_and_save_boundary_undo($system); }
+    };
+}
+save_cycle_test!(three_safe_saves_terrain, "terrain");
+save_cycle_test!(three_safe_saves_materials, "materials");
+save_cycle_test!(three_safe_saves_nature, "nature");
+save_cycle_test!(three_safe_saves_placement, "placement");
+save_cycle_test!(three_safe_saves_families_effects, "families");
+save_cycle_test!(three_safe_saves_scene_sdl, "scene");
+save_cycle_test!(three_safe_saves_script_spawns, "spawns");
+save_cycle_test!(three_safe_saves_scenario_events, "events");
+save_cycle_test!(three_safe_saves_ambience_briefing, "ambience");
+save_cycle_test!(three_safe_saves_campaign_camera, "camera");
+
+#[test]
+fn large_map_near_event_limit_design_save_reload_timings() {
+    let root = workflow_fixture("stress_41");
+    let mut app = wizard_map(&root, 5, false);
+    let map = app.loaded_map_path.clone().unwrap();
+    let live = vec![(232, None); 256];
+    spawn_save_tests::write_data(&map, 512, &live, 1000);
+    for (name, stride, extra) in [("anim", 25, false), ("gfxtype", 17, false), ("action", 25, true)] {
+        let header = if extra { 12 } else { 8 };
+        let mut bytes = vec![0; header + 512 * stride];
+        bytes[..4].copy_from_slice(&1i32.to_le_bytes());
+        bytes[4..8].copy_from_slice(&512i32.to_le_bytes());
+        if extra { bytes[8..12].copy_from_slice(&6i32.to_le_bytes()); }
+        std::fs::write(map.join(format!("DATA/{name}.dat")), bytes).unwrap();
+    }
+    app.placement.load_session(&map).unwrap();
+    app.placement.select_all();
+    app.placement.set_delta(["128".into(), "0".into(), "128".into()]);
+    app.placement.move_family().unwrap();
+    assert_eq!(app.session.as_ref().unwrap().vertex_size, 257);
+    let spawns: Vec<_> = (0..512).map(|i| against_rome_scenario::Spawn {
+        id: uuid::Uuid::new_v4(), alias: "TROOP".into(), team: 1, count: 1,
+        x: 512.0 + (i % 32) as f32 * 256.0, z: 512.0 + (i / 32) as f32 * 256.0,
+        ..Default::default()
+    }).collect();
+    app.scenario.apply_spawns(spawns).unwrap();
+    let events: Vec<_> = (0..256).map(|i| against_rome_scenario::Event {
+        name: format!("壓力事件 {i}"), delay_seconds: i,
+        actions: vec![against_rome_scenario::Action { kind: 1, team: 1, other_team: 2, hostile: true, ..Default::default() }],
+        ..Default::default()
+    }).collect();
+    app.scenario.add_events(&events).unwrap();
+    let start = std::time::Instant::now();
+    app.run_design_check();
+    assert_eq!(app.design_check.report.as_ref().unwrap().error_count(), 0, "{:?}", app.design_check.report);
+    let check = start.elapsed();
+    spawn_save_tests::save_ok(&mut app);
+    let save = start.elapsed() - check;
+    let loaded = reopen(&root, &map);
+    let reload = start.elapsed() - check - save;
+    eprintln!("Task41 257x257 / 256 DATA objects / 512 spawns / 256 events: Design Check={check:?}, Safe Save={save:?}, reload={reload:?}");
+    assert!(start.elapsed() < std::time::Duration::from_secs(120));
+    assert_eq!(loaded.scenario.document(), app.scenario.document());
+    assert_eq!(loaded.scenario.document().events.len(), 256);
+    assert_eq!(loaded.scenario.document().spawns.len(), 512);
+    assert_eq!(spawn_save_tests::data_objects(&map), app.placement.objects());
+    assert_eq!(loaded.session.as_ref().unwrap().heights(), app.session.as_ref().unwrap().heights());
+    assert!(!loaded.has_unsaved_changes());
+    drop((app, loaded));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn unsaved_map_switch_prompt_discard_and_recovery_isolation() {
+    let root = workflow_fixture("switch_41");
+    let mut a = wizard_map(&root, 5, false);
+    let b = wizard_map(&root, 6, false);
+    let map_a = a.loaded_map_path.clone().unwrap();
+    let map_b = b.loaded_map_path.clone().unwrap();
+    let disk_a = map_bytes(&map_a);
+    let disk_b = map_bytes(&map_b);
+    cycle_edit(&mut a, "terrain", 0);
+    cycle_edit(&mut a, "events", 0);
+    let pending = a.recovery_pending();
+    a.recovery.save(&map_a, true, pending).unwrap();
+    a.recovery.flush();
+    let snapshot = crate::recovery::snapshot_path(a.recovery.root.as_ref().unwrap(), &map_a);
+    assert!(snapshot.exists());
+    // 重啟開啟 B 時，A 的復原候選不得套用或顯示。
+    let other = reopen(&root, &map_b);
+    assert!(other.recovery.offer.is_none());
+    assert!(!other.has_unsaved_changes());
+    assert_eq!(other.scenario.document(), b.scenario.document());
+    assert!(a.set_loaded_map(map_b.clone(), crate::storage::load_map(&map_b).unwrap()).is_err());
+    assert_eq!(a.loaded_map_path.as_ref(), Some(&map_a));
+    a.pending_action = Some(PendingAction::Load(map_b.clone()));
+    let ctx = egui::Context::default();
+    let _ = ctx.run(Default::default(), |ctx| a.handle_pending_action(ctx));
+    let output = ctx.run(Default::default(), |ctx| a.handle_pending_action(ctx));
+    assert_eq!(a.loaded_map_path.as_ref(), Some(&map_a));
+    assert!(a.pending_action.is_some());
+    let pos = output.shapes.iter().find_map(|s| match &s.shape {
+        egui::epaint::Shape::Text(t) if t.galley.text() == tr(a.lang(), "Discard unsaved changes", "捨棄未儲存的變更") =>
+            Some(Rect::from_min_size(t.pos, t.galley.size()).center()),
+        _ => None,
+    }).expect("顯示捨棄確認按鈕");
+    for pressed in [true, false] {
+        let _ = ctx.run(egui::RawInput { events: vec![egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE }],
+            ..Default::default() }, |ctx| a.handle_pending_action(ctx));
+    }
+    a.recovery.flush();
+    assert!(a.pending_action.is_none());
+    assert_eq!(a.loaded_map_path.as_ref(), Some(&map_b));
+    assert!(!a.has_unsaved_changes());
+    assert!(a.recovery.offer.is_none());
+    assert!(!snapshot.exists());
+    a.scenario.load_session(&map_b).unwrap();
+    assert_eq!(a.scenario.document(), b.scenario.document());
+    assert_eq!(a.session.as_ref().unwrap().heights(), b.session.as_ref().unwrap().heights());
+    assert_eq!(map_bytes(&map_a), disk_a);
+    assert_eq!(map_bytes(&map_b), disk_b);
+    drop((a, b, other));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn designer_workflow_e2e() {
     let (root, _) = crate::skirmish_wizard_ui::tests::setup_test_game_fixture("designer_e2e");
@@ -397,7 +674,9 @@ fn terrain_heavy_workflow_undo_redo_safe_save_reload_byte_identical() {
     use crate::terrain::{CollisionBrushOp, HeightBrushOp};
 
     let root = workflow_fixture("terrain_heavy_e2e");
+    eprintln!("Task41 既有地形流程：fixture 完成");
     let mut app = wizard_map_custom(&root, 5, false, true);
+    eprintln!("Task41 既有地形流程：精靈完成");
     let map = app.loaded_map_path.clone().unwrap();
 
     app.textures.load_session(&map).unwrap();
@@ -480,9 +759,13 @@ fn terrain_heavy_workflow_undo_redo_safe_save_reload_byte_identical() {
     assert!(!app.landscape.is_dirty());
 
     // 10. Unified undo all the way back to clean
+    eprintln!("Task41 既有地形流程：開始 Undo");
     app.collect_pilot_receipts();
     assert!(app.undo_journal.can_undo());
+    let mut undo_steps = 0;
     while app.undo_journal.can_undo() {
+        undo_steps += 1;
+        assert!(undo_steps <= 64, "統一復原未前進：{}", app.status_message);
         app.navigate_journal(false);
     }
     assert_eq!(app.session.as_ref().unwrap().heights(), clean_heights);
@@ -493,7 +776,10 @@ fn terrain_heavy_workflow_undo_redo_safe_save_reload_byte_identical() {
 
     // 11. Redo all
     assert!(app.undo_journal.can_redo());
+    let mut redo_steps = 0;
     while app.undo_journal.can_redo() {
+        redo_steps += 1;
+        assert!(redo_steps <= 64, "統一重做未前進：{}", app.status_message);
         app.navigate_journal(true);
     }
     assert!(!app.undo_journal.can_redo());

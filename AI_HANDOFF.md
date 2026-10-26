@@ -1,3 +1,17 @@
+## 2026-10-26 Codex：任務 #41 多次儲存與切圖端到端測試（已驗證）
+- 新增 12 項 TEMP e2e：十個子系統各三輪編輯／Safe Save／重載及儲存界線 Undo／再次儲存；實際點擊切圖捨棄確認與跨圖復原隔離；257×257、256 DATA 物件、512 spawns、256 events 壓力。Families & Effects 使用帶光源的跨池家族複製；nature 每輪移除磁碟基準的樹並新增，涵蓋 slot 重用。
+- 限制：既有 Safe Save 清除 Undo 歷程，ambience 無局部 Undo；本次驗證儲存後 Undo 保持乾淨已儲存狀態，未實作跨儲存還原舊狀態。既有地形流程增加 Undo／Redo 最多 64 步斷言，原驗證保留。
+- 修正 native/against-rome-placement/src/lib.rs:3590：clone_family_fixed 的暫存候選僅複製資料池，不再深複製最後不會發布的舊 Undo／Redo，消除批次複製的平方歷程複製成本；正式 store 歷程保留，既有家族／復原／parity 測試通過。診斷前聚落套用逾數分鐘、單程序約 1.7 GB。
+- 先前嘗試：fixture 的 anim 容量不一致、palette 尚未初始化及 objdef 快取未失效，均已修正 fixture；耗時流程曾停止重跑，首輪紀錄保留 codex-batch-41-attempt1.log。新循環使用固定小型 DATA，未弱化既有測試；暫時產品診斷輸出已移除。
+- 依序 cargo check／test／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target（test 加 --no-fail-fast），均 exit 0；287 組、2705 passed／0 failed／26 ignored；編輯器 844／0／7；install_resource_discovery 12／0，升權環境限定失敗 0。git diff --check 通過。日誌 re_workspace/codex-batch-41-{check,test,build}.log。
+- 最終壓力計時：Design Check 62.390296 s、Safe Save 450.0569 ms、重載 37.6283 ms，合計低於 120 s。所有新 fixture 與 recovery root 使用 TEMP，未操作遊戲目錄、真實 APPDATA、GUI 或實機驗收；未委派、暫存、提交。AGENTS.md／README.md／app.rs／未追蹤 ingame_prep_endl005.rs 的既有變更保留。
+
+## 2026-10-26 Codex：暫時 ENDL_005 實機準備（已驗證，待玩家驗收）
+- 已備份至 %TEMP%\arm_ingame_backup_ENDL_005_20261026133517；55 檔 SHA-256 與來源一致，manifest.sha256 已建立。僅允許寫 ENDL_005；不啟動遊戲、不還原、不提交、不委派。
+- 新增暫時 ignored 測試並註冊；透過 UI 共用 API 加入波次、300 秒勝利與矩形訊息。為避免提前勝利，暫停既有勝利事件。已執行一次 cargo test -p against-rome-editor-app --lib --locked --offline --target-dir re_workspace/codex-wave-dest-target -- --ignored ingame_prep_endl005 --nocapture：1 passed；Design Check 0 Errors／5 既有 wave-no-destination 警告，Safe Save 成功（11 files）。check --tests、build --lib 同 crate／locked／offline／target-dir 均 exit 0。
+- 新增 ARM hostile team 1（0 秒）、Wave_03/04/05（60/120/180 秒，隊伍 1，HUN_KAVINF00，5/7/9 隻，生成 15200/10080，目的地與主屋 10624/10112）、Survive_300s（300 秒）、ARM area test（10 秒起等待玩家 GER_INF01 進入矩形 X=10208–10336、Z=9568–9696；中心距主屋 595）。既有 OBJ_WIN_5fd512f228a5457aaf546b66388e1fb5 暫停。
+- 遊戲目錄其餘 5095 檔案清單與 SHA-256 不變；ENDL_005 無刪除、8 檔新增或變更（含 Safe Save 備份），完整新雜湊 re_workspace/ingame-prep-changed.sha256；日誌 ingame-prep-{check,test,build}.log。備份保留、不還原；未啟動遊戲、未暫存或提交，AGENTS.md／README.md 既有變更未動。
+
 ## 2026-10-26 Agy：任務 #40 設計師端到端工作流程測試（已驗證）
 - 完成四組 TEMP 工作流程端到端測試（`apps/against-rome-editor/src/app/tests/designer_workflow_e2e.rs`）：
   1. `terrain_heavy_workflow_undo_redo_safe_save_reload_byte_identical`：地形升降/平坦/平滑 + 水體 + 通行度筆刷 + 材質印章 + 自然地景種植/移除 + 懸崖/路網區域工具 → 統一復原清空至乾淨基準 → 全數重做 → Safe Save → 重載 → 驗證高度圖、碰撞圖、地表材質與地景位元組完全一致。
@@ -79,6 +93,8 @@
 
 ## 2026-10-26 Codex：批次 #24（已驗證）
 - 核對並修正指南快捷鍵來源、雙語標籤、Delete 與 2D 平移描述；新增指南按鍵／修飾鍵／輪詢常數防漂移測試，以及設計檢查雙語搜尋（代碼與說明，不分英文大小寫，保留列索引及層級篩選）。依序 cargo check／test／build，均使用 --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target（test 另加 --no-fail-fast）：exit 0；286 組共 2637 passed／0 failed／25 ignored，install_resource_discovery 12 passed／0 failed，無升權環境限定失敗。最終指南／搜尋／ui_literal_sweep 聚焦測試 3 passed；git diff --check 通過。日誌 re_workspace/codex-batch-24-{check,test,build,focused}.log。未 stage／commit；AGENTS.md／README.md 既有變更保留，安裝目錄唯讀，GUI 未驗收。
+- 新增 ARM hostile team 1（0 秒）、Wave_03/04/05（60/120/180 秒，隊伍 1，HUN_KAVINF00，5/7/9 隻，生成 15200/10080，目的地與主屋 10624/10112）、Survive_300s（300 秒）、ARM area test（10 秒起等待玩家 GER_INF01 進入矩形 X=10208–10336、Z=9568–9696；中心距主屋 595）。既有 OBJ_WIN_5fd512f228a5457aaf546b66388e1fb5 暫停。
+- 遊戲目錄其餘 5095 檔案清單與 SHA-256 不變；ENDL_005 無刪除、8 檔新增或變更（含 Safe Save 備份），完整新雜湊 re_workspace/ingame-prep-changed.sha256；日誌 ingame-prep-{check,test,build}.log。備份保留、不還原；未啟動遊戲、未暫存或提交，AGENTS.md／README.md 既有變更未動。
 
 ## 2026-10-26 Agy：批次 #23 使用者指南重構收斂與快捷鍵／合約整合（已驗證）
 - 1. 文件架構整併：將 `docs/map-editor-user-guide.md` 從依批次累加的零散附註重構為 10 大設計者導向結構（開始使用／新增地圖／地形與材質／物件與聚落／劇本與事件／檢查與分析／存檔與復原／打包與分享／快捷鍵總表／已知限制與待驗證項目），完整保留所有數值常數、規格上限、演算法與操作合約。
@@ -88,6 +104,8 @@
 
 ## 2026-10-26 Codex：批次 #22（已驗證，環境限定失敗另列）
 - 審查 93361b7：恢復報告固定資料標籤，明確說明還原覆寫／永久刪除後果，修正 3D 預覽措辭；98 處英文介面全數在地化，完整清單 re_workspace/codex-batch-22-all-literals.txt。新增單一工作區語法掃描（明確技術名稱允許清單）、雙語真實點擊與資料值回歸。依序 cargo check、cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target、cargo build：check/build exit 0；test exit 101，284 組共 2631 passed／4 failed／25 ignored，僅 install_resource_discovery.rs:55、111、128、162 為提升權限環境的資源發現失敗；日誌 re_workspace/codex-batch-22-{check,test,build}.log。首輪暫存路徑受既有 re_workspace/Against_Rome.exe 汙染（test-polluted.log），改用工作區獨立暫存目錄後其餘失敗消失，暫存已清除。git diff --check 通過；未 stage／commit，安裝目錄唯讀，保留 AGENTS.md／README.md 原有變更；實機 GUI 未驗證。
+- 新增 ARM hostile team 1（0 秒）、Wave_03/04/05（60/120/180 秒，隊伍 1，HUN_KAVINF00，5/7/9 隻，生成 15200/10080，目的地與主屋 10624/10112）、Survive_300s（300 秒）、ARM area test（10 秒起等待玩家 GER_INF01 進入矩形 X=10208–10336、Z=9568–9696；中心距主屋 595）。既有 OBJ_WIN_5fd512f228a5457aaf546b66388e1fb5 暫停。
+- 遊戲目錄其餘 5095 檔案清單與 SHA-256 不變；ENDL_005 無刪除、8 檔新增或變更（含 Safe Save 備份），完整新雜湊 re_workspace/ingame-prep-changed.sha256；日誌 ingame-prep-{check,test,build}.log。備份保留、不還原；未啟動遊戲、未暫存或提交，AGENTS.md／README.md 既有變更未動。
 
 ## 2026-10-26 Agy：批次 #21 模組套件與差異效能、3D 原生視角及工具箱三大面板純英文文字全域雙語在地化（已驗證）
 - 1. 模組套件與版本比對／預算分析工作室（packaging_ui.rs 原 18 處純英文 UI 字串）：在地化「地圖版本比對引擎」與「地圖資源預算與效能分析器」兩大分頁標題、基準快照說明、比對按鈕、存檔基準資料夾輸入、覆蓋狀態（✔ 已比對 / ⚠ 無法使用）、分析器評級、物件槽位、光源叢集、繪製呼叫、尋路瓶頸等純文字輸出；新增 `chinese_ui_has_no_untranslated_literals` 無視窗回歸測試。
@@ -98,6 +116,8 @@
 ## 2026-10-26 Codex：批次 #20（編輯器通過；四項既有環境失敗）
 - 審查 9fecc02：未見資料鍵值／檔名誤譯；修正 environment_ui 聚落選取文字漏譯及旋轉對稱誤譯。在地化英文呼叫最多的 ambience_ui（16）、placement_ui（12），新增三項無視窗雙語／資料不變回歸。初驗的測試編譯、英文定位與音效類別漏譯已修正；既有 re_workspace 執行檔污染暫存，改用工作區 target 暫存重驗並清理。
 - 依序 cargo check／test／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target（test 加 --no-fail-fast）：check／build exit 0；test exit 101，283 組、2625 passed／4 failed／25 ignored；編輯器 787／0／6。install_resource_discovery.rs:55、111、128、162 與 batch 18 提升環境失敗相同。日誌 re_workspace/codex-batch-20-{check,test,build,focused,test-polluted,test-before-label-fix}.log；git diff --check 通過。遊戲唯讀；AGENTS.md／README.md 既有變更保留；未 stage／commit；GUI 未手動驗收。
+- 新增 ARM hostile team 1（0 秒）、Wave_03/04/05（60/120/180 秒，隊伍 1，HUN_KAVINF00，5/7/9 隻，生成 15200/10080，目的地與主屋 10624/10112）、Survive_300s（300 秒）、ARM area test（10 秒起等待玩家 GER_INF01 進入矩形 X=10208–10336、Z=9568–9696；中心距主屋 595）。既有 OBJ_WIN_5fd512f228a5457aaf546b66388e1fb5 暫停。
+- 遊戲目錄其餘 5095 檔案清單與 SHA-256 不變；ENDL_005 無刪除、8 檔新增或變更（含 Safe Save 備份），完整新雜湊 re_workspace/ingame-prep-changed.sha256；日誌 ingame-prep-{check,test,build}.log。備份保留、不還原；未啟動遊戲、未暫存或提交，AGENTS.md／README.md 既有變更未動。
 
 ## 2026-10-26 Agy：自主批次 #19 地貌、環境聚落與地圖目錄三大面板純英文文字全域雙語在地化（已驗證）
 - 1. 地貌與防禦工事工作室雙語在地化（landscape_ui.rs:739-1230、1742-1798 原 50 處純英文 UI 字串）：引入 `english: bool` 與 `tl()` 雙語 helper，全面在地化懸崖邊緣偵測、河流流向規劃、道路折線、城牆與木柵防禦工事、水力／熱力矩形侵蝕及區域工具共 6 大分頁之所有視窗標題、標籤、數值滑桿說明、下拉選單、套用與捨棄對話框；於 `EditorApp::show_active_panels` 同步語言設定；新增 `test_landscape_ui_chinese_localization_renders_no_untranslated_literals` 斷言中文介面無未翻譯英文字面量。
@@ -128,6 +148,8 @@
 ## 2026-10-26 Codex：批次 #14（編輯器通過；四項環境失敗）
 - 審查 09bf32f：修正聚焦比例／小地圖偏移與單擊、F 重複入口、載圖防護及標記重建成本；新增雙語通行診斷交換端點／清除覆蓋，保留復原紀錄，指南與 5 項回歸同步。首輪暫存受 re_workspace/Against_Rome.exe 汙染，改用工作區 TEMP；中間輪補正初始空白 session 非已載圖。
 - cargo check／test／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target（test 加 --no-fail-fast）：check／build exit 0；test exit 101，283 組、2599 passed／4 failed／25 ignored；編輯器 761／0／6。四失敗僅 install_resource_discovery.rs:55／111／162／128 的提權環境祖先資源汙染。日誌 re_workspace/codex-batch-14-{check,test,build}.log，另保留 test-first／test-second.log；git diff --check 通過。GUI 未手動驗收；遊戲唯讀，未 stage／commit，AGENTS.md／README.md 既有修改保留。
+- 新增 ARM hostile team 1（0 秒）、Wave_03/04/05（60/120/180 秒，隊伍 1，HUN_KAVINF00，5/7/9 隻，生成 15200/10080，目的地與主屋 10624/10112）、Survive_300s（300 秒）、ARM area test（10 秒起等待玩家 GER_INF01 進入矩形 X=10208–10336、Z=9568–9696；中心距主屋 595）。既有 OBJ_WIN_5fd512f228a5457aaf546b66388e1fb5 暫停。
+- 遊戲目錄其餘 5095 檔案清單與 SHA-256 不變；ENDL_005 無刪除、8 檔新增或變更（含 Safe Save 備份），完整新雜湊 re_workspace/ingame-prep-changed.sha256；日誌 ingame-prep-{check,test,build}.log。備份保留、不還原；未啟動遊戲、未暫存或提交，AGENTS.md／README.md 既有變更未動。
 
 ## 2026-10-26 Agy：自主批次 #13 小地圖標記與 3D 導航、3D 聚焦快捷鍵 F、新手入門工作流程面板（已驗證）
 - 1. 小地圖選取物件與劇本標記視覺化與 3D 導航連動（minimap_ui.rs:179-250 原僅縮圖與 2D 視框，無物件／劇本標記且文字未 tr()，app.rs:12048-12057 點擊未連動 3D）：新增 `MinimapMarker`、`MinimapNavResult` 與世界點轉換；於小地圖繪製選取物件（白外環+金核心）、起始相機（青藍菱形）與生成點（隊伍色），提供雙語切換勾選；點擊／拖曳小地圖在 3D 視角模式下即時平移 3D 攝影機目標至該座標。

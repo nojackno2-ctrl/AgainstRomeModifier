@@ -3587,7 +3587,11 @@ impl ObjectStore {
         if next == 0 || next as u64 + family.len() as u64 > 0x1000000 {
             return Err("24-bit UID exhausted".into());
         }
-        let mut candidate = self.clone();
+        // 暫存候選只發布資料池；複製舊復原快照會讓大量地景複製呈平方成本。
+        let mut candidate = Self {
+            pools: self.pools.clone(), count: self.count, positions: self.positions,
+            root: self.root.clone(), history: Vec::new(), redo: Vec::new(),
+        };
         let snapshot = self.snapshot();
         fn remap(v: usize, map: &BTreeMap<usize, usize>) -> Result<usize> {
             if v == 65535 {
