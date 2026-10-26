@@ -12215,7 +12215,7 @@ impl EditorApp {
                 }
             });
             // 狀態列
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 let is_3d_diagnostic = Self::is_3d_material_diagnostic(&self.status_message);
                 if !is_3d_diagnostic || self.view_mode == ViewMode::View3D {
                     let color = if self.status_is_error {
@@ -12223,7 +12223,22 @@ impl EditorApp {
                     } else {
                         Color32::from_rgb(100, 200, 100)
                     };
-                    ui.colored_label(color, &self.status_message);
+                    if is_3d_diagnostic {
+                        // Keep long fallback reports from pushing the tool/cursor readouts
+                        // outside narrow windows. The full message remains available on hover
+                        // and through the copy button below.
+                        let diagnostic_width = (ui.available_width() * 0.38)
+                            .clamp(90.0, 460.0)
+                            .min(ui.available_width());
+                        ui.add_sized(
+                            [diagnostic_width, ui.spacing().interact_size.y],
+                            egui::Label::new(egui::RichText::new(&self.status_message).color(color))
+                                .truncate(true),
+                        )
+                        .on_hover_text(&self.status_message);
+                    } else {
+                        ui.colored_label(color, &self.status_message);
+                    }
                     if is_3d_diagnostic
                         && ui
                             .button(tr(lang, "Copy 3D diagnostic", "複製 3D 診斷"))

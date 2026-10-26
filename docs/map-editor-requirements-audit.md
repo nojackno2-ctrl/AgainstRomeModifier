@@ -2,6 +2,7 @@
 
 ## 2026-10-27 最新 Rust 驗收補記
 
+- 3D 材質 fallback 長診斷在窄窗會省略顯示並可換行，不再擠出複製按鈕／工具狀態；滑過診斷可讀全文，複製仍得到完整材質清單。680×720 logical px headless egui 回歸 1 passed；完整 workspace check／序列 test（editor app 878 passed／6 ignored）／build 均通過。這只驗證合成窄寬排版，實體 DPI／多螢幕及游標同 frame 尚未驗收。詳見 `AI_HANDOFF.md` 2026-10-27 3D 材質診斷窄視窗呈現。
 - Safe Save app 層回歸涵蓋無效事件拒存與修復重試、重載後複製／移動／隊伍變更及 DATA 降級／升級；root＋child＋direct Light 與 particle-linked Light family 均驗證 root-only binding、重載和平移。複合 family 的 enabled event 刪除守衛、停用後整族清除，以及 `BeforeFinalCommit` 跨 objects／particle／light／scenario 回滾與重試均有 EditorApp 合成測試。`spawn_save_tests` 聚焦 16 passed；workspace check、序列完整 test（editor app 871 passed／6 ignored）及 build 均 exit 0。零售範本、桌面 OpenGL 與遊戲內行為未驗。詳見 `AI_HANDOFF.md` 2026-10-27 複合 family 事件防護、Particle-linked Light 與多池回滾。
 - Maps 狀態列現在只在呈現層依介面語系翻譯地圖目錄、複製／刪除、驗證與診斷訊息，保留錯誤細節；兩種地圖目錄同時掃描失敗時會保留兩邊錯誤。實際 egui 雙語狀態列測試通過，聚焦 maps UI 18 passed；完整 workspace check／序列 test／build 均 exit 0，editor app 866 passed／6 ignored，maps lib 86 passed／3 ignored、`maps_tests` 52 passed。桌面與遊戲驗收未執行。詳見 `AI_HANDOFF.md` 2026-10-27 Maps 狀態列雙語化與目錄錯誤保留。
 - AI 工作室狀態訊息現於呈現層依介面語系翻譯固定狀態、模型掃描、進度、完成／套用統計及已知錯誤前綴；保留內部狀態、模型名稱／數值與未知錯誤細節。egui 雙語渲染回歸覆蓋狀態家族及錯誤細節；聚焦 23 passed。完整 workspace check／序列 test／build 均 exit 0；桌面與遊戲內驗收未執行。詳見 `AI_HANDOFF.md` 2026-10-27 AI 工作室狀態訊息雙語化。

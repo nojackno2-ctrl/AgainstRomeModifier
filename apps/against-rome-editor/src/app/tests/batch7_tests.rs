@@ -1,5 +1,30 @@
 use super::*;
 
+fn gui_frame_at_size(
+    app: &mut EditorApp,
+    ctx: &egui::Context,
+    size: Vec2,
+    events: Vec<egui::Event>,
+) -> egui::FullOutput {
+    ctx.run(
+        egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
+            events,
+            ..Default::default()
+        },
+        |ctx| app.ui_frame(ctx),
+    )
+}
+
+fn gui_find_prefix(output: &egui::FullOutput, prefix: &str) -> Option<Rect> {
+    output.shapes.iter().find_map(|shape| match &shape.shape {
+        egui::epaint::Shape::Text(text) if text.galley.text().starts_with(prefix) => {
+            Some(Rect::from_min_size(text.pos, text.galley.size()))
+        }
+        _ => None,
+    })
+}
+
 #[test]
 fn cursor_tiles_follow_scenario_world_transform() {
     let rect = Rect::from_min_size(Pos2::new(-310.0, 47.0), Vec2::new(2048.0, 1024.0));
@@ -189,6 +214,59 @@ fn partial_floor_atlas_diagnostic_names_fallback_tiles_and_copies_in_both_langua
         assert!(app.status_message.is_empty());
         assert!(!app.status_is_error);
     }
+}
+
+#[test]
+fn long_3d_fallback_diagnostic_keeps_status_controls_visible_in_narrow_window() {
+    let diagnostic = format!(
+        "3D floor atlas loaded with fallback colors for these textures: {}",
+        (0..24)
+            .map(|index| format!("unavailable_floor_texture_{index:02}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    let size = Vec2::new(680.0, 720.0);
+    let mut app = EditorApp::initial_state();
+    app.view_mode = ViewMode::View3D;
+    app.set_app_language(AppLanguage::English);
+    app.status_message = diagnostic.clone();
+    app.status_is_error = true;
+    let ctx = egui::Context::default();
+    ctx.style_mut(|style| style.interaction.tooltip_delay = 0.0);
+
+    let first = gui_frame_at_size(&mut app, &ctx, size, vec![]);
+    let diagnostic_rect = gui_find_prefix(&first, "3D floor atlas loaded with fallback colors")
+        .expect("truncated diagnostic remains visible");
+    assert!(diagnostic_rect.width() <= size.x * 0.4, "diagnostic must be width-limited: {diagnostic_rect:?}");
+    let copy_rect = gui_find(&first, "Copy 3D diagnostic").expect("copy action remains visible");
+    let tool_text = app.active_tool_status_text(AppLanguage::English);
+    let tool_rect = gui_find(&first, &tool_text).expect("active tool remains visible");
+    for rect in [diagnostic_rect, copy_rect, tool_rect] {
+        assert!(rect.min.x >= 0.0 && rect.max.x <= size.x, "status control clipped: {rect:?}");
+        assert!(rect.min.y >= 0.0 && rect.max.y <= size.y, "status control clipped: {rect:?}");
+    }
+
+    let hovered = gui_frame_at_size(
+        &mut app,
+        &ctx,
+        size,
+        vec![egui::Event::PointerMoved(diagnostic_rect.center())],
+    );
+    assert!(gui_find(&hovered, &diagnostic).is_some(), "hover exposes the full diagnostic");
+
+    gui_frame_at_size(
+        &mut app,
+        &ctx,
+        size,
+        gui_pointer(copy_rect.center(), true),
+    );
+    let copied = gui_frame_at_size(
+        &mut app,
+        &ctx,
+        size,
+        gui_pointer(copy_rect.center(), false),
+    );
+    assert_eq!(copied.platform_output.copied_text, diagnostic);
 }
 
 #[test]
