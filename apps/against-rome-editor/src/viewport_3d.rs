@@ -17,7 +17,7 @@
 //! (no original game APT patch interpolation, retail particle blend shaders,
 //! retail DirectX 8/9 pipeline, or retail soundscape triggers).
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 #[inline]
 pub(crate) fn tl(english: bool, zh: &'static str, en: &'static str) -> &'static str {
@@ -175,6 +175,7 @@ pub struct Viewport3d {
     pub sprite_atlas: Option<Arc<NativeSpriteAtlas>>,
     pub atlas_texture: Option<egui::TextureHandle>,
     pub type_names: HashMap<u16, String>,
+    object_sprite_signature: Option<Vec<ObjectSpriteKey>>,
 
     // Floor texture atlas and tile mapping
     pub floor_atlas: Option<Arc<FloorTextureAtlas>>,
@@ -205,6 +206,13 @@ pub struct Viewport3d {
     pub is_dragging_terrain: bool,
     pub last_rect: Option<Rect>,
     pub english: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct ObjectSpriteKey {
+    type_id: u16,
+    team: u16,
+    angle_bits: Option<u32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -302,6 +310,7 @@ impl Viewport3d {
             sprite_atlas: None,
             atlas_texture: None,
             type_names: HashMap::new(),
+            object_sprite_signature: None,
             floor_atlas: None,
             floor_atlas_texture: None,
             floor_atlas_gl_capability: FloorAtlasGlCapability::Headless,
@@ -321,6 +330,142 @@ impl Viewport3d {
     pub fn set_floor_atlas(&mut self, atlas: Option<Arc<FloorTextureAtlas>>) {
         self.floor_atlas = atlas;
         self.floor_atlas_texture = None;
+    }
+
+    /// Updates the native object sprite catalog and object type names used by the 3D viewport.
+    /// Reusing the same catalog instance and type map keeps the packed sprite atlas intact.
+    pub fn set_object_sprite_assets(
+        &mut self,
+        catalog: Option<Arc<NativeSpriteCatalog>>,
+        type_names: HashMap<u16, String>,
+    ) {
+        let catalog_changed = match (&self.sprite_catalog, &catalog) {
+            (Some(current), Some(next)) => !Arc::ptr_eq(current, next),
+            (None, None) => false,
+            _ => true,
+        };
+        if catalog_changed || self.type_names != type_names {
+            self.sprite_catalog = catalog;
+            self.type_names = type_names;
+            self.invalidate_object_sprite_atlas();
+        }
+    }
+
+    fn invalidate_object_sprite_atlas(&mut self) {
+        self.sprite_atlas = None;
+        self.atlas_texture = None;
+        self.object_sprite_signature = None;
+    }
+
+    /// Builds an atlas only when the unique sprite assets used by the current DATA set change.
+    /// Position-only edits do not repack the atlas. Missing assets and packing failures retain the
+    /// normal marker fallback and never publish UVs for a different atlas.
+    fn prepare_object_sprite_atlas(&mut self, objects: &[WorldObject]) {
+        let signature: Vec<_> = objects
+            .iter()
+            .map(|object| ObjectSpriteKey {
+                type_id: object.type_id,
+                team: object.team,
+                angle_bits: object
+                    .rotation_degrees
+                    .is_finite()
+                    .then(|| object.rotation_degrees.to_bits()),
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+
+        if self.object_sprite_signature.as_ref() == Some(&signature) {
+            return;
+        }
+        self.object_sprite_signature = Some(signature.clone());
+        self.sprite_atlas = None;
+        self.atlas_texture = None;
+
+        if signature.is_empty() {
+            return;
+        }
+
+        let sprites: Vec<_> = signature
+            .iter()
+            .filter_map(|key| {
+                let name = self.type_names.get(&key.type_id)?;
+                let angle = key.angle_bits.map(f32::from_bits);
+                if let Some(catalog) = &self.sprite_catalog {
+                    catalog.get_sprite(
+                        name,
+                        key.team as i32,
+                        DEFAULT_DIRECTION,
+                        angle,
+                        None,
+                    )
+                } else {
+                    self.bounded_catalog
+                        .as_ref()
+                        .and_then(|catalog| catalog.get_sprite(name))
+                }
+            })
+            .collect();
+
+        if sprites.is_empty() {
+            return;
+        }
+
+        match NativeSpriteCatalog::build_atlas(&sprites, 4096) {
+            Ok(atlas) if atlas.count() > 0 => self.sprite_atlas = Some(Arc::new(atlas)),
+            Ok(_) | Err(_) => {}
+        }
+    }
+
+    /// Uploads the packed native object sprite atlas when the current GL texture limit permits it.
+    pub fn sync_sprite_atlas_texture(&mut self, ctx: &egui::Context) {
+        let Some(atlas) = self.sprite_atlas.as_ref() else {
+            self.atlas_texture = None;
+            return;
+        };
+        if !matches!(
+            Self::atlas_texture_compatibility(
+                atlas.width().max(atlas.height()) as usize,
+                self.floor_atlas_gl_capability,
+            ),
+            FloorAtlasTextureCompatibility::Headless | FloorAtlasTextureCompatibility::Supported
+        ) {
+            self.atlas_texture = None;
+            return;
+        }
+        let (Ok(width), Ok(height)) = (
+            usize::try_from(atlas.width()),
+            usize::try_from(atlas.height()),
+        ) else {
+            self.atlas_texture = None;
+            return;
+        };
+        if width == 0 || height == 0 || width.checked_mul(height) != Some(atlas.argb_pixels().len()) {
+            self.atlas_texture = None;
+            return;
+        }
+
+        let pixels = atlas
+            .argb_pixels()
+            .iter()
+            .map(|argb| {
+                Color32::from_rgba_unmultiplied(
+                    ((argb >> 16) & 0xFF) as u8,
+                    ((argb >> 8) & 0xFF) as u8,
+                    (argb & 0xFF) as u8,
+                    ((argb >> 24) & 0xFF) as u8,
+                )
+            })
+            .collect();
+        let image = egui::ColorImage {
+            size: [width, height],
+            pixels,
+        };
+        self.atlas_texture = Some(ctx.load_texture(
+            "native_object_sprite_atlas",
+            image,
+            egui::TextureOptions::LINEAR,
+        ));
     }
 
     pub(crate) fn set_floor_atlas_gl_capability(&mut self, capability: FloorAtlasGlCapability) {
@@ -669,22 +814,21 @@ impl Viewport3d {
                 ns.alpha_mask().clone(),
             );
 
-            let uv = self
+            let Some(uv) = self
                 .sprite_atlas
                 .as_ref()
                 .and_then(|atlas| atlas.try_get_uv(ns))
-                .map(|u| AtlasUv {
-                    u0: u.u0,
-                    v0: u.v0,
-                    u1: u.u1,
-                    v1: u.v1,
-                })
-                .unwrap_or(AtlasUv {
-                    u0: 0.0,
-                    v0: 0.0,
-                    u1: 1.0,
-                    v1: 1.0,
-                });
+            else {
+                // Never draw through unrelated/default UVs when the matching atlas is missing
+                // or could not be packed. The caller will show a marker fallback instead.
+                return (None, None);
+            };
+            let uv = AtlasUv {
+                u0: uv.u0,
+                v0: uv.v0,
+                u1: uv.u1,
+                v1: uv.v1,
+            };
 
             let s = Sprite {
                 width: ns.width as f32,
@@ -816,6 +960,11 @@ impl Viewport3d {
 
         if rect.width() <= 10.0 || rect.height() <= 10.0 {
             return action;
+        }
+
+        self.prepare_object_sprite_atlas(objects);
+        if self.sprite_atlas.is_some() && self.atlas_texture.is_none() {
+            self.sync_sprite_atlas_texture(ctx);
         }
 
         // 4. Handle camera interactions: Zoom (Mouse wheel)
@@ -2442,6 +2591,100 @@ mod tests {
         assert_eq!(frame.ordered_sprites.len(), 1);
         assert_eq!(frame.ordered_sprites[0].object_index, 0);
         assert_eq!(frame.diagnostics.sprite_count, 1);
+    }
+
+    #[test]
+    fn show_builds_and_reuses_object_sprite_atlas_with_matching_alpha_mask() {
+        let session = TerrainSession::create_blank(257, 32);
+        let mut vp = Viewport3d::new();
+        let mut pixels = vec![0xFFFFFFFF; 16 * 16];
+        pixels[0] = 0;
+        let sprite = Arc::new(NativeSprite::new(16, 16, pixels, 8, 16, "BauTest.bmp").unwrap());
+        let mut bounded = BoundedSpriteCatalog::new(4, 4);
+        bounded.insert_sprite("BauTest", sprite.clone());
+        vp.bounded_catalog = Some(Arc::new(bounded));
+        vp.set_object_sprite_assets(None, HashMap::from([(42, "BauTest".to_string())]));
+        let objects = vec![make_test_world_object(1, 99, 42, 1, 8192.0, 8192.0)];
+
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.screen_rect = Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(800.0, 600.0)));
+        let _ = ctx.run(input, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let _ = vp.show(ui, ctx, &session, 4.0, 50.0, 2.0, &objects, None);
+            });
+        });
+
+        let atlas = vp.sprite_atlas.as_ref().expect("show should pack available sprites");
+        assert_eq!(atlas.count(), 1);
+        assert!(vp.atlas_texture.is_some(), "headless renderer accepts CPU atlas upload");
+        assert!(atlas.try_get_uv(&sprite).is_some());
+
+        let (_, pickables, scene_sprites) = vp.convert_world_objects(&objects);
+        assert!(scene_sprites[0].is_some());
+        let pickable = pickables[0].as_ref().expect("resolved sprite should be pickable");
+        let mask = pickable.alpha_mask.as_ref().expect("native sprite alpha mask");
+        assert!(Arc::ptr_eq(mask, sprite.alpha_mask()));
+        assert!(!pickable.is_opaque(0, 0));
+        assert!(pickable.is_opaque(1, 0));
+
+        let first_atlas = atlas.clone();
+        vp.prepare_object_sprite_atlas(&objects);
+        assert!(Arc::ptr_eq(&first_atlas, vp.sprite_atlas.as_ref().unwrap()));
+
+        let mut moved = objects.clone();
+        moved[0].position[0] += 256.0;
+        vp.prepare_object_sprite_atlas(&moved);
+        assert!(Arc::ptr_eq(&first_atlas, vp.sprite_atlas.as_ref().unwrap()));
+    }
+
+    #[test]
+    fn object_sprite_atlas_invalidates_for_asset_set_and_catalog_changes() {
+        let mut vp = Viewport3d::new();
+        let first_catalog = Arc::new(NativeSpriteCatalog::from_text(
+            "", "", "", |_| None, |_| None,
+        ));
+        let second_catalog = Arc::new(NativeSpriteCatalog::from_text(
+            "", "", "", |_| None, |_| None,
+        ));
+        let names = HashMap::from([(42, "BauTest".to_string())]);
+        let objects = vec![make_test_world_object(1, 99, 42, 1, 8192.0, 8192.0)];
+
+        vp.set_object_sprite_assets(Some(first_catalog.clone()), names.clone());
+        vp.prepare_object_sprite_atlas(&objects);
+        let signature = vp.object_sprite_signature.clone();
+        assert!(signature.is_some());
+
+        vp.set_object_sprite_assets(Some(first_catalog), names.clone());
+        assert_eq!(vp.object_sprite_signature, signature, "same Arc and names keep cache");
+
+        vp.set_object_sprite_assets(Some(second_catalog), names.clone());
+        assert!(vp.object_sprite_signature.is_none(), "new catalog invalidates atlas key");
+        vp.prepare_object_sprite_atlas(&objects);
+        assert!(vp.object_sprite_signature.is_some());
+
+        let changed_names = HashMap::from([(42, "DifferentType".to_string())]);
+        vp.set_object_sprite_assets(vp.sprite_catalog.clone(), changed_names);
+        assert!(vp.object_sprite_signature.is_none(), "type-name changes invalidate atlas key");
+    }
+
+    #[test]
+    fn missing_object_sprite_assets_keep_marker_fallback_without_uvs() {
+        let mut vp = Viewport3d::new();
+        let catalog = Arc::new(NativeSpriteCatalog::from_text(
+            "", "", "", |_| None, |_| None,
+        ));
+        vp.set_object_sprite_assets(
+            Some(catalog),
+            HashMap::from([(42, "MissingSprite".to_string())]),
+        );
+        let objects = vec![make_test_world_object(1, 99, 42, 1, 8192.0, 8192.0)];
+
+        vp.prepare_object_sprite_atlas(&objects);
+        assert!(vp.sprite_atlas.is_none());
+        let (_, pickables, sprites) = vp.convert_world_objects(&objects);
+        assert!(pickables[0].is_none());
+        assert!(sprites[0].is_none());
     }
 
     #[test]

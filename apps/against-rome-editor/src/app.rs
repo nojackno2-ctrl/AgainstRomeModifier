@@ -46,6 +46,7 @@ use crate::{map_settings::MapSettings, navigation::NavigationUi, toolbox::Toolbo
 use crate::{placement_ui::PlacementUi, scenario_ui::ScenarioUi};
 use crate::spawn_placement_ui::{SpawnContext, SpawnPlacementUi};
 use crate::{layout_io::LayoutContext, placement_ui::LayoutRequest};
+use against_rome_textures::NativeSpriteCatalog;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ViewMode {
@@ -115,6 +116,53 @@ pub(crate) struct NavigationCacheKey {
     pub placement_map: Option<PathBuf>,
     pub objects: Vec<against_rome_placement::WorldObject>,
     pub assets: Vec<(PathBuf, Option<(u64, std::time::SystemTime)>)>,
+}
+
+fn game_root_for_map_path(map_path: Option<&Path>) -> Option<PathBuf> {
+    map_path
+        .and_then(|map| map.parent().and_then(Path::parent))
+        .map(Path::to_path_buf)
+}
+
+fn has_native_sprite_definitions(root: &Path) -> bool {
+    root.join("SYSTEM/DATA_MP/DEFAULTS/objdef.dau").is_file()
+}
+
+fn open_native_sprite_catalog(
+    map_path: Option<&Path>,
+) -> (Option<PathBuf>, Option<std::sync::Arc<NativeSpriteCatalog>>) {
+    let Some(map_path) = map_path else {
+        return (None, None);
+    };
+
+    let local_root = game_root_for_map_path(Some(map_path))
+        .filter(|root| has_native_sprite_definitions(root));
+    let installed_root =
+        against_rome_modifier::services::GameDirectoryLocator::resolve_initial_game_path(None);
+    let mut candidates = Vec::with_capacity(2);
+    if let Some(root) = local_root {
+        candidates.push(root);
+    }
+    if !installed_root.as_os_str().is_empty()
+        && has_native_sprite_definitions(&installed_root)
+        && !candidates.iter().any(|root| root == &installed_root)
+    {
+        candidates.push(installed_root);
+    }
+
+    for root in candidates {
+        if let Some(catalog) = NativeSpriteCatalog::open(&root) {
+            return (Some(root), Some(std::sync::Arc::new(catalog)));
+        }
+    }
+    (None, None)
+}
+
+fn viewport_type_names(type_names: &HashMap<i32, String>) -> HashMap<u16, String> {
+    type_names
+        .iter()
+        .filter_map(|(id, name)| u16::try_from(*id).ok().map(|id| (id, name.clone())))
+        .collect()
 }
 
 pub struct EditorApp {
@@ -205,6 +253,11 @@ pub struct EditorApp {
     pub ambience: AmbienceUi,
     pub modifier: ModifierUi,
     pub viewport_3d: Viewport3d,
+    /// Map path last used to resolve native game assets; distinguishes an attempted empty result.
+    viewport_sprite_catalog_map_path: Option<PathBuf>,
+    viewport_sprite_catalog_initialized: bool,
+    /// Resolved read-only game root used for both native sprites and objdef names.
+    viewport_sprite_catalog_root: Option<PathBuf>,
     /// Game archive and map material names used to build the current 3D floor atlas.
     floor_atlas_source: Option<FloorAtlasSource>,
     /// Exact status written by the last failed floor-atlas load, so recovery can clear only it.
@@ -693,6 +746,9 @@ impl EditorApp {
             ambience: AmbienceUi::default(),
             modifier: ModifierUi::default(),
             viewport_3d: Viewport3d::new(),
+            viewport_sprite_catalog_map_path: None,
+            viewport_sprite_catalog_initialized: false,
+            viewport_sprite_catalog_root: None,
             floor_atlas_source: None,
             floor_atlas_error_status: None,
             floor_atlas_gl_capability: FloorAtlasGlCapability::Headless,
@@ -716,6 +772,61 @@ impl EditorApp {
             getting_started: GettingStartedUi::default(),
             editor_settings: crate::editor_settings::EditorSettings::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod viewport_sprite_asset_tests {
+    use super::*;
+
+    #[test]
+    fn map_game_root_uses_map_parent_and_rejects_shallow_paths() {
+        assert_eq!(
+            game_root_for_map_path(Some(Path::new(
+                r"C:\TEMP\Against Rome\MAPS\ENDL_005",
+            ))),
+            Some(PathBuf::from(r"C:\TEMP\Against Rome")),
+        );
+        assert_eq!(game_root_for_map_path(Some(Path::new("ENDL_005"))), None);
+        assert_eq!(game_root_for_map_path(None), None);
+    }
+
+    #[test]
+    fn incomplete_local_sprite_root_is_not_accepted() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        static NEXT_FIXTURE: AtomicUsize = AtomicUsize::new(0);
+        let fixture = std::env::temp_dir().join(format!(
+            "argm_sprite_root_{}_{}_{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+            NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed),
+        ));
+        let definition = fixture.join("SYSTEM/DATA_MP/DEFAULTS/objdef.dau");
+
+        std::fs::create_dir_all(definition.parent().unwrap()).unwrap();
+        assert!(!has_native_sprite_definitions(&fixture));
+        std::fs::write(&definition, b"fixture").unwrap();
+        assert!(has_native_sprite_definitions(&fixture));
+
+        std::fs::remove_dir_all(fixture).unwrap();
+    }
+
+    #[test]
+    fn viewport_type_names_only_keeps_object_ids_representable_by_world_objects() {
+        let names = HashMap::from([
+            (46, "FigGermanicWarrior".to_string()),
+            (-1, "negative".to_string()),
+            (65_536, "too-large".to_string()),
+        ]);
+
+        assert_eq!(
+            viewport_type_names(&names),
+            HashMap::from([(46, "FigGermanicWarrior".to_string())]),
+        );
     }
 }
 
@@ -2047,25 +2158,42 @@ impl EditorApp {
     }
 
     /// Loads objdef names (cached per game root) so placement team edits use category limits.
-    fn refresh_placement_type_names(&mut self) {
+    fn refresh_placement_type_names(&mut self, game_root: Option<&Path>) {
         if self.placement.has_type_names() || !self.placement.is_loaded() {
             return;
         }
-        let Some(game) = self
-            .placement
-            .loaded_map()
-            .and_then(|m| m.parent())
-            .and_then(Path::parent)
-            .map(Path::to_path_buf)
-        else {
+        let Some(game_root) = game_root else {
             return;
         };
-        if let Ok(definitions) = against_rome_maps::NativeObjectDefinitions::load(&game) {
+        if let Ok(definitions) = against_rome_maps::NativeObjectDefinitions::load(game_root) {
             let names: HashMap<i32, String> = definitions
                 .into_iter()
                 .filter_map(|(id, d)| d.name.filter(|n| !n.is_empty()).map(|n| (id, n)))
                 .collect();
             self.placement.set_type_names(names);
+        }
+    }
+
+    /// Synchronizes the loaded map's read-only native sprite catalog and DATA names into 3D.
+    fn sync_viewport_sprite_assets(&mut self) {
+        let map_path_changed = !self.viewport_sprite_catalog_initialized
+            || self.loaded_map_path != self.viewport_sprite_catalog_map_path;
+        let catalog = if map_path_changed {
+            self.viewport_sprite_catalog_initialized = true;
+            self.viewport_sprite_catalog_map_path = self.loaded_map_path.clone();
+            let (game_root, catalog) = open_native_sprite_catalog(self.loaded_map_path.as_deref());
+            self.viewport_sprite_catalog_root = game_root;
+            catalog
+        } else {
+            self.viewport_3d.sprite_catalog.clone()
+        };
+
+        let game_root = self.viewport_sprite_catalog_root.clone();
+        self.refresh_placement_type_names(game_root.as_deref());
+        let type_names = viewport_type_names(self.placement.type_names());
+        if map_path_changed || self.viewport_3d.type_names != type_names {
+            self.viewport_3d
+                .set_object_sprite_assets(catalog, type_names);
         }
     }
 
@@ -13099,7 +13227,7 @@ impl EditorApp {
         if let Some(action) = self.getting_started.show(ctx, lang, self.session.is_some() && self.loaded_map_path.is_some()) {
             self.handle_getting_started_action(action);
         }
-        self.refresh_placement_type_names();
+        self.sync_viewport_sprite_assets();
         self.placement.settlement_history_routing = !self.settlement_undo.is_empty() || !self.settlement_redo.is_empty();
         self.placement.settlement_history_available = (!self.settlement_undo.is_empty(), !self.settlement_redo.is_empty());
         self.placement.selection_tools_blocked = self.shortcuts_blocked() || ctx.wants_keyboard_input();

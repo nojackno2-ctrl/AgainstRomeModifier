@@ -1868,3 +1868,8 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 - `NativeSprite` 建立並共享每像素 alpha mask；裁切 sprite 亦經相同建構路徑。3D viewport 將 mask 傳入 `PickableSprite`，透明像素不再攔截地形筆刷／點選，非透明像素維持可拾取；既有借用 ARGB 的 API 保留。
 - 回歸涵蓋 atlas sprite mask 共用與透明／不透明像素、sprite crop mask、scene picking。聚焦 viewport 1 passed、textures crop 1 passed、scene picking 4 passed。`cargo check --workspace --locked --offline --target-dir re_workspace/codex-alpha-pick`、完整序列 workspace test（editor app 878 passed／6 ignored；全 workspace exit 0）、`cargo build --workspace --locked --offline --target-dir re_workspace/codex-alpha-pick` 與 `git diff --check` 均通過；建置無 MSVC 連結錯誤。
 - 僅有 headless picking／alpha mask 測試，尚未以桌面實際點擊透明 sprite 區域；遊戲內驗收仍待處理。使用者既有 `AGENTS.md`、`README.md` 修改保留且未納入本次變更。
+
+## 2026-10-27 Codex / GPT-6 Luna：3D 物件 Sprite 圖集接線與桌面確認
+- `EditorApp` 依載入地圖路徑尋找原生 sprite 定義；地圖副本缺少素材時，改由只讀安裝遊戲目錄載入 `NativeSpriteCatalog`。載入 objdef 名稱並傳入 `Viewport3d`；viewport 依唯一物件素材建立並快取 atlas，交由既有 OpenGL texture 路徑呈現，也沿用 sprite alpha mask 點選。快取在地圖、素材目錄或型別名稱變動時更新。
+- 聚焦 `viewport_3d::tests` 27 passed、`viewport_sprite_asset_tests` 3 passed；`cargo check --workspace --locked --offline --target-dir re_workspace/codex-alpha-pick` 通過。序列完整 workspace test 通過（editor app 884 passed／6 ignored；workspace exit 0），`cargo build --workspace --locked --offline --target-dir re_workspace/codex-alpha-pick` 通過，無 MSVC 連結錯誤。
+- 新建置桌面載入 TEMP `ENDL_005` 並載入 DATA：UI 顯示 6,651 objects、`Atlas: 3 tiles`，實際 3D 畫面可見樹木／建物 Sprite。只載入及切換視圖，未 Safe Save；地圖 64 檔逐檔 SHA-256 與預先建立的 TEMP 基準副本完全一致（0 差異），安裝遊戲目錄唯讀。透明 sprite 實際點擊穿透、最小視窗／多螢幕 DPI 與遊戲內驗收仍待完成。
