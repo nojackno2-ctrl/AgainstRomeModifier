@@ -1,3 +1,9 @@
+## 2026-10-27 Codex：零售 4T 角點自適應取樣補完（workspace 驗證完成）
+- 重新跑唯讀安裝版素材 audit，確認舊有 25 張 unresolved 都不是缺名稱／底材／BMP，而是 1/4 角區平均只辨識出兩種材質；全圖像素均能找到三個檔名所列材質。改用 1/8、1/16 角區分別推斷時，21 張得到完全相同三材質角點排列，且兩種窗口都通過每角 RGB 距離 32 門檻。
+- `register_three_material_transitions` 保持原 1/4 推斷優先；僅在其未達三材質時，才試 1/8 與 1/16，兩者排列相同、恰三材質且所有角距皆 <=32 才採納。其餘 fail-safe 拒收。新增合成窄角材質 fixture，驗證小窗口一致性與 native resolver roundtrip；retail audit 將 `installed_maps_tests` 擴充為列印拒收分類、替代窗口覆蓋數與全圖顏色存在情形。
+- 聚焦 `cargo test -p against-rome-textures --locked --offline --target-dir re_workspace/codex-4t-target three_material_probe -- --nocapture`：3 passed。唯讀零售 gate `test_installed_4t_tiles_use_pixel_inferred_three_material_corners -- --ignored --exact --nocapture`：333 張中 329 張推斷並 resolver roundtrip，234 張修正名稱推測，僅 4 張保持拒收；完整 workspace `cargo check`、序列 `cargo test --workspace --locked --offline --no-fail-fast -j 1 ... --quiet`（editor app 871 passed／6 ignored）、`cargo build --workspace --locked --offline` 與 `git diff --check` 均通過。測試中有既有 unused warnings，無錯誤。零售 archive 只讀，未做遊戲畫面驗收；329/333 是像素推斷與內部 bake roundtrip 證據，不等於原版遊戲渲染真值。
+- 下一步：針對仍拒收的 `4T2KM_02`、`4TK2M_01`、`4TK2V_06`、`4TV2K_01` 收集原生角點真值或更完整逆向證據；沒有證據前維持拒收。之後回到 roadmap Phase 5 視窗／DPI 驗收與 Phase 6 遊戲內驗收。
+
 ## 2026-10-27 Codex / GPT-6 Luna：複合 family 事件防護、Particle-linked Light 與多池回滾（workspace 驗證完成）
 - `apps/against-rome-editor/src/app/tests/spawn_save_tests.rs` 抽出 root＋child＋direct Light 合成 family fixture，新增事件引用時拒刪複合家族、停用後整族刪除與重載案例；另新增 Particle emitter child 以 fixed-point backlink 控制 Light 的 EditorApp 平移／重載案例。刪除既存 family 時注入 `BeforeFinalCommit`，完整檔案快照不變、記憶體刪除保留可重試；重試後 objects／particle／light 清空，最終重載一致。
 - 聚焦 `cargo test -p against-rome-editor-app --lib --locked --offline --target-dir re_workspace/phase3-family-delete spawn_save_tests:: -- --test-threads=1 --nocapture`：16 passed／0 failed。workspace `cargo check`、序列完整 `cargo test --no-fail-fast -j 1 -- --test-threads=1 --quiet`（editor app 871 passed／6 ignored／0 failed）、`cargo build` 均 exit 0；`git diff --check` 通過。僅合成資料；沒有桌面／遊戲驗收或零售 DATA 寫入。
@@ -32,9 +38,9 @@
 
 ## 2026-10-27 Codex / GPT-6 Luna：4T 三材質圖塊像素推斷（程式與 workspace 驗證完成）
 - `build_full_catalog` 有零售 `floortex.dat` probe 時，現在用三個 base material 的代表色和 `4T` 原生 BMP 角落取樣推斷 corner topology；僅在推斷出三材質且每角色距不超過既有 32 門檻時覆寫名稱形狀 fallback。Probe 缺圖、缺代表材質、證據模糊時保留舊映射；`probe=None`／`resolver.rs` fallback 未改。probe parser 接受實庫 `4Txxx_0x` 命名，不再限於 `_2/_4/_6/_8`。
-- 新增合成單元測試，覆蓋 4 個舊 shape × ABC/CBA 材料順序、與 fallback 不同的像素拓撲、resolver bake roundtrip、弱色／兩色／缺圖／缺代表色／非法名稱 fail-safe。父端獨立 `cargo test -p against-rome-textures --locked --offline --target-dir re_workspace/codex-4t-target` 通過：13 unit、69 integration passed，3 retail-required ignored。零售唯讀 `floortex.dat` 稽核：333 張 4T 中 308 張像素推斷及 native resolver roundtrip 成功、202 張修正名稱推測、25 張因像素證據未過門檻而未解析；安裝資料未寫入。首次稽核編譯少引入 resolver trait，補上 import 後通過；首次 parser 只允許四種 shape，稽核證明漏 96 張實庫 tile，現改採 probe pixel evidence 判斷並再次稽核。
+- 新增合成單元測試，覆蓋 4 個舊 shape × ABC/CBA 材料順序、與 fallback 不同的像素拓撲、resolver bake roundtrip、弱色／兩色／缺圖／缺代表色／非法名稱 fail-safe。父端獨立測試當時為 13 unit、69 integration passed，3 retail-required ignored。零售唯讀 `floortex.dat` 當時稽核 333 張 4T 中 308 張成功、202 張修正名稱推測、25 張因像素證據未過門檻；安裝資料未寫入。後續自適應角點取樣進展與 329/333 現況見本檔最新「零售 4T 角點自適應取樣補完」。
 - `cargo check --workspace --locked --offline --target-dir re_workspace/codex-4t-target`、`cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-4t-target -- --test-threads=1 --quiet`、`cargo build --workspace --locked --offline --target-dir re_workspace/codex-4t-target` 均 exit 0；editor app 861 passed／6 ignored。父端 `git diff --check` 通過。兩個變更 Rust 檔的 `rustfmt --check` 未通過，顯示既有檔案大量格式差異；未執行會重排整檔的格式化，避免擴大差異。
-- 此結果證明實際零售素材的 resolver/bake 可回往角點，不證明遊戲渲染外觀；25 張仍未解析，遊戲內材質驗收仍待完成。
+- 當時的結果證明實際零售素材的 resolver/bake 可回往角點，不證明遊戲渲染外觀；該輪 25 張未解析數量已由後續更新取代，遊戲內材質驗收仍待完成。
 
 ## 2026-10-27 Codex：空白場景初始化檔案報告（程式與 workspace 驗證完成）
 - `BlankMapContent::reset_staging_directory_with_report` 依實際待寫 DATA 清單回報重設檔案、未重設的所有來源 DATA 檔、保留 SDL、重建的腳本及初始化的劇本文件；原 `reset_staging_directory` API 保留包裝。建置結果傳遞該報告，Maps「最近建置」可展開查看並明示保留資料與空白開局的遊戲內相容性未驗。

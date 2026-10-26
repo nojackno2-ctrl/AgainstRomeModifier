@@ -9,6 +9,43 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+type Rgb = [f64; 3];
+
+fn audit_mean_color(layer: &against_rome_textures::terrain_layer::TerrainLayer, x: usize, y: usize, width: usize, height: usize) -> Rgb {
+    let (mut sums, mut count) = ([0u64; 3], 0u64);
+    let step_x = (width / 8).max(1);
+    let step_y = (height / 8).max(1);
+    let mut sy = y + step_y / 2;
+    while sy < y + height {
+        let mut sx = x + step_x / 2;
+        while sx < x + width {
+            let pixel = layer.argb[sy.min(layer.height - 1) * layer.width + sx.min(layer.width - 1)];
+            sums[0] += ((pixel >> 16) & 0xff) as u64;
+            sums[1] += ((pixel >> 8) & 0xff) as u64;
+            sums[2] += (pixel & 0xff) as u64;
+            count += 1;
+            sx += step_x;
+        }
+        sy += step_y;
+    }
+    let n = count.max(1) as f64;
+    [sums[0] as f64 / n, sums[1] as f64 / n, sums[2] as f64 / n]
+}
+
+fn audit_corner_colors(layer: &against_rome_textures::terrain_layer::TerrainLayer, divisor: usize) -> [Rgb; 4] {
+    let (w, h) = ((layer.width / divisor).max(1), (layer.height / divisor).max(1));
+    [
+        audit_mean_color(layer, 0, 0, w, h),
+        audit_mean_color(layer, layer.width - w, 0, w, h),
+        audit_mean_color(layer, layer.width - w, layer.height - h, w, h),
+        audit_mean_color(layer, 0, layer.height - h, w, h),
+    ]
+}
+
+fn audit_dist(a: &Rgb, b: &Rgb) -> f64 {
+    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+}
+
 fn get_game_dir() -> PathBuf {
     let default_path = PathBuf::from(r"C:\Program Files (x86)\Against Rome");
     assert!(
@@ -49,6 +86,12 @@ fn test_installed_4t_tiles_use_pixel_inferred_three_material_corners() {
     let mut missing_materials = 0usize;
     let mut missing_base_variants = 0usize;
     let mut missing_pixels = 0usize;
+    let mut rejected_non_three = 0usize;
+    let mut rejected_distance = 0usize;
+    let mut rejected_both = 0usize;
+    let mut adaptive_corner_hits = [0usize; 3];
+    let mut stable_adaptive_corner_hits = 0usize;
+    let mut all_named_materials_present = 0usize;
     let mut shapes = std::collections::BTreeMap::<char, usize>::new();
     for name in &three_material_tiles {
         let Some(pixel_corners) = pixel_catalog.try_resolve_native_corners(name) else {
@@ -68,6 +111,108 @@ fn test_installed_4t_tiles_use_pixel_inferred_three_material_corners() {
                     missing_base_variants += 1;
                 } else if library.get_layer(name).is_none() {
                     missing_pixels += 1;
+                } else {
+                    let refs: Option<Vec<(String, Rgb)>> = ids
+                        .iter()
+                        .map(|id| {
+                            let variants = name_catalog.variants_by_material.get(&id.to_ascii_uppercase())?;
+                            let representative = variants
+                                .iter()
+                                .find(|variant| variant.to_ascii_uppercase().ends_with("50"))
+                                .or_else(|| variants.first())?;
+                            let layer = library.get_layer(representative)?;
+                            Some((id.clone(), audit_mean_color(&layer, 0, 0, layer.width, layer.height)))
+                        })
+                        .collect();
+                    let Some(refs) = refs else {
+                        missing_base_variants += 1;
+                        continue;
+                    };
+                    let Some(tile) = library.get_layer(name) else {
+                        missing_pixels += 1;
+                        continue;
+                    };
+                    let samples = audit_corner_colors(&tile, 4);
+                    let inferred: Vec<String> = samples
+                        .iter()
+                        .map(|sample| {
+                            refs.iter()
+                                .min_by(|a, b| audit_dist(sample, &a.1).total_cmp(&audit_dist(sample, &b.1)))
+                                .unwrap()
+                                .0
+                                .clone()
+                        })
+                        .collect();
+                    let distinct = inferred
+                        .iter()
+                        .map(|id| id.to_ascii_uppercase())
+                        .collect::<std::collections::HashSet<_>>()
+                        .len();
+                    let max_distance = samples
+                        .iter()
+                        .map(|sample| refs.iter().map(|reference| audit_dist(sample, &reference.1)).fold(f64::INFINITY, f64::min))
+                        .fold(0.0, f64::max);
+                    let mut adaptive_assignments = Vec::<Vec<String>>::new();
+                    let mut adaptive_confidence = Vec::<bool>::new();
+                    for (index, divisor) in [8usize, 16, 32].iter().enumerate() {
+                        let smaller_samples = audit_corner_colors(&tile, *divisor);
+                        let smaller_ids: Vec<String> = smaller_samples
+                            .iter()
+                            .map(|sample| {
+                                refs.iter()
+                                    .min_by(|a, b| audit_dist(sample, &a.1).total_cmp(&audit_dist(sample, &b.1)))
+                                    .unwrap()
+                                    .0
+                                    .clone()
+                            })
+                            .collect();
+                        let smaller_distinct = smaller_ids
+                            .iter()
+                            .map(|id| id.to_ascii_uppercase())
+                            .collect::<std::collections::HashSet<_>>()
+                            .len();
+                        let smaller_max_distance = smaller_samples
+                            .iter()
+                            .map(|sample| refs.iter().map(|reference| audit_dist(sample, &reference.1)).fold(f64::INFINITY, f64::min))
+                            .fold(0.0, f64::max);
+                        if smaller_distinct == 3 && smaller_max_distance <= 32.0 {
+                            adaptive_corner_hits[index] += 1;
+                        }
+                        adaptive_assignments.push(smaller_ids);
+                        adaptive_confidence.push(smaller_distinct == 3 && smaller_max_distance <= 32.0);
+                    }
+                    if adaptive_confidence[0]
+                        && adaptive_confidence[1]
+                        && adaptive_assignments[0] == adaptive_assignments[1]
+                        && adaptive_assignments[0]
+                            .iter()
+                            .map(|id| id.to_ascii_uppercase())
+                            .collect::<std::collections::HashSet<_>>()
+                            .len()
+                            == 3
+                    {
+                        stable_adaptive_corner_hits += 1;
+                    }
+                    let mut full_tile_counts = std::collections::BTreeMap::<String, usize>::new();
+                    for pixel in &tile.argb {
+                        let sample = [((pixel >> 16) & 0xff) as f64, ((pixel >> 8) & 0xff) as f64, (pixel & 0xff) as f64];
+                        let nearest = refs
+                            .iter()
+                            .min_by(|a, b| audit_dist(&sample, &a.1).total_cmp(&audit_dist(&sample, &b.1)))
+                            .unwrap();
+                        *full_tile_counts.entry(nearest.0.clone()).or_default() += 1;
+                    }
+                    if ids.iter().all(|id| full_tile_counts.get(id).is_some_and(|count| *count > 0)) {
+                        all_named_materials_present += 1;
+                    }
+                    let non_three = distinct != 3;
+                    let over_distance = max_distance > 32.0;
+                    match (non_three, over_distance) {
+                        (true, true) => rejected_both += 1,
+                        (true, false) => rejected_non_three += 1,
+                        (false, true) => rejected_distance += 1,
+                        (false, false) => panic!("{name} audit rejected despite meeting both pixel gates"),
+                    }
                 }
             }
             continue;
@@ -104,6 +249,10 @@ fn test_installed_4t_tiles_use_pixel_inferred_three_material_corners() {
     );
     println!("unresolved examples: {:?}", unresolved_names.iter().take(24).collect::<Vec<_>>());
     println!("unresolved causes (invalid name / missing material / missing base variants / missing BMP): {invalid_name_chars}/{missing_materials}/{missing_base_variants}/{missing_pixels}; pixel evidence rejected: {}", unresolved - invalid_name_chars - missing_materials - missing_base_variants - missing_pixels);
+    println!("pixel gate rejection (not exactly 3 / distance > 32 / both): {rejected_non_three}/{rejected_distance}/{rejected_both}");
+    println!("rejected tiles recovered by smaller corner windows 1/8, 1/16, 1/32: {:?}", adaptive_corner_hits);
+    println!("tiles whose 1/8 and 1/16 corner assignments agree on three materials: {stable_adaptive_corner_hits}");
+    println!("unresolved tiles with all three named material colors present across the full tile: {all_named_materials_present}");
     assert!(corrected > 0, "pixel probing did not correct any name-derived 4T topology");
     assert!(three_material_tiles.len() - unresolved >= 308, "pixel inference coverage regressed");
 }

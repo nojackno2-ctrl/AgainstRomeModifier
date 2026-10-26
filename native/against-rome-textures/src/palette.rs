@@ -423,19 +423,24 @@ fn mean_texture_color(layer: &TerrainLayer) -> Option<Rgb> {
     layer_valid(layer).then(|| mean_color(layer, 0, 0, layer.width, layer.height))
 }
 
-/// Four corner samples TL, TR, BR, BL (each 1/4 x 1/4 of the image).
-fn corner_colors(layer: &TerrainLayer) -> Option<[Rgb; 4]> {
+/// Four corner samples TL, TR, BR, BL from equally sized corner regions.
+fn corner_colors_in_regions(layer: &TerrainLayer, divisor: usize) -> Option<[Rgb; 4]> {
     if !layer_valid(layer) {
         return None;
     }
-    let w = (layer.width / 4).max(1);
-    let h = (layer.height / 4).max(1);
+    let w = (layer.width / divisor).max(1);
+    let h = (layer.height / divisor).max(1);
     Some([
         mean_color(layer, 0, 0, w, h),
         mean_color(layer, layer.width - w, 0, w, h),
         mean_color(layer, layer.width - w, layer.height - h, w, h),
         mean_color(layer, 0, layer.height - h, w, h),
     ])
+}
+
+/// Four corner samples TL, TR, BR, BL (each 1/4 x 1/4 of the image).
+fn corner_colors(layer: &TerrainLayer) -> Option<[Rgb; 4]> {
+    corner_colors_in_regions(layer, 4)
 }
 
 fn dist2(a: &Rgb, b: &Rgb) -> f64 {
@@ -567,6 +572,13 @@ fn representative_color(
 /// Nearest-reference corner assignment for the given material colours (C# `InferCorners`).
 fn infer_corners(layer: &TerrainLayer, refs: &[(String, Rgb)]) -> Option<[String; 4]> {
     let samples = corner_colors(layer)?;
+    infer_corners_from_samples(&samples, refs)
+}
+
+fn infer_corners_from_samples(samples: &[Rgb; 4], refs: &[(String, Rgb)]) -> Option<[String; 4]> {
+    if refs.is_empty() {
+        return None;
+    }
     let pick = |s: &Rgb| {
         let mut best = &refs[0];
         for r in &refs[1..] {
@@ -577,6 +589,14 @@ fn infer_corners(layer: &TerrainLayer, refs: &[(String, Rgb)]) -> Option<[String
         best.0.clone()
     };
     Some([pick(&samples[0]), pick(&samples[1]), pick(&samples[2]), pick(&samples[3])])
+}
+
+fn corners_within_reference_distance(samples: &[Rgb; 4], corners: &[String; 4], refs: &[(String, Rgb)]) -> bool {
+    samples.iter().zip(corners.iter()).all(|(sample, id)| {
+        refs.iter()
+            .find(|(candidate, _)| candidate.eq_ignore_ascii_case(id))
+            .is_some_and(|(_, color)| dist2(sample, color).sqrt() <= REGIONAL_TRANSITION_MAX_CORNER_DISTANCE)
+    })
 }
 
 fn distinct_count(corners: &[String; 4]) -> usize {
@@ -638,15 +658,30 @@ fn register_three_material_transitions(
         }
         let Some(layer) = probe(name) else { continue };
         let Some(samples) = corner_colors(&layer) else { continue };
-        let Some(corners) = infer_corners(&layer, &refs) else { continue };
-        if distinct_count(&corners) != 3
-            || samples.iter().zip(corners.iter()).any(|(sample, id)| {
-                let Some((_, color)) = refs.iter().find(|(candidate, _)| candidate.eq_ignore_ascii_case(id)) else {
-                    return true;
-                };
-                dist2(sample, color).sqrt() > REGIONAL_TRANSITION_MAX_CORNER_DISTANCE
-            })
-        {
+        let Some(mut corners) = infer_corners_from_samples(&samples, &refs) else { continue };
+        if distinct_count(&corners) != 3 {
+            // Broad quarter-tile averages can hide a material confined to the true corner.
+            // Accept a narrower estimate only when 1/8 and 1/16 regions independently
+            // produce the same three-material topology and both pass the existing color gate.
+            let (Some(samples_8), Some(samples_16)) =
+                (corner_colors_in_regions(&layer, 8), corner_colors_in_regions(&layer, 16))
+            else {
+                continue;
+            };
+            let (Some(corners_8), Some(corners_16)) =
+                (infer_corners_from_samples(&samples_8, &refs), infer_corners_from_samples(&samples_16, &refs))
+            else {
+                continue;
+            };
+            if corners_8 != corners_16
+                || distinct_count(&corners_8) != 3
+                || !corners_within_reference_distance(&samples_8, &corners_8, &refs)
+                || !corners_within_reference_distance(&samples_16, &corners_16, &refs)
+            {
+                continue;
+            }
+            corners = corners_8;
+        } else if !corners_within_reference_distance(&samples, &corners, &refs) {
             continue;
         }
         catalog.native_corners_by_texture.insert(name.to_ascii_uppercase(), corners);
@@ -1289,6 +1324,40 @@ mod tests {
                 assert_eq!(catalog.resolve_native_tile(&refs, 0, 0).as_deref(), Some(name.as_str()));
             }
         }
+    }
+
+    #[test]
+    fn three_material_probe_recovers_stable_narrow_corner_topology() {
+        let name = "4TABC_2A";
+        let names: Vec<String> = ["4BA___50", "4BB___50", "4BC___50", name].map(str::to_string).into();
+        let mut pixels = vec![0xFF00_0000 | DIRT; 64 * 64];
+        for (x0, y0, color) in [(0, 0, GRASS), (56, 0, ROAD), (56, 56, DIRT), (0, 56, GRASS)] {
+            for y in y0..y0 + 8 {
+                for x in x0..x0 + 8 {
+                    pixels[y * 64 + x] = 0xFF00_0000 | color;
+                }
+            }
+        }
+        let tile = TerrainLayer { width: 64, height: 64, argb: pixels, green: vec![0; 64 * 64] };
+        let layers = HashMap::from([
+            ("4BA___50".to_string(), layer([GRASS; 4])),
+            ("4BB___50".to_string(), layer([DIRT; 4])),
+            ("4BC___50".to_string(), layer([ROAD; 4])),
+            (name.to_string(), tile.clone()),
+        ]);
+        let refs = vec![
+            ("BA".to_string(), [48.0, 160.0, 48.0]),
+            ("BB".to_string(), [160.0, 96.0, 48.0]),
+            ("BC".to_string(), [200.0, 200.0, 180.0]),
+        ];
+        let broad = infer_corners(&tile, &refs).unwrap();
+        assert_eq!(distinct_count(&broad), 1, "fixture must require narrow sampling");
+
+        let mut probe = |candidate: &str| layers.get(&candidate.to_ascii_uppercase()).cloned();
+        let catalog = build_full_catalog(&names, Some(&mut probe));
+        let expected = ["BA", "BC", "BB", "BA"].map(str::to_string);
+        assert_eq!(catalog.try_resolve_native_corners(name), Some(expected.clone()));
+        assert_eq!(catalog.resolve_native_tile(&expected.each_ref().map(String::as_str), 0, 0).as_deref(), Some(name));
     }
 
     #[test]
