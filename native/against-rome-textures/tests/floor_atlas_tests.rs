@@ -225,6 +225,42 @@ fn test_atlas_pixel_blitting_central_fidelity_and_gutter_dilation() {
 }
 
 #[test]
+fn atlas_reports_only_names_using_fallback_colors() {
+    let layer = TerrainLayer {
+        width: 128,
+        height: 128,
+        argb: vec![0xFF12_3456; 128 * 128],
+        green: vec![0; 128 * 128],
+    };
+    let atlas = FloorTextureAtlas::create_with_decoder(
+        &[
+            "available_tile",
+            "missing_tile",
+            "another_available",
+            "decode_error_tile",
+        ],
+        |name| match name {
+            "available_tile" | "another_available" => Some(layer.clone()),
+            _ => None,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        atlas.names(),
+        [
+            "available_tile",
+            "missing_tile",
+            "another_available",
+            "decode_error_tile",
+        ]
+    );
+    assert_eq!(atlas.unavailable_names(), ["missing_tile", "decode_error_tile"]);
+    assert!(atlas.contains("available_tile"));
+    assert!(atlas.contains("missing_tile"));
+}
+
+#[test]
 fn test_missing_texture_blits_fallback_color_across_cell() {
     let atlas =
         FloorTextureAtlas::create_with_decoder(&["missing_one"], |_| None).unwrap();
@@ -346,6 +382,7 @@ fn test_floortex_library_mock_zip_roundtrip() {
     assert!(atlas.contains("4B6___51"));
     assert!(atlas.contains("PFAD1"));
     assert!(atlas.contains("MISSING_TILE"));
+    assert_eq!(atlas.unavailable_names(), ["MISSING_TILE"]);
 
     // Cleanup
     let _ = std::fs::remove_dir_all(&temp_dir);

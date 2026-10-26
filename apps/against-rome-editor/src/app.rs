@@ -276,8 +276,29 @@ impl EditorApp {
         }
     }
 
+    fn floor_atlas_partial_fallback_message(names: &[String], english: bool) -> String {
+        let names = names.join(", ");
+        if english {
+            format!(
+                "3D floor atlas loaded with fallback colors for these textures: {names}"
+            )
+        } else {
+            format!("3D 地表圖集已載入，但以下材質使用替代色：{names}")
+        }
+    }
+
     fn install_3d_floor_atlas(&mut self, atlas: against_rome_textures::FloorTextureAtlas) {
+        let unavailable_names = atlas.unavailable_names().to_vec();
         self.viewport_3d.set_floor_atlas(Some(std::sync::Arc::new(atlas)));
+        if !unavailable_names.is_empty() {
+            self.status_message = Self::floor_atlas_partial_fallback_message(
+                &unavailable_names,
+                self.lang() == AppLanguage::English,
+            );
+            self.status_is_error = true;
+            self.floor_atlas_error_status = Some(self.status_message.clone());
+            return;
+        }
         let is_previous_atlas_error = self.floor_atlas_error_status.as_deref()
             == Some(self.status_message.as_str());
         if is_previous_atlas_error
@@ -4438,6 +4459,16 @@ impl EditorApp {
                 language == AppLanguage::English,
             )
             .into();
+        } else if self.floor_atlas_error_status.as_deref() == Some(self.status_message.as_str()) {
+            if let Some(atlas) = self.viewport_3d.floor_atlas.as_ref() {
+                if !atlas.unavailable_names().is_empty() {
+                    self.status_message = Self::floor_atlas_partial_fallback_message(
+                        atlas.unavailable_names(),
+                        language == AppLanguage::English,
+                    );
+                    self.floor_atlas_error_status = Some(self.status_message.clone());
+                }
+            }
         }
     }
 
@@ -11764,7 +11795,9 @@ impl EditorApp {
     fn is_3d_material_diagnostic(message: &str) -> bool {
         message.starts_with("3D floor texture archive")
             || message.starts_with("3D floor textures unavailable")
+            || message.starts_with("3D floor atlas loaded with fallback colors")
             || message.starts_with("3D 地表材質無法載入")
+            || message.starts_with("3D 地表圖集已載入，但以下材質使用替代色")
             || message.starts_with("找不到 3D 地表材質檔 floortex.dat")
     }
 

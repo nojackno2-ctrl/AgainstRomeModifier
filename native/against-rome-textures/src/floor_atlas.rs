@@ -91,6 +91,7 @@ pub struct FloorTextureAtlas {
     argb_pixels: Vec<u32>,
     rects: HashMap<String, AtlasRect>,
     ordered_names: Vec<String>,
+    unavailable_names: Vec<String>,
 }
 
 impl FloorTextureAtlas {
@@ -121,6 +122,11 @@ impl FloorTextureAtlas {
     /// Canonical ordered list of distinct texture names placed in the atlas.
     pub fn names(&self) -> &[String] {
         &self.ordered_names
+    }
+
+    /// Canonical names whose source layer could not be read or decoded and use fallback colors.
+    pub fn unavailable_names(&self) -> &[String] {
+        &self.unavailable_names
     }
 
     /// Checks if a texture name exists in this atlas (case-insensitive).
@@ -247,6 +253,7 @@ impl FloorTextureAtlas {
         let (columns, _) = Self::get_grid(unique.len(), size)?;
         let mut pixels = vec![Self::DEFAULT_BG_COLOR; size * size];
         let mut rects = HashMap::with_capacity(unique.len());
+        let mut unavailable_names = Vec::new();
 
         for (index, name) in unique.iter().enumerate() {
             let cell_x = (index % columns) * Self::STRIDE;
@@ -267,6 +274,7 @@ impl FloorTextureAtlas {
             } else {
                 let color = Self::fallback_color(name);
                 fill_cell(&mut pixels, size, cell_x, cell_y, color);
+                unavailable_names.push(name.clone());
             }
         }
 
@@ -275,6 +283,7 @@ impl FloorTextureAtlas {
             argb_pixels: pixels,
             rects,
             ordered_names: unique,
+            unavailable_names,
         })
     }
 

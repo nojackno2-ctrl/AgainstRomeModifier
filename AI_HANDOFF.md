@@ -1,5 +1,13 @@
+## 2026-10-27 Codex：OpenGL atlas 上傳故障邊界唯讀稽核
+- `Viewport3d::sync_floor_atlas_texture` 呼叫 `egui::Context::load_texture` 後立即持有 `TextureHandle`；egui_glow 在後續 paint 才消費 texture delta，上傳錯誤只可能寫 debug log，未回傳給 `EditorApp`。目前 handle 存在不能作為 GPU 已成功上傳的證據；Render context 建立／遺失及實際上傳失敗也沒有 app 層恢復重試。
+- 可安全補的預檢是從 `CreationContext.gl` 讀取 context 能力及 `GL_MAX_TEXTURE_SIZE`，防止超限 atlas 進入 renderer 造成 assert；精確捕捉上傳失敗需 renderer 錯誤通道或 app 自行管理 GL 資源，不應僅把 `sync_floor_atlas_texture` 包成假的 `Result`。無 GL capability 純函式測試不能代表實際 driver/context 驗收。未改碼；下一步可先實作 texture-size preflight 並保留 CPU fallback，真實錯誤通道另評估。
+
+## 2026-10-27 Codex / GPT-6 Luna：3D 圖集部分材質 fallback 診斷
+- `FloorTextureAtlas` 新增 additive `unavailable_names()`，記錄 `create_with_decoder` 無法取得 layer、因而填 fallback 色的 texture names；既有 atlas 建立成功語意、fallback 色及 atlas 顯示不變。App 對部分缺失圖集顯示含名稱的中英診斷與錯誤狀態，沿用 3D 診斷複製按鈕；語言切換更新診斷，之後完整圖集成功只清除本流程精確訊息。未改 OpenGL texture upload。
+- 合成混合 decoder 測試確認只列出失敗材質；app 測試驗證可見 atlas、診斷名稱、中英複製／切換與完整 atlas 後清除。材質 crate floor_atlas_tests 9 passed、app batch7_tests 10 passed；workspace `cargo check --workspace --locked --offline`、完整序列 `cargo test --workspace --locked --offline --no-fail-fast -j 1 -- --test-threads=1 --quiet`（editor app 875 passed／6 ignored，所有 workspace targets 通過）及 `cargo build --workspace --locked --offline` 均 exit 0；`git diff --check` 通過。只以合成 decoder／UI 測試，未做桌面或安裝素材 gate；這不證明 GPU 上傳成功。
+
 ## 2026-10-27 Codex / GPT-6 Luna：同路徑 floortex 失敗後重試
-- `EditorApp::refresh_3d_floor_atlas` 的快取來源納入 `floortex.dat` 路徑、檔案長度與修改時間；相同檔案狀態會命中快取，檔案狀態更新後才重試，避免每幀重試及重複覆寫診斷。archive 改變時也重設該地圖 `TexturesUi::load_session` 的一次性嘗試，覆蓋初始材質載入因損壞 archive 失敗的情況。成功時只清除本流程最近寫入且仍在狀態列的精確錯誤，其他訊息保留。新增合成 app 回歸：初始壞 ZIP 使材質載入失敗、再次 refresh 維持失敗狀態、同路徑換成有效空 ZIP 後 session 與圖集載入成功並清除錯誤。
+- `EditorApp::refresh_3d_floor_atlas` 的快取來源納入 `floortex.dat` 路徑、檔案長度與修改時間；相同檔案狀態會命中快取，檔案狀態更新後才重試，避免每幀重試及重複覆寫診斷。archive 改變時也重設該地圖 `TexturesUi::load_session` 的一次性嘗試，覆蓋初始材質載入因損壞 archive 失敗的情況。成功時只清除本流程最近寫入且仍在狀態列的精確錯誤，其他訊息保留。新增合成 app 回歸：初始壞 ZIP 使材質載入失敗、再次 refresh 維持失敗狀態、同路徑換成有效空 ZIP 後 session 與 atlas 建立成功；因 ZIP 不含 BMP，後續由部分材質診斷取代舊 archive 錯誤。其測試數據不代表所有 tile 可貼圖。
 - 父端聚焦測試 1/1、`batch7_tests::` 9/9；workspace `cargo check`、序列完整 `cargo test`（editor app 874 passed／6 ignored；所有 workspace targets 通過）及 `cargo build` 均 exit 0，`git diff --check` 通過。只做合成 archive 驗證，未做桌面／零售遊戲驗收。限制：若同一路徑檔案長度與修改時間都維持不變，cache 無法偵測內容替換；未逐幀計算大型 archive 的內容雜湊。
 
 ## 2026-10-27 Codex：零售 4T 角點自適應取樣補完（workspace 驗證完成）

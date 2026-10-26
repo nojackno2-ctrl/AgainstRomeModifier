@@ -123,6 +123,75 @@ fn three_d_material_fallback_diagnostic_can_be_copied_in_both_languages() {
 }
 
 #[test]
+fn partial_floor_atlas_diagnostic_names_fallback_tiles_and_copies_in_both_languages() {
+    let missing = ["missing_tile", "decode_error_tile"];
+    for (language, expected_message, copy_button) in [
+        (
+            AppLanguage::English,
+            "3D floor atlas loaded with fallback colors for these textures: missing_tile, decode_error_tile",
+            "Copy 3D diagnostic",
+        ),
+        (
+            AppLanguage::TraditionalChinese,
+            "3D 地表圖集已載入，但以下材質使用替代色：missing_tile, decode_error_tile",
+            "複製 3D 診斷",
+        ),
+    ] {
+        let layer = against_rome_textures::terrain_layer::TerrainLayer {
+            width: 128,
+            height: 128,
+            argb: vec![0xFF12_3456; 128 * 128],
+            green: vec![0; 128 * 128],
+        };
+        let atlas = against_rome_textures::FloorTextureAtlas::create_with_decoder(
+            ["available_tile", missing[0], missing[1]],
+            |name| (name == "available_tile").then(|| layer.clone()),
+        )
+        .unwrap();
+        assert_eq!(atlas.count(), 3);
+        assert_eq!(atlas.unavailable_names(), missing);
+
+        let mut app = EditorApp::initial_state();
+        app.view_mode = ViewMode::View3D;
+        app.set_app_language(language);
+        app.install_3d_floor_atlas(atlas);
+        assert_eq!(app.status_message, expected_message);
+        assert!(app.status_is_error);
+
+        let ctx = egui::Context::default();
+        let output = gui_frame(&mut app, &ctx, vec![]);
+        assert!(gui_find(&output, &expected_message).is_some());
+        let button = gui_find(&output, copy_button).expect("partial 3D diagnostic copy button");
+        gui_frame(&mut app, &ctx, gui_pointer(button.center(), true));
+        let output = gui_frame(&mut app, &ctx, gui_pointer(button.center(), false));
+        assert_eq!(output.platform_output.copied_text, expected_message);
+
+        let other_language = if language == AppLanguage::English {
+            AppLanguage::TraditionalChinese
+        } else {
+            AppLanguage::English
+        };
+        app.set_app_language(other_language);
+        assert_eq!(
+            app.status_message,
+            EditorApp::floor_atlas_partial_fallback_message(
+                &missing.map(str::to_string),
+                other_language == AppLanguage::English,
+            )
+        );
+
+        let complete_atlas = against_rome_textures::FloorTextureAtlas::create_with_decoder(
+            &["available_tile"],
+            |_| Some(layer.clone()),
+        )
+        .unwrap();
+        app.install_3d_floor_atlas(complete_atlas);
+        assert!(app.status_message.is_empty());
+        assert!(!app.status_is_error);
+    }
+}
+
+#[test]
 fn three_d_material_diagnostic_is_only_shown_in_3d_view() {
     let mut app = EditorApp::initial_state();
     app.set_app_language(AppLanguage::TraditionalChinese);
@@ -166,6 +235,19 @@ fn three_d_material_fallback_status_tracks_language_switches() {
 
 #[test]
 fn successful_3d_floor_atlas_clears_only_exact_fallback_statuses() {
+    let layer = against_rome_textures::terrain_layer::TerrainLayer {
+        width: 128,
+        height: 128,
+        argb: vec![0xFF12_3456; 128 * 128],
+        green: vec![0; 128 * 128],
+    };
+    let full_atlas = || {
+        against_rome_textures::FloorTextureAtlas::create_with_decoder(
+            vec!["4BA___51"],
+            |_| Some(layer.clone()),
+        )
+        .unwrap()
+    };
     for (language, fallback) in [
         (
             AppLanguage::English,
@@ -179,10 +261,7 @@ fn successful_3d_floor_atlas_clears_only_exact_fallback_statuses() {
         let mut app = EditorApp::initial_state();
         app.set_app_language(language);
         app.status_message = fallback.into();
-        app.install_3d_floor_atlas(
-            against_rome_textures::FloorTextureAtlas::create_with_decoder(vec!["4BA___51"], |_| None)
-                .unwrap(),
-        );
+        app.install_3d_floor_atlas(full_atlas());
         assert!(app.viewport_3d.floor_atlas.is_some());
         assert!(app.status_message.is_empty());
         assert!(!app.status_is_error);
@@ -192,10 +271,7 @@ fn successful_3d_floor_atlas_clears_only_exact_fallback_statuses() {
     let unrelated = "3D floor textures unavailable / 3D 地表材質無法載入：invalid archive";
     app.status_message = unrelated.into();
     app.status_is_error = true;
-    app.install_3d_floor_atlas(
-        against_rome_textures::FloorTextureAtlas::create_with_decoder(vec!["4BA___51"], |_| None)
-            .unwrap(),
-    );
+    app.install_3d_floor_atlas(full_atlas());
     assert_eq!(app.status_message, unrelated);
     assert!(app.status_is_error);
 }
@@ -226,6 +302,7 @@ fn repaired_floortex_archive_at_same_path_retries_atlas_load() {
     let archive_path = root.join("floortex.dat");
     fs::write(&archive_path, b"broken archive").unwrap();
     let mut app = EditorApp::initial_state();
+    app.set_app_language(AppLanguage::English);
     app.loaded_map_path = Some(map_dir);
     app.refresh_3d_floor_atlas();
     assert!(app.viewport_3d.floor_atlas.is_none());
@@ -246,8 +323,14 @@ fn repaired_floortex_archive_at_same_path_retries_atlas_load() {
     .unwrap();
     app.refresh_3d_floor_atlas();
     assert!(app.viewport_3d.floor_atlas.is_some());
-    assert!(app.status_message.is_empty());
-    assert!(!app.status_is_error);
+    assert_eq!(
+        app.status_message,
+        EditorApp::floor_atlas_partial_fallback_message(
+            &["4BA___51".to_string()],
+            true,
+        )
+    );
+    assert!(app.status_is_error);
 
     fs::remove_dir_all(root).unwrap();
 }
