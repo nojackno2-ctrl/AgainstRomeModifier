@@ -1,3 +1,9 @@
+## 2026-10-26 Agy：自主批次 #29 劇情事件節點圖（Visual Event Graph）易用性三大改進（已驗證）
+- 1. 節點自動整齊排列（apps/against-rome-editor/src/event_graph/ui.rs:141-260、600-605）：工具列新增「整齊排列 (Tidy / Auto-Layout)」按鈕與 `auto_layout` 演算法，依觸發器（X=360）、連入條件（X=60）與執行動作鏈（X=660+260*n）階層式分欄定位，孤立節點整齊排列於下方網格，杜絕節點重疊與手動拖曳錯位，新增 `test_event_graph_auto_layout` 無頭測試。
+- 2. 畫布全圖自適應縮放聚焦（apps/against-rome-editor/src/event_graph/ui.rs:114-139、609-612、700-710）：原「重設視角」僅固定至 zoom=1.0、pan=(100, 100)，大圖或多節點常超出可見範圍；現新增 `zoom_to_fit` 與「符合全圖 (Fit View)」按鈕（及畫布焦點下 `F` / `Home` 快捷鍵），動態計算所有節點包圍盒並置中縮放適應（0.25..2.5 倍），新增 `test_event_graph_zoom_to_fit` 無頭測試。
+- 3. 節點行內即時驗證錯誤與警告徽章（apps/against-rome-editor/src/event_graph/ui.rs:94-112、780-870）：原診斷僅列於畫布底部文字清單且節點本體無錯誤標示；現引入 `node_diagnostics`、`node_has_error`、`node_has_warning`，在節點標題列繪製行內徽章（❌ 錯誤數 / ⚠ 警告數）、嚴重錯誤鮮紅粗外框、警告琥珀橘外框與游標懸停即時診斷 tooltip；畫布支援鍵盤 `Delete` / `Backspace` 快速刪除選取節點，新增 `test_event_graph_node_diagnostics_and_inline_error_badges` 與 `test_event_graph_keyboard_delete_and_shortcuts` 無頭測試。
+- 4. 驗證：執行 `cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/agy-target`（日誌 `re_workspace/agy-batch-29-test.log`）：287 組共 **2,659 passed／0 failed／25 ignored**（exit 0，無任何失敗）；`ui_literal_sweep` 與 `guide_shortcuts` 均通過；`git diff --check` 通過；更新使用者指南第 5.4 與 9.1 節。未 stage／commit，遊戲目錄唯讀，AGENTS.md／README.md 既有變更嚴格保留。
+
 ## 2026-10-26 Codex：批次 #28 快取審查與效能（已驗證）
 - 審查 b1cf474：阻擋清單含未版本化草稿與磁碟／權限依賴，改為每次顯示重新驗證；Safe Save 仍直接檢查。導航補類型名稱、載入來源、實際物件與資產戳記，關閉時清除舊路線；新增 Family 粒子定義列快取及重算測試。完整輸入清單見 docs/cache-review-batch-28.md。cargo check／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 均 exit 0；cargo test 同參數加 --no-fail-fast：287 組，2655 passed／0 failed／25 ignored，exit 0（install_resource_discovery 12 passed，環境失敗 0），日誌 re_workspace/codex-batch-28-test.log。資產回歸測試曾誤用 root（應為 root/game），已修正並通過重驗。未 stage／commit；保留原有 AGENTS.md／README.md 變更；遊戲目錄唯讀。
 ## 2026-10-26 Agy：自主批次 #27 大地圖效能與重複計算快取（導航尋路、安全存檔阻擋清單與設計檢查報告）（已驗證）
