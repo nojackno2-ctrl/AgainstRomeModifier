@@ -3,7 +3,9 @@
 - 無視窗 egui 渲染測試設定 257 頂點／64 tile 地形、LOD 4，只阻擋 (129,129)；中心取樣 (136,136) 為通行，覆蓋範圍掃描仍需產生紅色 polygon。聚焦測試通過 1 passed；app crate `cargo check`、`cargo build` 及 `git diff --check` 通過，均使用 `--locked --offline --target-dir re_workspace/collision-shading-target`。`cargo fmt --all -- --check` 顯示大量 workspace 格式差異，未執行全 repo 格式化。
 - 隨後依序執行 `cargo check --workspace --locked --offline`、`cargo test --workspace --locked --offline --no-fail-fast`、`cargo build --workspace --locked --offline`（target-dir=`re_workspace/codex-wave-dest-target`），全部 exit 0；測試輸出含既有 unused 警告，沒有失敗。
 - Collision 工具列新增游標下的 collision cell 索引及阻擋／可通行狀態。讀值以 `TerrainRayPicker::try_pick_point` 的 world hit，依地形範圍 floor 映射；測試射線命中 (32.375,32.375) 對應 (129,129)，(32.5,32.5) 對應 (130,130)，並驗證繁中／英文狀態文字。更新後該定向測試通過（1 passed）；先前完整 workspace check/test/build 全數通過，app crate check/build 及 `git diff --check` 亦通過。
-- 目前已驗證 CPU picker 座標→通行格索引→狀態文字，並有 egui paint-output 著色證據；尚未驗證實際 GPU framebuffer 像素，也未用桌面滑鼠截圖確認紅色 LOD 區域與游標格在實際畫面一致。
+- CPU painter 測試驗證 LOD 4 單一偏心阻擋格的覆蓋 polygon；2026-10-26 原生桌面驗收亦在 TEMP ENDL_005 以記憶體內阻擋筆畫，確認 LOD 2 與 LOD 4 的實際 GPU 畫面均有紅色遮罩。LOD 2 點擊紅區回報圖塊 (31,30)、通行格 (124,123) 阻擋；LOD 4 紅區亦可見。關閉均選擇捨棄，未執行 Safe Save，TEMP collision.bmp 長度 196662 bytes、時間戳維持 2026-10-26 10:57:54 UTC。
+
+- 2026-10-26 Codex：1280×830 實際視窗驗收到 LOD 4 控制項原被長標籤擠出畫面，雖在可及性樹存在但螢幕不可選。將 LOD 按鈕縮為 `1 / 2 / 4`，以中英 hover tooltip 保留「精細／中等／快速」說明；新建置截圖確認三個數值皆可見，點選 `4` 後快速網格生效，並以 TEMP 記憶體阻擋筆畫驗證 LOD 4 紅色 Collision polygon。依序 `cargo check --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target`、`cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target`（編輯器 851 passed／0 failed／6 ignored，workspace exit 0）、`cargo build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target` 均 exit 0；僅有既有 unused warnings。測後捨棄筆畫並確認 TEMP collision.bmp 長度／時間戳不變。`git diff --check` 通過。
 
 ## 2026-10-26 Codex：遊戲黑畫面唯讀診斷（部分證據）
 - 依既有授權啟動安裝版 `Against_Rome.exe`（PID 15568，安裝目錄作為 cwd），標題正常、`Responding=True`。程序載入系統 `ddraw.dll`、NVIDIA `nvd3dum.dll`、遊戲 `ds_andll.dll` 與系統 `Quartz.dll`；安裝版 SHA-256 仍為 `6AC85239EA3B87A4357ED8CE09A1818E68C09FE3C00E8D98831F473577B719BF`。

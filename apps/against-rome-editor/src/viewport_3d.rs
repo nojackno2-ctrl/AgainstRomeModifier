@@ -1369,21 +1369,12 @@ impl Viewport3d {
             // LOD Mesh Step selection
             ui.separator();
             ui.label(tl(self.english, "精細度：", "LOD:"));
-            ui.selectable_value(
-                &mut self.mesh_lod_step,
-                1,
-                tl(self.english, "1 (精細)", "1 (Fine)"),
-            );
-            ui.selectable_value(
-                &mut self.mesh_lod_step,
-                2,
-                tl(self.english, "2 (中等)", "2 (Med)"),
-            );
-            ui.selectable_value(
-                &mut self.mesh_lod_step,
-                4,
-                tl(self.english, "4 (快速)", "4 (Fast)"),
-            );
+            ui.selectable_value(&mut self.mesh_lod_step, 1, "1")
+                .on_hover_text(tl(self.english, "精細網格", "Fine mesh"));
+            ui.selectable_value(&mut self.mesh_lod_step, 2, "2")
+                .on_hover_text(tl(self.english, "中等網格", "Medium mesh"));
+            ui.selectable_value(&mut self.mesh_lod_step, 4, "4")
+                .on_hover_text(tl(self.english, "快速網格", "Fast mesh"));
 
             // Object count status
             ui.separator();
@@ -3338,9 +3329,6 @@ mod troop_tests {
                     "Collision",
                     "Textured",
                     "LOD:",
-                    "1 (Fine)",
-                    "2 (Med)",
-                    "4 (Fast)",
                 ] {
                     assert!(!text.contains(literal), "未翻譯：{literal}\n{text}");
                 }
