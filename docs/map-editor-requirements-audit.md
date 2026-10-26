@@ -2,7 +2,7 @@
 
 ## 2026-10-26 最新 Rust 驗收補記
 
-- Phase 5 fallback 診斷與真實缺檔桌面路徑已驗證：在 TEMP ENDL_005 副本（無 `floortex.dat`）以新建置切至 3D「材質貼圖」，狀態列顯示「找不到 3D 地表材質檔 floortex.dat；目前以地形起伏色彩替代顯示。」畫面呈起伏色彩替代；TEMP 與安裝來源 55 檔 SHA-256 全相同，未 Safe Save。雙語訊息測試及 workspace check／test／build 通過（editor app 856 passed／6 ignored）。只驗證編輯器 UI／替代繪製路徑；遊戲內效果仍未驗。詳見 `AI_HANDOFF.md` 2026-10-26 桌面驗收紀錄。
+- Phase 5 fallback 診斷與真實缺檔桌面路徑已驗證：在 TEMP ENDL_005 副本（無 `floortex.dat`）以新建置切至 3D「材質貼圖」，狀態列顯示「找不到 3D 地表材質檔 floortex.dat；目前以地形起伏色彩替代顯示。」畫面呈起伏色彩替代；TEMP 與安裝來源 55 檔 SHA-256 全相同，未 Safe Save。雙語訊息測試及 workspace check／test／build 通過（editor app 856 passed／6 ignored）。鍵盤平移／縮放與 2D→3D 返回操作後，fallback 仍可見且未產生 dirty；遊戲內效果仍未驗。詳見 `AI_HANDOFF.md` 2026-10-26 桌面驗收紀錄。
 - AI 工作室已接入 `AiMapPlanPreviewBuilder`，方案審查新增目前地形／水域視覺圖、變更統計及材質／阻擋／拒絕／保護區圖例；方案與底圖來源未變時重用 texture，來源變更後重建。無視窗 UI 測試通過：預覽未改高度、碰撞、dirty 或 undo，底圖修改後快取更新。2026-10-26 實際桌面以 Ollama `laguna-xs-2.1:latest` 完成 3 角色企劃、含湖泊／河流水深的預覽、套用、Safe Save、關閉重開；詳見 `AI_HANDOFF.md` 最新紀錄。真實桌面完整互動已驗，高 DPI／多螢幕仍待驗收。
 - AI 工作室「連線並列出模型」改由背景 worker 執行，UI 逐幀輪詢；端點 URL 納入方案輸入指紋，切換端點後會丟棄舊模型清單回應並清除舊方案。mock 延遲傳輸及端點切換測試通過；接入視覺預覽後 AI 工作室 21 項測試通過；完整 workspace 序列測試、check、build 通過。實際 Ollama 網路延遲／桌面操作仍需 live／GUI 驗收。
 - 新增物件／事件整合回歸：Safe Save 將新放置主屋轉為 DATA 預建物件，同時儲存以該物件 UUID 為目標的矩形區域勝利事件；重載後核對 DATA slot／UID、UUID、事件條件與勝利動作均一致，且 BCI 可解析。聚焦測試 1 passed、workspace check/build 通過、編輯器 app 852 passed／6 ignored。完整 workspace 測試僅 `ollama_wire_tests` 兩項固定連接埠測試在並行執行時互相干擾；該測試檔序列隔離重跑 16 passed。遊戲內觸發未驗證。詳見 `AI_HANDOFF.md` 2026-10-26 DATA 建築區域勝利事件整合重載。
