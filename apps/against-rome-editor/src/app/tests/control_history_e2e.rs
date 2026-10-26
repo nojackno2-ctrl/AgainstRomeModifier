@@ -126,6 +126,59 @@ fn batch44_ui_water_drag_preview_only_then_persist_sync_undo_save_reload() {
 }
 
 #[test]
+fn water_surface_slider_clamps_bed_to_a_paintable_height() {
+    assert_eq!(super::super::max_water_bed(0.0), 0);
+    assert_eq!(super::super::max_water_bed(0.5), 0);
+    assert_eq!(super::super::max_water_bed(4.0), 3);
+    assert_eq!(super::super::max_water_bed(4.1), 4);
+    assert_eq!(super::super::max_water_bed(255.0), 254);
+
+    let (mut app, dir, ctx) = setup();
+    app.active_tool = ActiveTool::Water;
+    app.water_surface = 0.0;
+    app.water_bed = 254;
+    frame(&mut app, &ctx, 0, vec![]);
+    assert_eq!(app.water_bed, 0, "零水面時床面只能為零");
+    app.water_surface = 220.0;
+    app.water_bed = 200;
+    frame(&mut app, &ctx, 0, vec![]);
+    let out = frame(&mut app, &ctx, 0, vec![]);
+    let label = gui_find(&out, "Water surface (G units)").expect("水位滑桿");
+    let start = egui::pos2(50.0, label.center().y);
+    frame(&mut app, &ctx, 0, gui_pointer(start, true));
+    for dx in [10.0, 20.0, 30.0] {
+        frame(&mut app, &ctx, 0, vec![egui::Event::PointerMoved(start + egui::vec2(dx, 0.0))]);
+    }
+    frame(&mut app, &ctx, 0, gui_pointer(start + egui::vec2(30.0, 0.0), false));
+
+    assert!(
+        app.water_surface < 220.0,
+        "水面滑桿必須實際降低水位：{}",
+        app.water_surface
+    );
+    assert!(
+        app.water_surface >= 4.0,
+        "測試需保留水域筆刷啟用條件：{}",
+        app.water_surface
+    );
+    assert!(app.water_bed < 200, "降低水位後原床面必須被夾限：{}", app.water_bed);
+    assert!(app.water_bed <= super::super::max_water_bed(app.water_surface));
+    let before = app.session.as_ref().unwrap().heights().to_vec();
+    let bed = app.water_bed;
+    let surface = app.water_surface;
+    let stroke = app
+        .session
+        .as_mut()
+        .unwrap()
+        .paint_water(2.0, 2.0, 1.0, 1, bed, surface)
+        .expect("滑桿組合應可建立水域筆刷筆畫");
+    assert!(!stroke.heights.is_empty());
+    assert_ne!(app.session.as_ref().unwrap().heights(), before.as_slice());
+    assert!(app.session.as_mut().unwrap().commit_stroke());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn batch44_ui_map_properties_checkbox_and_original_readonly() {
     let (mut app, dir, ctx) = setup();
     app.map_properties_open = true;

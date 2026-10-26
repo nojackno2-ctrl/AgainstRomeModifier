@@ -323,6 +323,14 @@ pub enum TerrainBulkAction {
     Flat,
 }
 
+/// Highest integer bed height accepted by `TerrainSession::paint_water` for this surface.
+fn max_water_bed(surface: f32) -> u8 {
+    if !surface.is_finite() || surface <= 0.0 {
+        return 0;
+    }
+    ((surface.ceil() as i32) - 1).clamp(0, 254) as u8
+}
+
 impl EditorApp {
     fn floor_atlas_fallback_message(english: bool) -> &'static str {
         if english {
@@ -12666,12 +12674,22 @@ impl EditorApp {
                     }
                     if self.active_tool == ActiveTool::Water {
                         let water_history = self.capture_water_control();
-                        ui.add(
-                            egui::Slider::new(&mut self.water_surface, 0.0..=255.0)
-                                .text("Water surface (G units)"),
-                        );
+                        let surface_changed = ui
+                            .add(
+                                egui::Slider::new(&mut self.water_surface, 0.0..=255.0)
+                                    .text("Water surface (G units)"),
+                            )
+                            .changed();
                         self.finish_control_edit(ctx, water_history);
-                        ui.add(egui::Slider::new(&mut self.water_bed, 0..=254).text("Bed height"));
+                        if surface_changed {
+                            self.water_bed = self.water_bed.min(max_water_bed(self.water_surface));
+                        }
+                        let max_bed = max_water_bed(self.water_surface);
+                        self.water_bed = self.water_bed.min(max_bed);
+                        ui.add(
+                            egui::Slider::new(&mut self.water_bed, 0..=max_bed)
+                                .text("Bed height"),
+                        );
                         ui.label(tr(lang, "Local excavation/blocking; set game water level separately.", "局部挖掘／阻擋；遊戲水位需另外設定。"));
                         ui.label(if lang == AppLanguage::English {
                             format!("World water: {:.2}; Heightmapstep: {}", self.water_surface * self.height_step, self.height_step)

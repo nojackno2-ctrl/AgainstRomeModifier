@@ -1,3 +1,7 @@
+## 2026-10-27 Codex / GPT-6 Luna：水域床面滑桿契約修正
+- `apps/against-rome-editor/src/app.rs` 的床面高度上限現在依水面計算為最大整數 `bed < surface`；水面降低時立即夾限目前床面值，UI 不再提供核心 `paint_water` 會拒絕的組合。另保留既有水位最低 4 的工具限制，該門檻的遊戲規則依據仍待確認。
+- `control_history_e2e::water_surface_slider_clamps_bed_to_a_paintable_height` 涵蓋水位邊界、零水位 UI frame、egui 拖低水位、床面夾限，並以受限值實際產生改變高度的水域筆畫。定向案例 1 passed；`cargo check --workspace --locked --offline --target-dir re_workspace/codex-water-bed-fix`、完整序列 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-water-bed-fix -- --test-threads=1 --quiet`（editor app 886 passed／6 ignored，workspace 無失敗）、`cargo build --workspace --locked --offline --target-dir re_workspace/codex-water-bed-fix` 均通過。僅既有 unused 警告；`git diff --check` 通過。未做桌面／遊戲內水域驗收，整體目標未完成。
+
 ## 2026-10-27 Codex：3D Ramp Safe Save 與重載桌面驗收
 - 先備份 TEMP `ENDL_005`（64 檔，SHA-256 基準），以 3D viewport 裸地形完成 Ramp `(46,200)`→`(196,58)`，UI 顯示 `Ramp applied: 1283 height samples modified.`。Safe Save 首次依預期因 Wave_01／Wave_02／自然物件 wave 缺移動目的地而顯示 playability warnings；確認只對 TEMP 測試副本繼續後，UI 回報 `Saved safely in one transaction (6 files, 0 cache deletions).`。再按 Load Folder，UI 回報已載入同一路徑，重載無未儲存標記。未啟動遊戲。
 - Safe Save 新建的 3 個 `.arm_backup.*` 交易回復檔未刪除，移至同一 TEMP 備份根目錄 `safe-save-recovery-artifacts` 保留。將 64 檔基準覆回測試副本並重新載入後，來源／副本 SHA-256 差異 0；3 個交易備份另行保存。安裝目錄未觸碰。
