@@ -1,6 +1,7 @@
-## 2026-10-26 Codex：接入 3D 地表紋理圖集
-- `Viewport3d` 已具備 `FloorTextureAtlas` 渲染能力但 app 未接線。現在切入 3D 時沿用材質 session 單次載入地圖 `boden.txt`，依 tile 名稱集合建立 atlas，從地圖祖先目錄尋找 `floortex.dat`；地圖／材質修訂不變時不重建。無檔案或載入錯誤則維持 fallback；錯誤狀態會顯示路徑及原因。
-- 驗證：`cargo check --workspace --locked --offline --target-dir re_workspace/codex-floor-atlas-target`、`cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-floor-atlas-target`、`cargo build --workspace --locked --offline --target-dir re_workspace/codex-floor-atlas-target` 與 `git diff --check` 均 exit 0；編輯器 app 851 passed／0 failed／6 ignored。未做原生 GPU 視覺驗收，需後續以有 `floortex.dat` 的地圖確認實際貼圖與 atlas 載入耗時。
+## 2026-10-26 Codex：接入並驗收 3D 地表紋理圖集
+- `Viewport3d` 已接上 app 載入流程：切入 3D 時載入地圖材質 session，依去重 tile 名稱從地圖祖先目錄的 `floortex.dat` 建立 atlas。快取以地圖、材質修訂與封存檔路徑為鍵，只在來源變動時重建；換圖／空白圖會清除舊 atlas。缺少素材或讀取錯誤維持 fallback。
+- 實際桌面驗收：將唯讀安裝封存檔複製到 TEMP 驗收遊戲根目錄（未改安裝目錄或地圖）；載入 TEMP ENDL_005 後，3D HUD 顯示「圖集：3 個圖塊」，切到「材質貼圖」可見砂地／草地 GPU 紋理。未執行筆刷或 Safe Save，地圖未改。首次無封存檔時確認 fallback；複製封存檔後重新載入，修正快取對同路徑換圖及 archive 路徑變更的失效處理。
+- 依序 `cargo check --workspace --locked --offline --target-dir re_workspace/codex-floor-atlas-target`、`cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-floor-atlas-target`、`cargo build --workspace --locked --offline --target-dir re_workspace/codex-floor-atlas-target` 與 `git diff --check` 均 exit 0；編輯器 app 851 passed／0 failed／6 ignored。材質互動筆刷效能與多螢幕 DPI 仍未驗收。
 ## 2026-10-26 GPT-6 Luna：3D 通行遮罩繪製、LOD 與游標格定位
 - `ShadingMode::Collision` 原本每個 LOD 四邊形只取中心通行格；高 LOD 可能漏掉四邊形內的阻擋格。現改為掃描四邊形覆蓋的 collision 區間，任一格阻擋即將該四邊形染紅。
 - 無視窗 egui 渲染測試設定 257 頂點／64 tile 地形、LOD 4，只阻擋 (129,129)；中心取樣 (136,136) 為通行，覆蓋範圍掃描仍需產生紅色 polygon。聚焦測試通過 1 passed；app crate `cargo check`、`cargo build` 及 `git diff --check` 通過，均使用 `--locked --offline --target-dir re_workspace/collision-shading-target`。`cargo fmt --all -- --check` 顯示大量 workspace 格式差異，未執行全 repo 格式化。

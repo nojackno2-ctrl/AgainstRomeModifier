@@ -204,7 +204,7 @@ pub struct EditorApp {
     pub modifier: ModifierUi,
     pub viewport_3d: Viewport3d,
     /// Game archive and map material names used to build the current 3D floor atlas.
-    floor_atlas_source: Option<(PathBuf, u64)>,
+    floor_atlas_source: Option<(PathBuf, u64, Option<PathBuf>)>,
     pub tech_doc: TechDocUi,
     pub minimap: MinimapUi,
     pub(crate) design_check: crate::design_check_ui::DesignCheckUi,
@@ -270,7 +270,11 @@ impl EditorApp {
             }
         }
         let revision = self.textures.material_revision();
-        let source = (map_path.clone(), revision);
+        let archive_path = map_path
+            .ancestors()
+            .map(|parent| parent.join("floortex.dat"))
+            .find(|path| path.is_file());
+        let source = (map_path.clone(), revision, archive_path.clone());
         if self.floor_atlas_source.as_ref() == Some(&source) {
             return;
         }
@@ -289,10 +293,6 @@ impl EditorApp {
             self.viewport_3d.set_floor_atlas(None);
             return;
         }
-        let archive_path = map_path
-            .ancestors()
-            .map(|parent| parent.join("floortex.dat"))
-            .find(|path| path.is_file());
         let Some(archive_path) = archive_path else {
             self.viewport_3d.set_floor_atlas(None);
             return;
@@ -1263,6 +1263,8 @@ impl EditorApp {
         let mut loaded_camera = CampaignUi::default();
         loaded_camera.load_map_camera(&path)?;
         self.ambience.load_from_map(&path)?;
+        self.floor_atlas_source = None;
+        self.viewport_3d.set_floor_atlas(None);
         self.reset_journal_epoch();
         self.save_blockers_open = false;
         self.save_focus_nature = false;
@@ -1326,6 +1328,8 @@ impl EditorApp {
     }
 
     fn install_blank_map(&mut self, size: usize) {
+        self.floor_atlas_source = None;
+        self.viewport_3d.set_floor_atlas(None);
         self.reset_journal_epoch();
         self.recovery.offer = None;
         self.recovery.last = None;
