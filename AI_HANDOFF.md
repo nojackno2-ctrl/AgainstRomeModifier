@@ -1,3 +1,9 @@
+## 2026-10-27 Codex：空白場景初始化檔案報告（程式與 workspace 驗證完成）
+- `BlankMapContent::reset_staging_directory_with_report` 依實際待寫 DATA 清單回報重設檔案、未重設的所有來源 DATA 檔、保留 SDL、重建的腳本及初始化的劇本文件；原 `reset_staging_directory` API 保留包裝。建置結果傳遞該報告，Maps「最近建置」可展開查看並明示保留資料與空白開局的遊戲內相容性未驗。
+- 新增 `maps_tests` staging/build 報告斷言及 `experimental_blank_wizard_starter_save_reload_design_check` 建置回報檢查。修正清單納入所有 DATA 副檔名並增加 `notes.bin` 保留案例。聚焦 staging、builder、app workflow 測試各 1 passed；`cargo check --workspace --locked --offline --target-dir re_workspace/codex-phase3-event-target`、`cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-phase3-event-target -- --test-threads=1 --quiet`、`cargo build --workspace --locked --offline --target-dir re_workspace/codex-phase3-event-target` 均 exit 0；editor app 861 passed／6 ignored。`cargo fmt --all --check` 失敗並列出大量 workspace 格式差異；僅檢查、未格式化或重寫檔案。
+- 指定 GPT-6 Luna 的唯讀盤點成功；後續 GPT-6 Luna CLI 實作委派因 child shell 兩次 `helper_unknown_error: setup refresh had errors` 啟動失敗、沒有讀寫 repo。父端直接接手完成同一範圍；沒有改用其他委派模型。
+- 邊界：清單表示初始化程式實際處理／未處理哪些檔案，不證明保留 DATA 或 SDL 的遊戲相容性，也不證明空白地圖可以開局。遊戲內仍待黑畫面問題排除後驗收。
+
 ## 2026-10-26 Codex：Phase 3 跨部族／隊伍／事件 Safe Save 重載（合成測試已驗證）
 - 僅修改 `apps/against-rome-editor/src/app/tests/spawn_save_tests.rs` 與本交接；保留既有 `AGENTS.md`／`README.md`（前後 SHA-256 一致）及其他變更，未暫存、commit／push，未存取安裝遊戲。Codex CLI 新增測試，Agy 唯讀審查，父端核對 diff 並執行驗證。
 - 既有 9 個 module 案例涵蓋德系 DATA、區域勝利、無模板 fallback、編輯與回滾；新增僅 1 個 `four_tribes_all_team_slots_and_squad_targets_survive_two_safe_save_reload_cycles`，補同一交易內四部族各 team 0..8 的 36 座主堡與 team 0..7／count 7 的 8 支 script squad。44 個永久 UUID 各對應存活→勝利及死亡→失敗，共 88 個事件；德系 9 筆 DATA slot／UID／型別／隊伍／位置正確，非德系 27 座無模板主堡及 8 支部隊維持 script-only、無 DATA binding。兩輪全新 app 重載驗證 SCENARIO、active DATA bindings、事件與原 UUID 一致；從 arm_original 帶 active bindings 重編 BCI 與磁碟逐位元組一致，正式地圖檔案兩輪穩定。共用 fixture 與產品邏輯未改。

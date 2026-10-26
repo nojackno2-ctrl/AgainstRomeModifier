@@ -592,6 +592,10 @@ fn map_bytes(map: &std::path::Path) -> std::collections::BTreeMap<PathBuf, Vec<u
 fn experimental_blank_wizard_starter_save_reload_design_check() {
     let root = workflow_fixture("blank_e2e");
     let app = wizard_map(&root, 5, true);
+    let reset_report = &app.maps.blank_last_result.as_ref().unwrap().reset_report;
+    assert!(reset_report.reset_data_files.contains(&"DATA/objects.dat".to_string()));
+    assert!(reset_report.reset_data_files.contains(&"DATA/position.dat".to_string()));
+    assert!(reset_report.generated_script_files.contains(&"SCRIPT/ak_level.bci".to_string()));
     let map = app.loaded_map_path.clone().unwrap();
     let doc = app.scenario.document().clone();
     assert!(doc.spawns.iter().any(|s| s.prebuilt && s.alias == "GER_HAU00"));

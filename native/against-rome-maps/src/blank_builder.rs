@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use against_rome_scenario::model::ScenarioDocument;
-use crate::blank_content::BlankMapContent;
+use crate::blank_content::{BlankMapContent, BlankMapResetReport};
 use crate::catalog::EndlessMapInfo;
 use crate::cloner::EndlessMapCloner;
 use crate::custom_map::CustomMapManifest;
@@ -164,6 +164,7 @@ pub struct BlankMapBuildResult {
     pub starter_kit_applied: bool,
     pub starter_spawns_count: usize,
     pub files_created: Vec<String>,
+    pub reset_report: BlankMapResetReport,
 }
 
 /// Summary of disk artifacts verified after building a blank map.
@@ -317,6 +318,7 @@ pub struct BuildMetrics {
     pub representative_texture: String,
     pub starter_spawns_count: usize,
     pub files_created: Vec<String>,
+    pub reset_report: BlankMapResetReport,
 }
 
 pub struct BlankMapBuilder;
@@ -369,6 +371,7 @@ impl BlankMapBuilder {
             starter_kit_applied: spec.starter_kit.is_some(),
             starter_spawns_count: metrics.starter_spawns_count,
             files_created: metrics.files_created,
+            reset_report: metrics.reset_report,
         })
     }
 
@@ -512,7 +515,7 @@ impl BlankMapBuilder {
         }
 
         // Reset all native binary pools, scenarios, and scripts
-        BlankMapContent::reset_staging_directory(directory)?;
+        let reset_report = BlankMapContent::reset_staging_directory_with_report(directory)?;
 
         // If starter kit was requested, apply it to arm_scenario.json
         let mut starter_spawns_count = 0;
@@ -566,6 +569,7 @@ impl BlankMapBuilder {
             representative_texture,
             starter_spawns_count,
             files_created,
+            reset_report,
         })
     }
 

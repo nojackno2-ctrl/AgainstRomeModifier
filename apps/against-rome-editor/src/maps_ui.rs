@@ -974,6 +974,39 @@ impl MapsUi {
             ui.label(format!("{}: {}", tl(self.english, "路徑", "Path"), res.map_path.display()));
             ui.label(format!("{} {} | {} {}", tl(self.english, "套用地形高度:", "Applied height:"), res.applied_height, tl(self.english, "代表性材質:", "Representative texture:"), res.representative_texture));
             ui.label(format!("{} {} ({} {})", tl(self.english, "起始聚落配置:", "Starter kit:"), res.starter_kit_applied, tl(self.english, "生成物件數:", "Spawns:"), res.starter_spawns_count));
+            ui.collapsing(tl(self.english, "檢視空白初始化檔案報告", "Inspect blank initialization file report"), |ui| {
+                let report = &res.reset_report;
+                ui.label(format!("{} ({})", tl(self.english, "已重設的 DATA 檔", "Reset DATA files"), report.reset_data_files.len()));
+                for path in &report.reset_data_files {
+                    ui.small(path);
+                }
+                ui.add_space(4.0);
+                ui.label(format!("{} ({})", tl(self.english, "沿用範本且未由空白初始化重設的 DATA 檔案", "Template DATA files not reset by blank initialization"), report.preserved_data_files.len()));
+                if report.preserved_data_files.is_empty() {
+                    ui.small(tl(self.english, "無", "None"));
+                }
+                for path in &report.preserved_data_files {
+                    ui.small(path);
+                }
+                ui.add_space(4.0);
+                ui.label(format!("{} ({})", tl(self.english, "保留的 SDL 範本", "Preserved SDL templates"), report.preserved_sdl_templates.len()));
+                for path in &report.preserved_sdl_templates {
+                    ui.small(path);
+                }
+                ui.label(format!("{}: {}", tl(self.english, "已初始化場景文件", "Initialized scenario file"), report.initialized_scenario_file));
+                ui.label(tl(self.english, "重新建立的關卡腳本檔", "Recreated level script files"));
+                for path in &report.generated_script_files {
+                    ui.small(path);
+                }
+                ui.colored_label(
+                    Color32::YELLOW,
+                    tl(
+                        self.english,
+                        "保留的 DATA 檔案與 SDL 範本尚未證明可在遊戲內相容；空白場景開局仍未驗證。",
+                        "Compatibility of preserved DATA files and SDL templates has not been proven in game; startup on an empty scene remains unverified.",
+                    ),
+                );
+            });
         }
     }
 

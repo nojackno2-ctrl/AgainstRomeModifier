@@ -86,11 +86,30 @@ const RUNTIME_LAYOUTS: &[RuntimeSlotsLayout] = &[
 
 pub struct BlankMapContent;
 
+/// Files changed or deliberately carried forward when a blank scene is initialized.
+/// Paths are relative to the staging map root and use `/` separators for stable UI output.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BlankMapResetReport {
+    pub reset_data_files: Vec<String>,
+    pub preserved_data_files: Vec<String>,
+    pub preserved_sdl_templates: Vec<String>,
+    pub initialized_scenario_file: String,
+    pub generated_script_files: Vec<String>,
+}
+
 impl BlankMapContent {
     /// Resets an uncommitted staging copy (*.tmp_arm) for a blank map.
     /// Resets runtime pools, native objects, lights, particles, camps, and scripts,
     /// while preserving SDL settlement templates.
     pub fn reset_staging_directory(directory: &Path) -> Result<(), String> {
+        Self::reset_staging_directory_with_report(directory).map(|_| ())
+    }
+
+    /// Like `reset_staging_directory`, but also returns the exact DATA files reset and the
+    /// template files left untouched. The report is emitted only after the transaction commits.
+    pub fn reset_staging_directory_with_report(
+        directory: &Path,
+    ) -> Result<BlankMapResetReport, String> {
         let full = directory.canonicalize().unwrap_or_else(|_| directory.to_path_buf());
         let dir_name = full.file_name().and_then(|s| s.to_str()).unwrap_or("");
         if !dir_name.to_ascii_lowercase().ends_with(".tmp_arm") {
@@ -113,6 +132,9 @@ impl BlankMapContent {
         if !data_dir.is_dir() {
             return Err(format!("空白初始化缺少必要目錄 DATA ({}).", data_dir.display()));
         }
+
+        let all_data_files = matching_files(&data_dir, None, true)?;
+        let preserved_sdl_templates = matching_files(&full, Some("sdl"), true)?;
 
         // Required dedicated pool files
         for name in &["light.dat", "particle.dat", "lager.dat", "biglager.dat"] {
@@ -177,6 +199,23 @@ impl BlankMapContent {
         let biglager_bytes = reset_biglager_dat(&biglager_path)?;
         pending_writes.push((biglager_path, biglager_bytes));
 
+        let mut reset_data_files: Vec<String> = pending_writes
+            .iter()
+            .filter_map(|(path, _)| path.file_name().and_then(|name| name.to_str()))
+            .map(|name| format!("DATA/{name}"))
+            .collect();
+        sort_paths(&mut reset_data_files);
+        let reset_paths: std::collections::HashSet<String> = reset_data_files
+            .iter()
+            .map(|path| path.to_ascii_lowercase())
+            .collect();
+        let mut preserved_data_files: Vec<String> = all_data_files
+            .into_iter()
+            .map(|name| format!("DATA/{name}"))
+            .filter(|path| !reset_paths.contains(&path.to_ascii_lowercase()))
+            .collect();
+        sort_paths(&mut preserved_data_files);
+
         // Start transaction for atomic writes
         let mut rollback = FileRollbackScope::new()?;
 
@@ -200,11 +239,61 @@ impl BlankMapContent {
         )?;
 
         // Reset scripts
-        reset_scripts_directory(&full, &mut rollback)?;
+        let mut generated_script_files = reset_scripts_directory(&full, &mut rollback)?;
+        sort_paths(&mut generated_script_files);
 
         rollback.commit();
+        Ok(BlankMapResetReport {
+            reset_data_files,
+            preserved_data_files,
+            preserved_sdl_templates,
+            initialized_scenario_file: "arm_scenario.json".to_string(),
+            generated_script_files,
+        })
+    }
+}
+
+fn matching_files(root: &Path, extension: Option<&str>, recursive: bool) -> Result<Vec<String>, String> {
+    fn visit(root: &Path, current: &Path, extension: Option<&str>, recursive: bool, out: &mut Vec<String>) -> Result<(), String> {
+        let entries = fs::read_dir(current)
+            .map_err(|e| format!("讀取目錄 {} 失敗: {e}", current.display()))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("讀取目錄項目 {} 失敗: {e}", current.display()))?;
+            let path = entry.path();
+            let file_type = entry
+                .file_type()
+                .map_err(|e| format!("讀取檔案類型 {} 失敗: {e}", path.display()))?;
+            let extension_matches = extension.is_none_or(|expected| {
+                path.extension()
+                    .and_then(|value| value.to_str())
+                    .is_some_and(|value| value.eq_ignore_ascii_case(expected))
+            });
+            if file_type.is_file() && extension_matches {
+                let relative = path
+                    .strip_prefix(root)
+                    .map_err(|e| format!("整理相對路徑失敗: {e}"))?
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                out.push(relative);
+            } else if recursive && file_type.is_dir() {
+                visit(root, &path, extension, recursive, out)?;
+            }
+        }
         Ok(())
     }
+
+    let mut files = Vec::new();
+    visit(root, root, extension, recursive, &mut files)?;
+    sort_paths(&mut files);
+    Ok(files)
+}
+
+fn sort_paths(paths: &mut [String]) {
+    paths.sort_by(|left, right| {
+        left.to_ascii_lowercase()
+            .cmp(&right.to_ascii_lowercase())
+            .then_with(|| left.cmp(right))
+    });
 }
 
 fn check_reparse_points(dir: &Path) -> Result<(), String> {
@@ -567,12 +656,17 @@ fn reset_biglager_dat(path: &Path) -> Result<Vec<u8>, String> {
     pack_data(data, &original)
 }
 
-fn reset_scripts_directory(map_dir: &Path, rollback: &mut FileRollbackScope) -> Result<(), String> {
+fn reset_scripts_directory(map_dir: &Path, rollback: &mut FileRollbackScope) -> Result<Vec<String>, String> {
     let scripts_dir = find_script_dir(map_dir);
     if !scripts_dir.is_dir() {
         fs::create_dir_all(&scripts_dir)
             .map_err(|e| format!("建立 SCRIPT 目錄失敗 ({}): {e}", scripts_dir.display()))?;
     }
+    let script_prefix = scripts_dir
+        .strip_prefix(map_dir)
+        .map_err(|e| format!("整理 SCRIPT 相對路徑失敗: {e}"))?
+        .to_string_lossy()
+        .replace('\\', "/");
 
     let level_script = scripts_dir.join("ak_level.bci");
     let original_bci = if level_script.is_file() {
@@ -610,7 +704,10 @@ fn reset_scripts_directory(map_dir: &Path, rollback: &mut FileRollbackScope) -> 
         Some(rollback),
     )?;
 
-    Ok(())
+    Ok(vec![
+        format!("{script_prefix}/ak_level.arm_original"),
+        format!("{script_prefix}/ak_level.bci"),
+    ])
 }
 
 fn find_script_dir(map_dir: &Path) -> PathBuf {

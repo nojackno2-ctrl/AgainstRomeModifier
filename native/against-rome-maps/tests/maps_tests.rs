@@ -1051,9 +1051,49 @@ fn test_blank_map_content_staging_reset_and_rejections() {
     // Proper staging directory
     let staging = temp_dir.join("MAPS").join("ENDL_005.tmp_arm");
     create_full_synthetic_map(&staging);
+    fs::write(staging.join("DATA").join("faction_defaults.dat"), b"preserve-me").unwrap();
+    fs::write(staging.join("DATA").join("AiDefaults.dat"), b"preserve-too").unwrap();
+    fs::create_dir_all(staging.join("DATA").join("Extensions")).unwrap();
+    fs::write(staging.join("DATA").join("Extensions").join("legacy_pool.dat"), b"nested-preserve").unwrap();
+    fs::write(staging.join("DATA").join("notes.bin"), b"other-extension-preserve").unwrap();
 
     // Call reset
-    BlankMapContent::reset_staging_directory(&staging).unwrap();
+    let report = BlankMapContent::reset_staging_directory_with_report(&staging).unwrap();
+
+    // The inventory comes from the files actually processed and retained in this fixture.
+    assert!(report.reset_data_files.contains(&"DATA/position.dat".to_string()));
+    assert!(report.reset_data_files.contains(&"DATA/objects.dat".to_string()));
+    assert!(report.reset_data_files.windows(2).all(|pair| pair[0] <= pair[1]));
+    assert_eq!(
+        report.preserved_data_files,
+        vec![
+            "DATA/AiDefaults.dat",
+            "DATA/Extensions/legacy_pool.dat",
+            "DATA/faction_defaults.dat",
+            "DATA/notes.bin"
+        ]
+    );
+    assert_eq!(
+        report.preserved_sdl_templates,
+        vec!["Endlos_01_Siedlung01.sdl"]
+    );
+    assert_eq!(report.initialized_scenario_file, "arm_scenario.json");
+    assert_eq!(report.generated_script_files, vec![
+        "SCRIPT/ak_level.arm_original",
+        "SCRIPT/ak_level.bci",
+    ]);
+    assert_eq!(
+        fs::read(staging.join("DATA").join("faction_defaults.dat")).unwrap(),
+        b"preserve-me"
+    );
+    assert_eq!(
+        fs::read(staging.join("DATA").join("Extensions").join("legacy_pool.dat")).unwrap(),
+        b"nested-preserve"
+    );
+    assert_eq!(
+        fs::read(staging.join("DATA").join("notes.bin")).unwrap(),
+        b"other-extension-preserve"
+    );
 
     // 1. Verify positions cleared from byte 8
     let pos = fs::read(staging.join("DATA").join("position.dat")).unwrap();
@@ -1101,6 +1141,8 @@ fn test_blank_map_builder_create_and_describe() {
     // Create source template map ENDL_000
     let source_map = maps_dir.join("ENDL_000");
     create_full_synthetic_map(&source_map);
+    fs::write(source_map.join("DATA").join("faction_defaults.dat"), b"template-defaults").unwrap();
+    fs::write(source_map.join("DATA").join("AiDefaults.dat"), b"template-defaults-too").unwrap();
 
     // Add a height-dependent cache file to source
     fs::write(source_map.join("skydens.dat"), b"cache bytes").unwrap();
@@ -1115,13 +1157,30 @@ fn test_blank_map_builder_create_and_describe() {
     assert!(desc_zh.contains("清除：所有原生 DATA 物件"));
 
     // Create blank map in slot 5
-    let created = BlankMapBuilder::create(&temp_dir, "ENDL_000", 5, "My Blank Scene").unwrap();
+    let build = BlankMapBuilder::build_with_spec(
+        &temp_dir,
+        &BlankMapSpec::new("ENDL_000", 5, "My Blank Scene"),
+    )
+    .unwrap();
+    let created = &build.info;
     assert_eq!(created.slot, 5);
     assert_eq!(created.id(), "ENDL_005");
     assert!(created.is_custom);
 
     let map_dir = maps_dir.join("ENDL_005");
     assert!(map_dir.is_dir());
+
+    assert!(build.reset_report.reset_data_files.contains(&"DATA/objects.dat".to_string()));
+    assert_eq!(build.reset_report.preserved_data_files, vec![
+        "DATA/AiDefaults.dat",
+        "DATA/faction_defaults.dat",
+    ]);
+    assert!(build.reset_report.preserved_sdl_templates.contains(&"Endlos_01_Siedlung01.sdl".to_string()));
+    assert!(build.reset_report.generated_script_files.contains(&"SCRIPT/ak_level.bci".to_string()));
+    assert_eq!(
+        fs::read(map_dir.join("DATA").join("faction_defaults.dat")).unwrap(),
+        b"template-defaults"
+    );
 
     // Verify cache files deleted
     assert!(!map_dir.join("skydens.dat").exists());
