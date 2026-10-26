@@ -91,6 +91,7 @@ fn test_installed_4t_tiles_use_pixel_inferred_three_material_corners() {
     let mut rejected_both = 0usize;
     let mut adaptive_corner_hits = [0usize; 3];
     let mut stable_adaptive_corner_hits = 0usize;
+    let mut stable_16_32_tiles = Vec::new();
     let mut all_named_materials_present = 0usize;
     let mut shapes = std::collections::BTreeMap::<char, usize>::new();
     for name in &three_material_tiles {
@@ -154,6 +155,7 @@ fn test_installed_4t_tiles_use_pixel_inferred_three_material_corners() {
                         .fold(0.0, f64::max);
                     let mut adaptive_assignments = Vec::<Vec<String>>::new();
                     let mut adaptive_confidence = Vec::<bool>::new();
+                    let mut adaptive_max_distances = Vec::<f64>::new();
                     for (index, divisor) in [8usize, 16, 32].iter().enumerate() {
                         let smaller_samples = audit_corner_colors(&tile, *divisor);
                         let smaller_ids: Vec<String> = smaller_samples
@@ -180,6 +182,7 @@ fn test_installed_4t_tiles_use_pixel_inferred_three_material_corners() {
                         }
                         adaptive_assignments.push(smaller_ids);
                         adaptive_confidence.push(smaller_distinct == 3 && smaller_max_distance <= 32.0);
+                        adaptive_max_distances.push(smaller_max_distance);
                     }
                     if adaptive_confidence[0]
                         && adaptive_confidence[1]
@@ -192,6 +195,51 @@ fn test_installed_4t_tiles_use_pixel_inferred_three_material_corners() {
                             == 3
                     {
                         stable_adaptive_corner_hits += 1;
+                    }
+                    if adaptive_confidence[1]
+                        && adaptive_confidence[2]
+                        && adaptive_assignments[1] == adaptive_assignments[2]
+                        && adaptive_assignments[1]
+                            .iter()
+                            .map(|id| id.to_ascii_uppercase())
+                            .collect::<std::collections::HashSet<_>>()
+                            .len()
+                            == 3
+                    {
+                        stable_16_32_tiles.push(name.as_str());
+                    }
+                    println!(
+                        "unresolved {name}: 1/4={inferred:?} d={max_distance:.2}; 1/8={:?} d={:.2}; 1/16={:?} d={:.2}; 1/32={:?} d={:.2}",
+                        adaptive_assignments[0],
+                        adaptive_max_distances[0],
+                        adaptive_assignments[1],
+                        adaptive_max_distances[1],
+                        adaptive_assignments[2],
+                        adaptive_max_distances[2],
+                    );
+                    println!("  nearest-color map (A/B/C = {ids:?}; one sample per 8x8 pixels):");
+                    for y in (0..tile.height).step_by(8) {
+                        let row: String = (0..tile.width)
+                            .step_by(8)
+                            .map(|x| {
+                                let pixel = tile.argb[y * tile.width + x];
+                                let sample = [
+                                    ((pixel >> 16) & 0xff) as f64,
+                                    ((pixel >> 8) & 0xff) as f64,
+                                    (pixel & 0xff) as f64,
+                                ];
+                                let nearest = refs
+                                    .iter()
+                                    .enumerate()
+                                    .min_by(|(_, a), (_, b)| {
+                                        audit_dist(&sample, &a.1).total_cmp(&audit_dist(&sample, &b.1))
+                                    })
+                                    .map(|(index, _)| index)
+                                    .unwrap_or(3);
+                                char::from(b'A' + nearest as u8)
+                            })
+                            .collect();
+                        println!("  {row}");
                     }
                     let mut full_tile_counts = std::collections::BTreeMap::<String, usize>::new();
                     for pixel in &tile.argb {
@@ -252,6 +300,7 @@ fn test_installed_4t_tiles_use_pixel_inferred_three_material_corners() {
     println!("pixel gate rejection (not exactly 3 / distance > 32 / both): {rejected_non_three}/{rejected_distance}/{rejected_both}");
     println!("rejected tiles recovered by smaller corner windows 1/8, 1/16, 1/32: {:?}", adaptive_corner_hits);
     println!("tiles whose 1/8 and 1/16 corner assignments agree on three materials: {stable_adaptive_corner_hits}");
+    println!("tiles whose 1/16 and 1/32 assignments agree with the 3-material distance gate: {stable_16_32_tiles:?}");
     println!("unresolved tiles with all three named material colors present across the full tile: {all_named_materials_present}");
     assert!(corrected > 0, "pixel probing did not correct any name-derived 4T topology");
     assert!(three_material_tiles.len() - unresolved >= 308, "pixel inference coverage regressed");
