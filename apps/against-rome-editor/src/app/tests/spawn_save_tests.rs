@@ -200,6 +200,149 @@ fn bound_building_region_victory_event_survives_safe_save_and_reload() {
 }
 
 #[test]
+fn four_tribes_all_team_slots_and_squad_targets_survive_two_safe_save_reload_cycles() {
+    use against_rome_scenario::{Action, Condition, DataBindingSource, Event, ScenarioDocument};
+
+    let (mut app, root, map) = fixture("four_tribes_targets_roundtrip", &[]);
+    let houses = [
+        ("GER_HAU00", HOUSE),
+        ("ROM_HAU00", "BauRomHau00_Hauptzelt"),
+        ("KEL_HAU00", "BauKelHau00_Haupthaus"),
+        ("HUN_HAU00", "BauHunHau00_Haupthaus"),
+    ];
+    // 僅擴充本案例的真實別名；官方 DATA 範本與 objdef 仍只有德系主堡。
+    let aliases = houses.iter().map(|(alias, name)| format!("{alias}={name}\n")).collect::<String>();
+    std::fs::write(
+        root.join("SYSTEM/CLAK/cl_scint.ini"),
+        format!("[ObjDefName]\n{aliases}GER_INF02=FigGerInf02_Zweihandaxt\n"),
+    ).unwrap();
+    app.scenario.load_session(&map).unwrap();
+    app.spawn_ui = Default::default();
+    app.spawn_ui.open = true;
+    sync(&mut app, &map);
+    for (tribe, (alias, name)) in houses.iter().enumerate() {
+        assert!(app.scenario.known_aliases().iter().any(|a| a == *alias), "劇本必須重載部族別名：{alias}");
+        assert!(app.spawn_ui.catalog().iter().any(|t| t.name_def == *name), "放置目錄必須重載主堡：{name}");
+        for team in 0..=8 {
+            app.spawn_ui.select_type(name);
+            app.spawn_ui.set_placement_values(team, 1, 0);
+            app.spawn_ui.place_at_tile(&mut app.scenario, &cx(), 4 + team * 3, 4 + tribe as i32 * 6);
+            assert!(!app.spawn_ui.status().1, "主堡放置失敗：{}", app.spawn_ui.status().0);
+        }
+    }
+    app.spawn_ui.select_type("FigGerInf02_Zweihandaxt");
+    // 人物／部隊的放置面板僅接受 team 0..7；逐隊驗證 script squad 不進入 DATA。
+    for team in 0..=7 {
+        app.spawn_ui.set_placement_values(team, 7, 0);
+        app.spawn_ui.place_at_tile(&mut app.scenario, &cx(), 3 + team * 3, 28);
+        assert!(!app.spawn_ui.status().1, "T{team} 部隊放置失敗：{}", app.spawn_ui.status().0);
+    }
+
+    let original_spawns = app.scenario.document().spawns.clone();
+    assert_eq!(original_spawns.len(), 44, "四部族各九座主堡加八個隊伍槽位的部隊");
+    let ids: std::collections::HashSet<_> = original_spawns.iter().map(|s| s.id).collect();
+    assert_eq!(ids.len(), 44, "所有原始 UUID 必須唯一");
+    assert!(original_spawns.iter().all(|s| !s.id.is_nil() && !s.prebuilt), "原始放置物件皆有 UUID 且尚未轉為 DATA");
+    let squads: Vec<_> = original_spawns.iter().filter(|s| s.alias == "GER_INF02").collect();
+    assert_eq!(squads.len(), 8, "八個隊伍槽位皆需有 script squad");
+    for (team, squad) in squads.iter().enumerate() {
+        assert_eq!((squad.team, squad.count), (team as i32, 7), "部隊需保留 T{team} 與多人數量並走 script 路徑");
+    }
+    let events: Vec<_> = original_spawns.iter().flat_map(|spawn| {
+        [(0, 3, "存活勝利"), (1, 4, "死亡失敗")].map(|(condition, action, label)| Event {
+            name: format!("{} T{} {label}", spawn.alias, spawn.team),
+            delay_seconds: 0,
+            conditions: vec![Condition { kind: condition, target_id: spawn.id, ..Default::default() }],
+            actions: vec![Action { kind: action, ..Default::default() }],
+            ..Default::default()
+        })
+    }).collect();
+    assert_eq!(events.len(), 88, "44 個物件各有存活與死亡目標事件");
+    app.scenario.add_events(&events).unwrap();
+    let mut expected_spawns = original_spawns.clone();
+    for spawn in &mut expected_spawns {
+        spawn.prebuilt = spawn.alias == "GER_HAU00";
+    }
+    let mut first_files = None;
+    let mut first_bindings = None;
+
+    for cycle in 1..=2 {
+        app.safe_save_current();
+        assert!(!app.status_is_error, "第 {cycle} 次安全儲存失敗：{}", app.status_message);
+        assert!(!app.scenario.dirty(), "第 {cycle} 次儲存後劇本應為乾淨狀態");
+        let saved = ScenarioDocument::from_json(&std::fs::read(map.join("arm_scenario.json")).unwrap()).unwrap();
+        assert_eq!(saved.spawns, expected_spawns, "第 {cycle} 次儲存保留原 UUID 與全部放置內容，僅德系轉為 DATA");
+        assert_eq!(saved.events, events, "第 {cycle} 次儲存保留每個 UUID 的存活／死亡與勝敗事件");
+        assert_eq!(app.scenario.document(), &saved, "第 {cycle} 次儲存後記憶體與磁碟劇本一致");
+        assert_eq!(saved.data_slots.len(), 9, "只有九座德系主堡可綁定 DATA");
+        if let Some(bindings) = &first_bindings {
+            assert_eq!(&saved.data_slots, bindings, "第二次儲存保留 DATA slot／UID 與 UUID 關係");
+        } else {
+            first_bindings = Some(saved.data_slots.clone());
+        }
+
+        let objects = data_objects(&map);
+        assert_eq!(objects.len(), 9, "fallback 主堡與多人部隊不得產生 DATA 物件");
+        let source = DataBindingSource::load(&map).unwrap();
+        let mut bound: Vec<_> = saved.data_slots.iter().map(|b| (b.slot, b.uid)).collect();
+        bound.sort_unstable();
+        assert_eq!(bound, source.active_bindings(), "每筆 active DATA 身分都恰有一筆劇本綁定");
+        for spawn in &saved.spawns {
+            let bindings: Vec<_> = saved.data_slots.iter().filter(|b| b.spawn_id == spawn.id).collect();
+            if spawn.alias == "GER_HAU00" {
+                assert_eq!(bindings.len(), 1, "德系主堡 UUID 必須唯一對應 DATA");
+                let binding = bindings[0];
+                let object = objects.iter().find(|o| o.slot as i32 == binding.slot).expect("綁定的 DATA slot 必須存在");
+                assert_eq!(object.uid, binding.uid, "DATA UID 必須符合綁定");
+                assert_eq!((object.type_id, i32::from(object.team)), (232, spawn.team), "DATA 型別與隊伍必須符合主堡");
+                assert_eq!(object.position, [spawn.x, spawn.y, spawn.z], "DATA 位置必須符合原 UUID 的主堡");
+            } else {
+                assert!(bindings.is_empty() && !spawn.prebuilt, "無模板主堡與多人部隊必須保留 script 路徑：{}", spawn.alias);
+            }
+        }
+
+        let mut loaded = EditorApp::initial_state();
+        loaded.set_loaded_map(map.clone(), TerrainSession::create_blank(5, 32)).unwrap();
+        loaded.scenario.load_session(&map).unwrap();
+        loaded.placement.load_session(&map).unwrap();
+        sync(&mut loaded, &map);
+        assert_eq!(loaded.scenario.document(), &saved, "第 {cycle} 次全新重載保留 spawns／events／data_slots");
+        assert!(!loaded.scenario.dirty() && !loaded.spawn_ui.session().is_dirty(), "全新重載不得留下未儲存狀態");
+        against_rome_scenario::verify_binding_snapshot(loaded.scenario.document(), source.active_bindings()).unwrap();
+        let original_bci = std::fs::read(map.join("SCRIPT/ak_level.arm_original")).unwrap();
+        let compiled = against_rome_scenario::compile_script_verified(
+            &original_bci,
+            loaded.scenario.document(),
+            Some(loaded.scenario.start_camera()),
+            Some(loaded.scenario.known_aliases()),
+            Some(source.active_bindings()),
+        ).unwrap();
+        let compiled_raw = if compiled.starts_with(b"PFIL") {
+            against_rome_data::lzss::decompress_pfil(&compiled, None).unwrap()
+        } else {
+            compiled
+        };
+        source.verify_unchanged().unwrap();
+        let disk_bci = std::fs::read(map.join("SCRIPT/ak_level.bci")).unwrap();
+        against_rome_scenario::BciImage::parse(&disk_bci).unwrap();
+        assert_eq!(compiled_raw, disk_bci, "第 {cycle} 次重載使用 active bindings 重編的 BCI 必須與磁碟逐位元組一致");
+        let mut files = save_file_snapshot(&map);
+        // 交易備份使用隨機名稱且保留各次舊內容；往返應比較正式地圖檔案。
+        files.retain(|path, _| !path.to_string_lossy().contains(".arm_backup."));
+        if let Some(expected) = &first_files {
+            assert!(files == *expected, "第二次安全儲存與重開後正式地圖檔案必須逐位元組一致");
+        } else {
+            first_files = Some(files);
+        }
+        // 下一輪由全新載入的 app 再次安全儲存，驗證乾淨狀態的往返穩定性。
+        app = loaded;
+    }
+
+    drop(app);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn failed_commit_after_data_staging_writes_nothing_and_keeps_the_edit() {
     use against_rome_maps::TransactionFailurePoint as Fail;
     for point in [Fail::AfterPath("DATA/objects.dat".into()), Fail::BeforeFinalCommit] {

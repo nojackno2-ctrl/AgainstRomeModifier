@@ -1,3 +1,10 @@
+## 2026-10-26 Codex：Phase 3 跨部族／隊伍／事件 Safe Save 重載（合成測試已驗證）
+- 僅修改 `apps/against-rome-editor/src/app/tests/spawn_save_tests.rs` 與本交接；保留既有 `AGENTS.md`／`README.md`（前後 SHA-256 一致）及其他變更，未暫存、commit／push，未存取安裝遊戲。Codex CLI 新增測試，Agy 唯讀審查，父端核對 diff 並執行驗證。
+- 既有 9 個 module 案例涵蓋德系 DATA、區域勝利、無模板 fallback、編輯與回滾；新增僅 1 個 `four_tribes_all_team_slots_and_squad_targets_survive_two_safe_save_reload_cycles`，補同一交易內四部族各 team 0..8 的 36 座主堡與 team 0..7／count 7 的 8 支 script squad。44 個永久 UUID 各對應存活→勝利及死亡→失敗，共 88 個事件；德系 9 筆 DATA slot／UID／型別／隊伍／位置正確，非德系 27 座無模板主堡及 8 支部隊維持 script-only、無 DATA binding。兩輪全新 app 重載驗證 SCENARIO、active DATA bindings、事件與原 UUID 一致；從 arm_original 帶 active bindings 重編 BCI 與磁碟逐位元組一致，正式地圖檔案兩輪穩定。共用 fixture 與產品邏輯未改。
+- 首次新案例 0 passed／1 failed：最後全檔案快照納入隨機命名 `.arm_backup.` 交易備份，先前 UUID／DATA／事件／BCI 斷言皆通過；已限縮正式地圖比較以排除交易備份，重跑解決。一般 Shell 的 `helper_unknown_error: setup refresh had errors` 改用核准 Shell 執行；未改 ACL／安全政策。內建子代理 thread-store 啟動失敗後，改由既有 host 委派工具完成。
+- 父代理審查發現初版只覆蓋 T7 squad，已擴充至 T0..7 並加入 44 spawn／88 event 數量與逐隊斷言；父端重跑新案例 1 passed、`spawn_save_tests` module 10 passed、workspace check/build 均 exit 0，無 MSVC 連結錯誤。使用既有 target 目錄，僅見既有 3 個 unused 警告；本輪未重跑完整 workspace tests。父端 `git diff --check` 通過。
+- 邊界：非德系僅驗證合成 catalog 缺模板時的 fallback，不代表已驗證四族原生 DATA 範本；squad 僅起始 Spawn，未新增事件動態援軍案例。事件是序列化／編譯 fixture（存活會立即勝利），未做真實 GUI／遊戲內部族建物、部隊生成、存活死亡／勝敗觸發、遊戲存讀檔或多人同步驗收；整體地圖編輯器及 Phase 3 全部完成條件仍不可宣稱完成。
+
 ## 2026-10-26 Codex：3D 材質缺檔 fallback 診斷（已驗證；桌面待驗）
 - Phase 5 稽核發現 `floortex.dat` 不存在時 3D Textured 模式會靜默改繪 relief，HUD 不顯示狀態。本次以當前 GPT-6 繼續；指定 GPT-6 Luna 的 CLI 代理回報仍執行 GPT-6，依限制停止，未執行工作。此對話模型未切換。
 - `EditorApp::refresh_3d_floor_atlas` 現於缺少圖集檔時顯示繁中／英文 relief fallback 狀態；3D Textured HUD 同步標示材質檔不可用與 relief 替代。新增雙語訊息測試。
