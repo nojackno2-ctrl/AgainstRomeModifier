@@ -745,3 +745,92 @@ fn bound_spawn_edits_after_reload_keep_event_identity_and_reconcile_data_binding
     drop((app, reloaded, after_reload, promoted, final_reload));
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn bound_family_with_child_light_survives_safe_save_reload_and_translation() {
+    let (mut app, root, map) = fixture("family_light_reload_move", &[]);
+    place_house(&mut app, (30, 30), 0);
+    save_ok(&mut app);
+
+    // Build a valid native two-object family and attach light slot 0 to its child.
+    // Keep the root UID and scenario UUID created through the real EditorApp placement flow.
+    write_data(&map, 12, &[(232, None), (233, Some(0))], 100);
+    let mut objects = std::fs::read(map.join("DATA/objects.dat")).unwrap();
+    // Safe Save assigned the root UID from engine.dat's cursor; make the synthetic native root
+    // retain that same UID while keeping the child as a separate family member.
+    let bound_uid = app.scenario.document().data_slots[0].uid;
+    objects[16 + 3..16 + 7].copy_from_slice(&bound_uid.to_le_bytes());
+    let light_column = 16 + 12 * 79 + 12 * COLUMNS[..12].iter().sum::<usize>();
+    objects[light_column + 2..light_column + 4].copy_from_slice(&0u16.to_le_bytes());
+    std::fs::write(map.join("DATA/objects.dat"), objects).unwrap();
+
+    let mut light = std::fs::read(map.join("DATA/light.dat")).unwrap();
+    let widths = against_rome_data::pool::WIDTHS;
+    let column = |index: usize| 8 + 1024 * widths[..index].iter().sum::<usize>();
+    light[column(0)..column(0) + 4].copy_from_slice(&1u32.to_le_bytes());
+    for (index, value) in [(1, 4021.0f32), (2, 28.0), (3, 4002.0)] {
+        let offset = column(index);
+        light[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    let owner = column(13);
+    light[owner..owner + 2].copy_from_slice(&1i16.to_le_bytes());
+    let parent = column(14);
+    light[parent..parent + 2].copy_from_slice(&(-1i16).to_le_bytes());
+    let definition = column(15);
+    light[definition..definition + 2].copy_from_slice(&(-1i16).to_le_bytes());
+    std::fs::write(map.join("DATA/light.dat"), light).unwrap();
+
+    let mut document = against_rome_scenario::ScenarioDocument::from_json(
+        &std::fs::read(map.join("arm_scenario.json")).unwrap(),
+    )
+    .unwrap();
+    let root_id = document.spawns[0].id;
+    document.spawns[0].x = 4000.0;
+    document.spawns[0].z = 4000.0;
+    std::fs::write(map.join("arm_scenario.json"), document.to_json().unwrap()).unwrap();
+
+    let mut reloaded = EditorApp::initial_state();
+    reloaded.set_loaded_map(map.clone(), TerrainSession::create_blank(5, 32)).unwrap();
+    reloaded.scenario.load_session(&map).unwrap();
+    reloaded.placement.load_session(&map).unwrap();
+    sync(&mut reloaded, &map);
+    assert_eq!(reloaded.scenario.document().data_slots.len(), 1, "only the family root gets a scenario binding");
+    assert_eq!(reloaded.scenario.document().data_slots[0].spawn_id, root_id);
+    assert_eq!(ObjectStore::load(&map).unwrap().family(0, bound_uid).unwrap().len(), 2);
+    let before_light = against_rome_data::pool::LightPool::from_file_bytes(
+        &std::fs::read(map.join("DATA/light.dat")).unwrap(),
+    )
+    .unwrap()
+    .capture(0)
+    .unwrap();
+    assert_eq!(before_light.owner(), 1);
+
+    reloaded.spawn_ui.select_all();
+    reloaded.spawn_ui.move_selected(&mut reloaded.scenario, &cx(), 512.0, 0.0, false);
+    assert!(!reloaded.spawn_ui.status().1, "{}", reloaded.spawn_ui.status().0);
+    save_ok(&mut reloaded);
+
+    let after = ObjectStore::load(&map).unwrap();
+    let family = after.family(0, bound_uid).unwrap();
+    assert_eq!(family.len(), 2, "the child remains attached to the bound root");
+    assert_eq!(after.objects().iter().find(|o| o.slot == 0).unwrap().position[0], 4512.0);
+    assert_eq!(after.objects().iter().find(|o| o.slot == 1).unwrap().position[0], 4532.0);
+    let moved_light = against_rome_data::pool::LightPool::from_file_bytes(
+        &std::fs::read(map.join("DATA/light.dat")).unwrap(),
+    )
+    .unwrap()
+    .capture(0)
+    .unwrap();
+    assert_eq!(moved_light.position(), [4533.0, 8.0, 4002.0]);
+    assert_eq!(moved_light.owner(), 1);
+    let saved = against_rome_scenario::ScenarioDocument::from_json(
+        &std::fs::read(map.join("arm_scenario.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(saved.data_slots.len(), 1);
+    assert_eq!(saved.data_slots[0].spawn_id, root_id);
+    assert_eq!(saved.spawns[0].x, 4512.0);
+
+    drop((app, reloaded));
+    std::fs::remove_dir_all(root).unwrap();
+}

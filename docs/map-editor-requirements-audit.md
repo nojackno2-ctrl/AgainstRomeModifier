@@ -2,7 +2,7 @@
 
 ## 2026-10-27 最新 Rust 驗收補記
 
-- Safe Save 現有 app 層回歸覆蓋無效事件隊伍、超界生成座標、缺失目標 UUID：拒絕前後地圖全檔快照一致、編輯仍保留，修復後重試成功。跨全新 `EditorApp` 重載案例再覆蓋建築複製／移動／隊伍變更及 team 12↔1 的 DATA 降級／升級，驗證事件仍以原 UUID 為目標、bindings 清理重建後可再次載入。`spawn_save_tests` 13 passed；完整 workspace check／序列 test／build 均 exit 0，editor app 868 passed／6 ignored。此為合成資料證據；多部件 family 尚缺 app 層跨重載驗收，零售範本及遊戲內行為未驗。詳見 `AI_HANDOFF.md` 2026-10-27 Safe Save 無效事件拒絕與重載後物件編輯。
+- Safe Save app 層回歸涵蓋無效事件隊伍、超界生成座標、缺失目標 UUID 的 fail-before-write 與修復重試；全新 `EditorApp` 重載後複製／移動／隊伍變更、team 12↔1 DATA 降級／升級，並新增 root＋child＋Light family 重載與平移驗證。`spawn_save_tests` 聚焦 14 passed；workspace check、序列完整 test（editor app 869 passed／6 ignored）及 build 均 exit 0。合成 fixture 驗證 root-only binding、2-object family 及 Light 隨 root 位移；零售範本與遊戲內行為未驗。詳見 `AI_HANDOFF.md` 2026-10-27 Safe Save family Light 重載與平移。
 - Maps 狀態列現在只在呈現層依介面語系翻譯地圖目錄、複製／刪除、驗證與診斷訊息，保留錯誤細節；兩種地圖目錄同時掃描失敗時會保留兩邊錯誤。實際 egui 雙語狀態列測試通過，聚焦 maps UI 18 passed；完整 workspace check／序列 test／build 均 exit 0，editor app 866 passed／6 ignored，maps lib 86 passed／3 ignored、`maps_tests` 52 passed。桌面與遊戲驗收未執行。詳見 `AI_HANDOFF.md` 2026-10-27 Maps 狀態列雙語化與目錄錯誤保留。
 - AI 工作室狀態訊息現於呈現層依介面語系翻譯固定狀態、模型掃描、進度、完成／套用統計及已知錯誤前綴；保留內部狀態、模型名稱／數值與未知錯誤細節。egui 雙語渲染回歸覆蓋狀態家族及錯誤細節；聚焦 23 passed。完整 workspace check／序列 test／build 均 exit 0；桌面與遊戲內驗收未執行。詳見 `AI_HANDOFF.md` 2026-10-27 AI 工作室狀態訊息雙語化。
 - 空白場景現在於 staging 發布前驗證完整 terrain output：六張 BMP 的格式與全部像素值、列 stride/padding，以及 `boden.txt` 的 4096 格材質；建置後 `verify_disk_artifacts` 共用相同 verifier。新增像素／材質污染與失敗 rollback／無 manifest 登錄案例，maps 聚焦 10 passed。workspace check／序列完整 test／build 均 exit 0，editor app 863 passed／6 ignored，maps lib 86 passed／3 ignored、`maps_tests` 52 passed；此 gate 不代表保留 DATA／SDL 可由遊戲載入。
@@ -75,6 +75,6 @@
 1. 本輪建立／刪除修正已提交 `b9b9965`；獨立 git archive 快照 build 0 警告/0 錯誤，完整測試 536 通過/21 略過/0 失敗，已確認不依賴 AI 預覽 WIP。
 2. 原廠圖 catalog 與 SaveMap 前置驗證已補9項測試；最新完整build 0警告/0錯誤，545通過/21略過/0失敗。
 3. 地圖文字、環境、備份／完整還原、額外槽位 AI 修補與平坦範本命名已補專屬合成證據；真實遊戲與新對話框視覺缺口仍保留。
-4. 第 3 階段已有四部族／隊伍矩陣與重載後變更證據；下一步補多部件建築 family 的 EditorApp 儲存／重載整合，之後進行第 5 階段 OpenGL／DPI 驗收。遊戲內驗收仍待可觀察的遊戲畫面或進程證據。
+4. 第 3 階段已有四部族／隊伍矩陣與重載後變更證據；EditorApp root＋child＋Light family 安全儲存／重載／平移合成案例已補，後續優先驗證其他原生 family 變體及事件目標刪除守衛，再進行第 5 階段 OpenGL／DPI 驗收。遊戲內驗收仍待可觀察的遊戲畫面或進程證據。
 
 尚未完成的項目保留在清單中，不以目前可通過的測試重新定義成功。所有執行驗證只使用 repository／TEMP 合成資料。
