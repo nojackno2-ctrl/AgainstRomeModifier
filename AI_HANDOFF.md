@@ -5,6 +5,7 @@
 - 發現並修正 `docs/map-editor-completion-plan.md`、`docs/map-editor-roadmap.md` 過時地宣稱禁止安裝目錄驗收；兩者現與 `AGENTS.md` 一致，要求僅測試備份過的自製地圖並驗證還原雜湊，原版檔案唯讀。
 - 下一步需取得獲授權的 ETW／debugger stack capture，或在其他可觀察環境重測，才能區分 DirectDraw、DirectShow 與訊息迴圈。不要再以錯誤 cwd 作為假設。
 - 驗收文件整理：`docs/map-editor-acceptance.md` 的 C#／WinForms 測試矩陣已明確標為 2026-10-07 歷史快照；現況改以 `docs/map-editor-requirements-audit.md`、路線圖與本交接為準。需求核對新增 2026-10-26 Rust 副本編輯、桌面驗收、黑畫面診斷與未完成門檻。
+- 需求核對指出 3D 通行 `ShadingMode::Collision` 已在 `viewport_3d.rs` 實作；未完成的是 framebuffer 像素與碰撞格／picker 對位驗收，不是通行遮罩功能缺少實作。
 
 ## 2026-10-26 GPT-6 Luna：原生 DATA 群組副本編輯（已驗證）
 - 只開放複製副本變更隊伍／方向；原生來源 root 與既有保留綁定仍拒絕直接變更。`SpawnPlacementSession` 會為副本更新 `raw_rotation`；DATA 交易在 detached store 複製整個 family 後套用隊伍與方向，核對角度弧度 bit-exact，來源資料不變。
