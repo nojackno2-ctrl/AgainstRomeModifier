@@ -2,6 +2,7 @@
 
 ## 2026-10-27 最新 Rust 驗收補記
 
+- `PlacementUi::batch_edit` 與單筆隊伍設定／批次欄位提交現在共用物件類別隊伍驗證，避免 Squad 從公開批次入口改至 team 8 等非法隊伍。拒絕同批角度變更時 store payload、dirty、undo/redo、history token／receipt 均不變；team 7 加旋轉可 undo/redo。聚焦 3 passed；workspace check、完整序列 test（editor app 863 passed／6 ignored）及 build 通過。詳見 `AI_HANDOFF.md` 2026-10-27 批次物件編輯隊伍類別驗證。
 - `4T` 三材質 junction 不再只依名稱 shape 推測：有 floortex 像素 probe 時以三個 base material 代表色與圖塊四角像素推斷，僅在三材質且每角 RGB 距離不超過 32 時收錄，無把握就拒絕。合成測試覆蓋 4 個 shape × 2 順序、像素推斷覆寫名稱 fallback、native resolver 回烘及低信心 fail-safe。只讀安裝版 `floortex.dat` 稽核 333 張 `4T`：308 張推斷並可回烘原生三材質角點，202 張改正名稱 shape 推測，25 張未通過像素證據門檻；來源封存檔未修改。`against-rome-textures` 13 unit／69 integration tests 通過（3 個安裝素材／地圖測試略過）。這不是遊戲渲染驗收；25 張仍保留未解析，遊戲內混合素材外觀待驗。詳見 `AI_HANDOFF.md` 2026-10-27 4T 三材質圖塊像素推斷。
 - Phase 5 fallback 診斷與真實缺檔桌面路徑已驗證：在 TEMP ENDL_005 副本（無 `floortex.dat`）以新建置切至 3D，狀態列顯示 relief fallback；「複製 3D 診斷」按鈕於中英介面皆可用，實際點擊後 Windows 剪貼簿與各語系完整訊息逐字相同。桌面驗收也發現並修正切換語言後 fallback 訊息仍顯示舊語系；錯誤診斷細節保留原文。TEMP 與安裝來源 55 檔 SHA-256 全相同，未 Safe Save。headless egui 測試涵蓋雙語、語言往返及錯誤訊息原文；workspace check／test／build 通過（editor app 860 passed／6 ignored）。本次再以新建置實際切換 2D→3D→2D：3D 畫面顯示診斷／按鈕，回 2D 後畫面與 UIA 樹均無兩者；只切視圖，未寫圖。遊戲內效果仍未驗。詳見 `AI_HANDOFF.md` 2026-10-27 桌面驗收紀錄。
 - AI 工作室已接入 `AiMapPlanPreviewBuilder`，方案審查新增目前地形／水域視覺圖、變更統計及材質／阻擋／拒絕／保護區圖例；方案與底圖來源未變時重用 texture，來源變更後重建。無視窗 UI 測試通過：預覽未改高度、碰撞、dirty 或 undo，底圖修改後快取更新。2026-10-26 實際桌面以 Ollama `laguna-xs-2.1:latest` 完成 3 角色企劃、含湖泊／河流水深的預覽、套用、Safe Save、關閉重開；詳見 `AI_HANDOFF.md` 最新紀錄。真實桌面完整互動已驗，高 DPI／多螢幕仍待驗收。

@@ -1199,6 +1199,12 @@ impl PlacementUi {
         if team.is_none() && degrees.is_none() {
             return Ok(());
         }
+        if let Some(team) = team {
+            self.validate_team_for_families(
+                &families,
+                if team == 65535 { -1 } else { i32::from(team) },
+            )?;
+        }
         self.store
             .as_mut()
             .unwrap()
@@ -3448,6 +3454,67 @@ mod tests {
         assert_eq!(objs[1].team, 0);
         assert_eq!(objs[0].rotation_degrees, 90.0);
         assert_eq!(objs[1].rotation_degrees, 90.0);
+    }
+
+    fn squad_placement_fixture() -> (Temp, PlacementUi) {
+        let temp = Temp::new();
+        fixture(&temp.0);
+        let objects_path = temp.0.join("DATA/objects.dat");
+        let mut objects = fs::read(&objects_path).unwrap();
+        // Object type ID is the final u16 field in each 79-byte object record.
+        objects[16 + 75..16 + 77].copy_from_slice(&1u16.to_le_bytes());
+        fs::write(objects_path, objects).unwrap();
+
+        let mut ui = PlacementUi::default();
+        ui.load_now(&temp.0.display().to_string()).unwrap();
+        ui.set_type_names([(1, "FigRoemLegionaer".into())].into());
+        ui.select_object(Some((0, 1)));
+        (temp, ui)
+    }
+
+    #[test]
+    fn batch_edit_rejects_invalid_squad_team_without_mutating_any_state() {
+        let (_temp, mut ui) = squad_placement_fixture();
+        ui.angle = "45".into();
+        ui.batch_edit(None, Some(90.0)).unwrap();
+        ui.batch_edit(None, Some(0.0)).unwrap();
+        ui.undo().unwrap();
+        assert_eq!((ui.undo_depth(), ui.redo_depth()), (1, 1));
+
+        ui.take_history_receipts();
+        let payload_before = history_payloads(ui.store.as_ref());
+        let dirty_before = ui.is_dirty();
+        let history_before = (ui.undo_depth(), ui.redo_depth());
+        let token_before = ui.history_token();
+
+        assert!(ui.batch_edit(Some(8), Some(180.0)).is_err());
+
+        assert_eq!(history_payloads(ui.store.as_ref()), payload_before);
+        assert_eq!(ui.is_dirty(), dirty_before);
+        assert_eq!((ui.undo_depth(), ui.redo_depth()), history_before);
+        assert_eq!(ui.history_token(), token_before);
+        assert!(ui.take_history_receipts().is_empty());
+    }
+
+    #[test]
+    fn batch_edit_accepts_squad_team_seven_with_rotation_and_undo_redo() {
+        let (_temp, mut ui) = squad_placement_fixture();
+        let before = history_payloads(ui.store.as_ref());
+
+        ui.batch_edit(Some(7), Some(90.0)).unwrap();
+        let edited = history_payloads(ui.store.as_ref());
+        let object = ui.objects().into_iter().find(|object| object.slot == 0).unwrap();
+        assert_eq!((object.team, object.rotation_degrees), (7, 90.0));
+        assert!(ui.is_dirty());
+        assert_eq!((ui.undo_depth(), ui.redo_depth()), (1, 0));
+
+        ui.undo().unwrap();
+        assert_eq!(history_payloads(ui.store.as_ref()), before);
+        assert_eq!((ui.undo_depth(), ui.redo_depth()), (0, 1));
+
+        ui.redo().unwrap();
+        assert_eq!(history_payloads(ui.store.as_ref()), edited);
+        assert_eq!((ui.undo_depth(), ui.redo_depth()), (1, 0));
     }
 
     #[test]
