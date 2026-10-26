@@ -304,6 +304,35 @@ pub fn format_issue_row(row: &IssueRow, lang: AppLanguage) -> String {
     line
 }
 
+/// 同時顯示篩選結果與報告總數，避免將隱藏問題誤認為已解決。
+fn visible_issue_count(visible: usize, total: usize, lang: AppLanguage) -> String {
+    format!("{} {visible} / {total}", tr(lang, "Visible issues:", "顯示問題："))
+}
+
+/// 保留報告索引，僅在可見列之間循環；舊選取已隱藏時從端點開始。
+fn adjacent_issue(visible: &[(usize, &IssueRow)], selected: Option<usize>, forward: bool) -> Option<usize> {
+    if visible.is_empty() {
+        return None;
+    }
+    let position = selected.and_then(|index| visible.iter().position(|(i, _)| *i == index));
+    let next = match (position, forward) {
+        (Some(i), true) => (i + 1) % visible.len(),
+        (Some(0) | None, false) => visible.len() - 1,
+        (Some(i), false) => i - 1,
+        (None, true) => 0,
+    };
+    Some(visible[next].0)
+}
+
+/// 延遲格式化至點擊時，無選取或無結果時停用。
+fn copy_issue_button(ui: &mut egui::Ui, label: &str, enabled: bool, text: impl FnOnce() -> String) -> egui::Response {
+    let response = ui.add_enabled(enabled, egui::Button::new(label));
+    if response.clicked() {
+        ui.output_mut(|output| output.copied_text = text());
+    }
+    response
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct DesignCheckCacheKey {
     pub report: Option<DesignCheckReport>,
@@ -328,6 +357,8 @@ pub struct DesignCheckUi {
     pub show_warnings: bool,
     /// 依問題代碼與雙語說明搜尋，保留原始列索引。
     pub search: String,
+    /// 僅顯示可前往世界位置或劇本事件的問題。
+    pub locatable_only: bool,
     /// Whether to automatically re-run Design Check after a successful Safe Save (default: false).
     pub rerun_after_save: bool,
     /// 與配置面板相同的可注入選檔器介面。
@@ -349,6 +380,7 @@ impl Default for DesignCheckUi {
             show_errors: true,
             show_warnings: true,
             search: String::new(),
+            locatable_only: false,
             rerun_after_save: false,
             report_picker: Box::new(|kind| {
                 let crate::layout_io::LayoutDialogKind::Save { suggested_name } = kind else { return None };
@@ -367,6 +399,19 @@ impl Default for DesignCheckUi {
 }
 
 impl DesignCheckUi {
+    /// 僅在複製操作時格式化目前篩選結果，不寫入檔案。
+    pub fn visible_issue_text(&self, rows: &[IssueRow], lang: AppLanguage) -> String {
+        self.filtered_rows(rows).iter()
+            .map(|(_, row)| format_issue_row(row, lang))
+            .collect::<Vec<_>>().join("\n")
+    }
+    /// 還原顯示條件，不更動報告或選取。
+    pub fn reset_filters(&mut self) {
+        self.search.clear();
+        self.show_errors = true;
+        self.show_warnings = true;
+        self.locatable_only = false;
+    }
     /// Invalidate cached issue rows.
     pub fn invalidate_cache(&mut self) {
         self.cached_rows = None;
@@ -406,6 +451,7 @@ impl DesignCheckUi {
             .enumerate()
             .filter(|(_, r)| {
                 self.is_severity_visible(r.severity)
+                    && (!self.locatable_only || r.focus_world().is_some() || r.event_index >= 0)
                     && (query.is_empty()
                         || [&r.code, &r.chinese, &r.english]
                             .iter()
@@ -780,6 +826,10 @@ impl EditorApp {
                                     _ => format!("警告 ({warning_count})"),
                                 };
                                 ui.checkbox(&mut self.design_check.show_warnings, warn_label);
+                                ui.checkbox(&mut self.design_check.locatable_only, tr(lang, "Locatable only", "僅顯示可定位問題"));
+                                if ui.small_button(tr(lang, "Reset filters", "重設篩選")).clicked() {
+                                    self.design_check.reset_filters();
+                                }
                             });
                             ui.horizontal(|ui| {
                                 ui.label(tr(lang, "Search issues", "搜尋問題"));
@@ -789,10 +839,32 @@ impl EditorApp {
                                 }
                             });
                             let filtered = self.design_check.filtered_rows(&rows);
+                            selected = selected.filter(|index| filtered.iter().any(|(i, _)| i == index));
+                            locate = locate.filter(|index| filtered.iter().any(|(i, _)| i == index));
+                            let mut scroll_to_selected = false;
+                            ui.horizontal(|ui| {
+                                ui.label(visible_issue_count(filtered.len(), rows.len(), lang));
+                                copy_issue_button(ui, tr(lang, "Copy visible issues", "複製顯示問題"), !filtered.is_empty(), || self.design_check.visible_issue_text(&rows, lang));
+                            });
+                            ui.horizontal(|ui| {
+                                for (forward, label) in [
+                                    (false, tr(lang, "Previous issue", "上一個問題")),
+                                    (true, tr(lang, "Next issue", "下一個問題")),
+                                ] {
+                                    if ui.add_enabled(!filtered.is_empty(), egui::Button::new(label)).clicked() {
+                                        selected = adjacent_issue(&filtered, selected, forward);
+                                        scroll_to_selected = true;
+                                    }
+                                }
+                                let row = selected.and_then(|i| rows.get(i));
+                                copy_issue_button(ui, tr(lang, "Copy selected issue", "複製選取問題"), row.is_some(), || {
+                                    row.map(|r| format_issue_row(r, lang)).unwrap_or_default()
+                                });
+                            });
                             if filtered.is_empty() && !rows.is_empty() {
                                 ui.colored_label(
                                     Color32::from_rgb(180, 180, 180),
-                                    tr(lang, "All issues hidden by severity filters.", "所有問題已依層級篩選隱藏。"),
+                                    tr(lang, "No issues match the current filters or search.", "沒有符合目前篩選或搜尋的問題。"),
                                 );
                             } else {
                                 ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
@@ -814,6 +886,9 @@ impl EditorApp {
                                                 locate = Some(index);
                                             }
                                             let response = ui.selectable_label(selected == Some(index), text);
+                                            if scroll_to_selected && selected == Some(index) {
+                                                response.scroll_to_me(Some(egui::Align::Center));
+                                            }
                                             if response.clicked() {
                                                 selected = Some(index);
                                             }
@@ -887,6 +962,153 @@ impl EditorApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn issue_navigation_wraps_skips_hidden_rows_and_handles_stale_selection() {
+        let mut panel = DesignCheckUi::default();
+        let rows = vec![
+            IssueRow::from(&map_issue(MapIssueSeverity::Error, "first", None, None)),
+            IssueRow::from(&map_issue(MapIssueSeverity::Warning, "hidden", None, None)),
+            IssueRow::from(&map_issue(MapIssueSeverity::Error, "last", None, None)),
+        ];
+        panel.show_warnings = false;
+        let visible = panel.filtered_rows(&rows);
+        assert_eq!(adjacent_issue(&visible, None, true), Some(0));
+        assert_eq!(adjacent_issue(&visible, None, false), Some(2));
+        assert_eq!(adjacent_issue(&visible, Some(0), true), Some(2));
+        assert_eq!(adjacent_issue(&visible, Some(2), true), Some(0));
+        assert_eq!(adjacent_issue(&visible, Some(0), false), Some(2));
+        assert_eq!(adjacent_issue(&visible, Some(2), false), Some(0));
+        assert_eq!(adjacent_issue(&visible, Some(1), true), Some(0));
+        assert_eq!(adjacent_issue(&visible, Some(99), false), Some(2));
+        assert_eq!(adjacent_issue(&visible[..1], Some(0), true), Some(0));
+        assert_eq!(adjacent_issue(&[], Some(0), false), None);
+    }
+
+    #[test]
+    fn filtering_out_selected_issue_clears_details_without_locating_or_editing() {
+        let mut app = EditorApp::default();
+        app.design_check.open = true;
+        app.design_check.report = Some(DesignCheckReport::Checked {
+            map_issues: vec![map_issue(MapIssueSeverity::Warning, "hidden", Some(1.0), Some(2.0))],
+            preflight_error: None,
+            design_issues: vec![],
+        });
+        app.design_check.selected = Some(0);
+        app.design_check.search = "no-match".into();
+        let report = app.design_check.report.clone();
+        let ctx = egui::Context::default();
+        let output = ctx.run(egui::RawInput::default(), |ctx| app.show_design_check(ctx));
+        assert_eq!(app.design_check.selected, None);
+        assert_eq!(app.design_check.focus_request, None);
+        assert_eq!(app.design_check.event_request, None);
+        assert_eq!(app.design_check.report, report);
+        assert!(output.platform_output.copied_text.is_empty());
+    }
+
+    #[test]
+    fn copy_buttons_use_clipboard_only_on_enabled_click_in_both_languages() {
+        let row = IssueRow::from(&map_issue(MapIssueSeverity::Error, "sample", Some(512.0), Some(768.0)));
+        for lang in [AppLanguage::English, AppLanguage::TraditionalChinese] {
+            for enabled in [true, false] {
+                let ctx = egui::Context::default();
+                let mut rect = egui::Rect::NOTHING;
+                let mut calls = 0;
+                let label = tr(lang, "Copy selected issue", "複製選取問題");
+                let output = ctx.run(egui::RawInput::default(), |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        rect = copy_issue_button(ui, label, enabled, || {
+                            calls += 1;
+                            format_issue_row(&row, lang)
+                        }).rect;
+                    });
+                });
+                assert_eq!(calls, 0, "閒置幀不得格式化剪貼簿內容");
+                assert!(output.platform_output.copied_text.is_empty());
+                let pos = rect.center();
+                let input = egui::RawInput {
+                    events: vec![
+                        egui::Event::PointerMoved(pos),
+                        egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE },
+                        egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE },
+                    ],
+                    ..Default::default()
+                };
+                let output = ctx.run(input, |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        copy_issue_button(ui, label, enabled, || {
+                            calls += 1;
+                            format_issue_row(&row, lang)
+                        });
+                    });
+                });
+                assert_eq!(calls, usize::from(enabled));
+                assert_eq!(output.platform_output.copied_text, if enabled { format_issue_row(&row, lang) } else { String::new() });
+            }
+        }
+    }
+
+    #[test]
+    fn visible_copy_uses_current_filters_language_and_valid_coordinates() {
+        let mut panel = DesignCheckUi::default();
+        let rows = vec![
+            IssueRow::from(&map_issue(MapIssueSeverity::Error, "hidden", None, None)),
+            IssueRow::from(&map_issue(MapIssueSeverity::Warning, "visible", Some(512.0), Some(768.0))),
+        ];
+        panel.search = "VISIBLE".into();
+        for lang in [AppLanguage::English, AppLanguage::TraditionalChinese] {
+            let text = panel.visible_issue_text(&rows, lang);
+            assert_eq!(text, format_issue_row(&rows[1], lang));
+            assert!(!text.contains("hidden"));
+            assert!(text.contains("2.0") && text.contains("3.0"));
+        }
+        panel.show_warnings = false;
+        assert!(panel.visible_issue_text(&rows, AppLanguage::English).is_empty());
+        panel.reset_filters();
+        assert_eq!(panel.visible_issue_text(&rows, AppLanguage::English).lines().count(), 2);
+    }
+
+    #[test]
+    fn visible_count_distinguishes_hidden_issues_from_clean_reports() {
+        assert_eq!(visible_issue_count(0, 3, AppLanguage::English), "Visible issues: 0 / 3");
+        assert_eq!(visible_issue_count(2, 3, AppLanguage::TraditionalChinese), "顯示問題： 2 / 3");
+        assert_eq!(visible_issue_count(0, 0, AppLanguage::TraditionalChinese), "顯示問題： 0 / 0");
+    }
+
+    #[test]
+    fn locatable_filter_combines_search_severity_and_event_targets() {
+        let mut panel = DesignCheckUi::default();
+        let mut event = IssueRow::from(&map_issue(MapIssueSeverity::Error, "event", None, None));
+        event.event_index = 0;
+        let rows = vec![
+            IssueRow::from(&map_issue(MapIssueSeverity::Warning, "position", Some(1.0), Some(2.0))),
+            IssueRow::from(&map_issue(MapIssueSeverity::Error, "invalid", Some(f32::NAN), Some(2.0))),
+            event,
+        ];
+        panel.locatable_only = true;
+        assert_eq!(panel.filtered_rows(&rows).iter().map(|r| r.0).collect::<Vec<_>>(), [0, 2]);
+        panel.show_warnings = false;
+        assert_eq!(panel.filtered_rows(&rows)[0].0, 2);
+        panel.search = "POSITION".into();
+        assert!(panel.filtered_rows(&rows).is_empty());
+    }
+
+    #[test]
+    fn resetting_filters_preserves_report_selection_and_preferences() {
+        let mut panel = DesignCheckUi::default();
+        panel.report = Some(DesignCheckReport::Unavailable("保留".into()));
+        panel.selected = Some(4);
+        panel.rerun_after_save = true;
+        panel.search = "遮蔽".into();
+        panel.show_errors = false;
+        panel.show_warnings = false;
+        panel.locatable_only = true;
+        panel.reset_filters();
+        assert!(panel.search.is_empty() && panel.show_errors && panel.show_warnings && !panel.locatable_only);
+        assert_eq!(panel.selected, Some(4));
+        assert!(panel.rerun_after_save);
+        assert_eq!(panel.report, Some(DesignCheckReport::Unavailable("保留".into())));
+    }
 
     #[test]
     fn report_picker_cancel_and_maps_rejection() {

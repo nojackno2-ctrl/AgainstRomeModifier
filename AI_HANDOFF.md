@@ -1,3 +1,12 @@
+## 2026-10-26 Codex：自主批次 #31、#32、#33（六項完成；環境失敗另列）
+- 缺口依據（本次起始 HEAD 1fea085）：apps/against-rome-editor/src/design_check_ui.rs:406–420 僅有層級／搜尋篩選，:780–800 沒有重設、可見筆數或複製，:814–835 僅能直接選取與閱讀詳細說明；指南第 6.1 節與既有交接紀錄未記載本次六項功能，未進行逆向工程。
+- #31：①「僅顯示可定位問題」依有效世界座標或事件索引篩選（design_check_ui.rs:454、829）；②「重設篩選」還原搜尋／層級／可定位開關（:409、830）。無頭測試涵蓋非有限座標、事件索引 0、層級／搜尋交集及設定保留。
+- #32：③「複製顯示問題」依目前語言、原順序與篩選輸出至剪貼簿（:403、847）；④「顯示問題 N / M」區分篩選筆數與報告總數（:308、846）。測試涵蓋雙語、座標、空結果、即時篩選變動及筆數。
+- #33：⑤「上一個／下一個問題」在可見列循環選取並捲至該列（:313、849）；⑥「複製選取問題」複製單筆目前語言診斷（:860）。新增循環／過期索引／空清單、完整面板渲染與雙語實際點擊測試；聚焦 design_check_ui::tests 共 19 passed。
+- 自我審查修正：空結果提示改為符合搜尋／篩選的描述；清除被篩選隱藏的舊選取、詳細說明與當幀定位請求；剪貼簿文字僅點擊時格式化，停用／閒置幀不計算。新增操作純檢視、不修改地圖或繞過統一復原，無新快捷鍵（原 shortcuts_blocked() 不變）；不新增檔案寫入、APPDATA 持久化或快取，所有新 UI 文字經 tr()，既有安全匯出路徑規則不變。指南第 6.1 節同步六項操作。
+- 驗證：每輪均執行 cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target；各 287 組，#31 為 2663 passed／4 failed／25 ignored，#32 為 2665／4／25，#33 為 2668／4／25，均 exit 101。全部失敗僅 native/against-rome-modifier/tests/install_resource_discovery.rs:55、111、128、162，為提權環境下工作區暫存祖先資源干擾；其他失敗 0，未弱化產品防護或測試斷言。最後完整日誌 re_workspace/codex-batch-31-33-test.log；另存 codex-batch-31-test.log、codex-batch-32-test.log、codex-batch-31-33-focused.log。最終 cargo check／cargo build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 均 exit 0；ui_literal_sweep、guide_shortcuts 各 1 passed，git diff --check 通過。
+- 狀態：未暫存／提交／委派；AGENTS.md、README.md 既有變更保留，遊戲安裝目錄唯讀；GUI 人工操作與遊戲內效果未驗收。
+
 ## 2026-10-26 Codex：批次 #30（完成；環境失敗分列）
 - 審查 4665d8a：修正文字焦點誤刪、刪除／排列單步草稿復原與內嵌圖 F/Home 全域穿透；回歸確認連線／編譯順序不變、套用接統一復原、閒置不重算診斷。新增雙語「選取錯誤節點」並更新指南。cargo check／test／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target（test 加 --no-fail-fast）：check/build exit 0；test 287 組，2661 passed、4 failed、25 ignored，exit 101，日誌 re_workspace/codex-batch-30-test.log；僅 install_resource_discovery:55/111/128/162 拾取祖先目錄既有資源而失敗；ui_literal_sweep／guide_shortcuts 各 1 passed。初次 re_workspace 暫存觸發安全防護，改 repo/TEMP 後相關測試通過。未暫存／提交；安裝目錄唯讀，既有 AGENTS.md／README.md 保留；GUI 未驗收。
 
