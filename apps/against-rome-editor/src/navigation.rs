@@ -104,6 +104,15 @@ fn diagnose_with_obstacles(
     })
 }
 impl NavigationUi {
+    #[cfg(test)]
+    pub(crate) fn analyze_apt_for_test(
+        &mut self, session: &TerrainSession, water: f32,
+    ) -> Result<(NavigationReport, usize, usize), String> {
+        self.building_mode = BuildingMode::Apt;
+        let end = session.collision_size as i32 - 1;
+        self.analyze(session, water, [0, 0], [end, end])
+            .map(|report| (report, self.fallback_count, self.apt_cells.len()))
+    }
     pub(crate) fn update_placement(&mut self, objects: &[against_rome_placement::WorldObject]) {
         let snapshot = objects.iter().flat_map(|o| [
             o.slot as u32, o.uid, u32::from(o.type_id), u32::from(o.team),

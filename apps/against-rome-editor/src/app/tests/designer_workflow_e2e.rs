@@ -175,6 +175,7 @@ save_cycle_test!(three_safe_saves_campaign_camera, "camera");
 fn large_map_near_event_limit_design_save_reload_timings() {
     let total = std::time::Instant::now();
     let root = workflow_fixture("stress_41");
+    eprintln!("Task43 fixture 來源={:?}", total.elapsed());
     let mut app = wizard_map(&root, 5, false);
     eprintln!("Task42 fixture 建立／精靈={:?}", total.elapsed());
     let setup = std::time::Instant::now();
@@ -213,10 +214,50 @@ fn large_map_near_event_limit_design_save_reload_timings() {
     app.run_design_check();
     assert_eq!(app.design_check.report.as_ref().unwrap().error_count(), 0, "{:?}", app.design_check.report);
     let check = start.elapsed();
+    let measured = std::time::Instant::now();
+    let _summary = app.compute_balance_summary();
+    eprintln!("Task43 平衡摘要={:?}", measured.elapsed());
+    let measured = std::time::Instant::now();
+    let _readiness = app.evaluate_test_readiness();
+    eprintln!("Task43 準備測試={:?}", measured.elapsed());
+    let measured = std::time::Instant::now();
+    let staged = app.scenario.stage_transaction_files(&map).unwrap();
+    eprintln!("Task43 BCI 編譯與 staging={:?}", measured.elapsed());
+    assert_eq!(staged, app.scenario.stage_transaction_files(&map).unwrap());
+    let measured = std::time::Instant::now();
+    let pending = app.recovery_pending();
+    assert!(app.recovery.save(&map, true, pending).unwrap());
+    app.recovery.flush();
+    assert!(app.recovery.poll().is_none());
+    assert!(crate::recovery::snapshot_path(app.recovery.root.as_ref().unwrap(), &map).is_file());
+    eprintln!("Task43 復原快照（含 flush）={:?}", measured.elapsed());
+    let measured = std::time::Instant::now();
     spawn_save_tests::save_ok(&mut app);
-    let save = start.elapsed() - check;
-    let loaded = reopen(&root, &map);
-    let reload = start.elapsed() - check - save;
+    let save = measured.elapsed();
+    let measured = std::time::Instant::now();
+    let mut loaded = reopen(&root, &map);
+    let reload = measured.elapsed();
+    let ctx = egui::Context::default();
+    let measured = std::time::Instant::now();
+    let output = ctx.run(egui::RawInput::default(), |ctx| loaded.ui_frame(ctx));
+    assert!(!output.shapes.is_empty());
+    eprintln!("Task43 無頭首幀（不含 GPU）={:?}", measured.elapsed());
+    let measured = std::time::Instant::now();
+    let terrain = loaded.session.as_mut().unwrap();
+    let baseline = terrain.heights().to_vec();
+    terrain.paint_height(128.0, 128.0, 120.0, HeightBrushOp::Raise, 15, None, 0).unwrap();
+    assert!(terrain.commit_stroke());
+    let painted = terrain.heights().to_vec();
+    eprintln!("Task43 大筆畫={:?}", measured.elapsed());
+    let measured = std::time::Instant::now();
+    assert!(terrain.undo());
+    assert_eq!(terrain.heights(), baseline);
+    eprintln!("Task43 大筆畫 undo={:?}", measured.elapsed());
+    let measured = std::time::Instant::now();
+    assert!(terrain.redo());
+    assert_eq!(terrain.heights(), painted);
+    eprintln!("Task43 大筆畫 redo={:?}", measured.elapsed());
+    assert!(terrain.undo());
     eprintln!("Task41 257x257 / 256 DATA objects / 512 spawns / 256 events: Design Check={check:?}, Safe Save={save:?}, reload={reload:?}");
     assert!(start.elapsed() < std::time::Duration::from_secs(120));
     assert_eq!(loaded.scenario.document(), app.scenario.document());
@@ -237,6 +278,57 @@ fn large_map_near_event_limit_design_save_reload_timings() {
     assert_eq!(spawn_save_tests::data_objects(&map), app.placement.objects());
     assert_eq!(loaded.session.as_ref().unwrap().heights(), app.session.as_ref().unwrap().heights());
     assert!(!loaded.has_unsaved_changes());
+    // 自製 APT ZIP 與有效定義，量測真正的載入、解析、投影與尋路，禁止零售資產存取。
+    std::fs::write(root.join("SYSTEM/clengine.ini"),
+        "[DefaultPath]\nSYSTEM/DATA_MP/DEFAULTS\n[AptPath]\nmap/DATA\n").unwrap();
+    std::fs::write(root.join("SYSTEM/cl_apt.ini"), "[AptNames]\n0,fixture.dat\n").unwrap();
+    let mut columns = vec!["0"; 53];
+    columns[0] = "232";
+    columns[1] = "1";
+    columns[52] = "BauGerHau00_Haupthaus";
+    std::fs::write(root.join("SYSTEM/DATA_MP/DEFAULTS/objdef.dau"),
+        format!("[ObjectDefaults]\n{}\n", columns.join(","))).unwrap();
+    let mut apt = vec![0u8; 416 + 101 * 12];
+    apt[..4].copy_from_slice(b"APAT");
+    for (at, value) in [(4, 3u32), (12, 112), (36, 1), (384, 1), (396, 101)] {
+        apt[at..at + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    for i in 0..101 {
+        let at = 416 + i * 12;
+        apt[at..at + 4].copy_from_slice(&1u32.to_le_bytes());
+        apt[at + 4..at + 8].copy_from_slice(&(((i % 11) as i32 - 5) * 64).to_le_bytes());
+    }
+    // 沿用現有 Rust ZIP 匯出器，無新增相依套件或手刻 ZIP 格式。
+    std::fs::write(map.join("DATA/fixture.dat"), apt).unwrap();
+    let options = against_rome_packaging::exporter::ModExportOptions {
+        clean_caches: false, force_export_on_errors: true, generate_thumbnail: false,
+        ..Default::default()
+    };
+    against_rome_packaging::exporter::ModBundleExporter::export_to_zip(
+        &map, &root.join("apt.dat"), Some(&options)).unwrap();
+    std::fs::remove_file(map.join("DATA/fixture.dat")).unwrap();
+    loaded.maps.game_path_input = root.to_string_lossy().into_owned();
+    loaded.placement.load_session(&map).unwrap();
+    loaded.placement.set_type_names(std::collections::HashMap::from([(232, "BauGerHau00_Haupthaus".into())]));
+    loaded.navigation.open = true;
+    let collision_before = loaded.session.as_ref().unwrap().collision().to_vec();
+    let measured = std::time::Instant::now();
+    loaded.update_navigation_objects_if_needed();
+    let (route, fallbacks, cells) = loaded.navigation.analyze_apt_for_test(
+        loaded.session.as_ref().unwrap(), loaded.water_surface).unwrap();
+    eprintln!("Task43 APT 冷載入／256 建築／101 格占地／路徑={:?}", measured.elapsed());
+    assert_eq!(fallbacks, 0);
+    assert_eq!(cells, 256 * 101);
+    assert!(route.path_cells.is_some_and(|count| count > 1));
+    let measured = std::time::Instant::now();
+    loaded.update_navigation_objects_if_needed();
+    let (warm, _, _) = loaded.navigation.analyze_apt_for_test(
+        loaded.session.as_ref().unwrap(), loaded.water_surface).unwrap();
+    eprintln!("Task43 APT 快取／路徑={:?}", measured.elapsed());
+    assert_eq!(warm.path_cells, route.path_cells);
+    assert_eq!(warm.passable, route.passable);
+    assert_eq!(loaded.session.as_ref().unwrap().collision(), collision_before);
+    assert_eq!(map_bytes(&map), disk_before);
     drop((app, loaded));
     std::fs::remove_dir_all(root).unwrap();
 }

@@ -2282,6 +2282,44 @@ let compare = |s: &ObjectStore, stage: &str| assert_pools_match_frozen(s, "batch
         }
     }
     #[test]
+    fn batch_translation_matches_sequential_pool_bytes_and_preserves_history() {
+        for mut store in [rich_fixture(), fixture_count(16)] {
+            let roots: Vec<_> = store.objects().into_iter()
+                .filter(|o| o.parent.is_none()).map(|o| (o.slot, o.uid)).collect();
+            let roots: Vec<_> = roots.into_iter()
+                .filter(|&(s, u)| store.family_details(s, u).is_ok()).collect();
+            assert!(!roots.is_empty());
+            store.translate_family_fixed(roots[0].0, roots[0].1, [1, 2, 3]).unwrap();
+            assert!(store.undo());
+            let before = store.snapshot();
+            let history = store.history.clone();
+            let mut sequential = store.clone();
+            let delta = [65537, -32769, 131073];
+            for &(slot, uid) in &roots {
+                sequential.translate_family_fixed(slot, uid, delta).unwrap();
+            }
+            let mut duplicated = roots.clone();
+            duplicated.push(roots[0]);
+            store.translate_families_fixed(&duplicated, delta).unwrap();
+            assert_eq!(store.snapshot(), sequential.snapshot());
+            assert!(store.redo.is_empty());
+            let after = store.snapshot();
+            assert!(store.undo());
+            assert_eq!(store.snapshot(), before);
+            assert_eq!(store.history, history);
+            assert!(store.redo());
+            assert_eq!(store.snapshot(), after);
+            assert!(store.undo());
+            let redo = store.redo.clone();
+            let mut invalid = roots;
+            invalid.push((usize::MAX, 999));
+            assert!(store.translate_families_fixed(&invalid, delta).is_err());
+            assert_eq!(store.snapshot(), before);
+            assert_eq!(store.history, history);
+            assert_eq!(store.redo, redo);
+        }
+    }
+    #[test]
     fn translate_families_fixed_batch_and_undo_redo() {
         let mut store = fixture_count(4);
         let orig_pos_0 = store.objects()[0].position;
@@ -3218,6 +3256,19 @@ impl ObjectStore {
     pub fn translate_family_fixed(&mut self, slot: usize, uid: u32, delta: [i32; 3]) -> Result<()> {
         let details = self.family_details(slot, uid)?;
         let mut candidate = self.snapshot();
+        self.translate_details_fixed(&details, &mut candidate, delta)?;
+        self.history.push(self.snapshot());
+        self.redo.clear();
+        self.restore(candidate);
+        Ok(())
+    }
+    // 僅修改候選座標，不建立子交易或重複複製資料池。
+    fn translate_details_fixed(
+        &self,
+        details: &FamilyDetails,
+        candidate: &mut BTreeMap<String, Vec<u8>>,
+        delta: [i32; 3],
+    ) -> Result<()> {
         let positions: BTreeSet<_> = details.object_slots.iter().flat_map(|s| self.poslinks(*s)).collect();
         let translate = |bytes: &mut [u8], offset: usize, axis: usize| -> Result<()> {
             let old = f32at(bytes, offset);
@@ -3290,9 +3341,6 @@ impl ObjectStore {
                 }
             }
         }
-        self.history.push(self.snapshot());
-        self.redo.clear();
-        self.restore(candidate);
         Ok(())
     }
     /// Exact signed 16.16 displacement for multiple object families as a single atomic transaction.
@@ -3312,13 +3360,16 @@ impl ObjectStore {
                 unique_families.push((slot, uid));
             }
         }
-        let mut candidate = self.clone();
+        // 平移不改變家族所有權與連結；共用唯讀索引，依原順序套用座標。
+        let index = FamilyDetailsIndex::new(self);
+        let mut candidate = self.snapshot();
         for &(slot, uid) in &unique_families {
-            candidate.translate_family_fixed(slot, uid, delta)?;
+            let details = self.family_details_with_index(slot, uid, &index)?;
+            self.translate_details_fixed(&details, &mut candidate, delta)?;
         }
         self.history.push(self.snapshot());
         self.redo.clear();
-        self.restore(candidate.snapshot());
+        self.restore(candidate);
         Ok(())
     }
     /// World displacement for multiple object families as a single atomic transaction.

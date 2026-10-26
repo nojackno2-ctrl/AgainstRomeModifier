@@ -4,7 +4,35 @@ use crate::{lzss, pool::Source, sha256::sha256, Error};
 use std::{
     fmt,
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
+
+#[cfg(test)]
+mod lazy_digest_tests {
+    use super::*;
+
+    #[test]
+    fn raw_candidate_defers_digest_and_clones_keep_exact_input_hash() {
+        let mut bytes = vec![0; PAYLOAD_LEN];
+        for (at, value) in [(0, 1i32), (4, CAPACITY as i32), (8, CHILDREN as i32)] {
+            bytes[at..at + 4].copy_from_slice(&value.to_le_bytes());
+        }
+        let start = std::time::Instant::now();
+        let pool = ParticlePool::from_payload(&bytes).unwrap();
+        eprintln!("Task43 particle 建構（不使用指紋）={:?}", start.elapsed());
+        assert!(pool.input_sha256.get().is_none());
+        let clone = pool.clone();
+        // 原呼叫者修改輸入後，延遲指紋仍必須使用不可變的內部快照。
+        bytes[12] = 17;
+        let start = std::time::Instant::now();
+        let expected = sha256(pool.payload());
+        eprintln!("Task43 particle 原本每次建構的 SHA256 成本={:?}", start.elapsed());
+        assert_eq!(pool.input_sha256(), &expected);
+        assert_eq!(clone.input_sha256(), &expected);
+        assert_eq!(pool.clone().input_sha256(), &expected);
+        assert!(pool.input_sha256.get().is_some());
+    }
+}
 
 pub const CAPACITY: usize = 1024;
 pub const CHILDREN: usize = 64;
@@ -62,7 +90,7 @@ impl std::error::Error for ParticleError {}
 pub struct ParticlePool {
     payload: Box<[u8]>,
     source: Source,
-    input_sha256: [u8; 32],
+    input_sha256: OnceLock<[u8; 32]>,
     source_path: Option<PathBuf>,
 }
 fn i32_at(b: &[u8], o: usize) -> i32 {
@@ -80,14 +108,15 @@ impl ParticlePool {
             }
             .into());
         }
-        Self::build(bytes.to_vec(), Source::RawPayload, sha256(bytes))
+        // 記憶體候選的家族驗證只讀取資料池；需要稽核指紋時才計算。
+        Self::build(bytes.to_vec(), Source::RawPayload, OnceLock::new())
     }
     pub fn from_file_bytes(bytes: &[u8]) -> Result<Self, ParticleError> {
         if lzss::has_pfil_magic(bytes) {
             let decoded = lzss::decompress_pfil(bytes, Some(PAYLOAD_LEN))?;
             let mut header = [0; 64];
             header.copy_from_slice(&bytes[..64]);
-            Self::build(decoded, Source::Pfil { header }, sha256(bytes))
+            Self::build(decoded, Source::Pfil { header }, OnceLock::from(sha256(bytes)))
         } else {
             Self::from_payload(bytes)
         }
@@ -103,7 +132,7 @@ impl ParticlePool {
     fn build(
         payload: Vec<u8>,
         source: Source,
-        input_sha256: [u8; 32],
+        input_sha256: OnceLock<[u8; 32]>,
     ) -> Result<Self, ParticleError> {
         if payload.len() != PAYLOAD_LEN {
             return Err(Error::PayloadLength {
@@ -135,7 +164,7 @@ impl ParticlePool {
         &self.source
     }
     pub fn input_sha256(&self) -> &[u8; 32] {
-        &self.input_sha256
+        self.input_sha256.get_or_init(|| sha256(&self.payload))
     }
     pub fn source_path(&self) -> Option<&Path> {
         self.source_path.as_deref()

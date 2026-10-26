@@ -1,4 +1,13 @@
-## 2026-10-26 Claude：暫停交接（使用者要求「先暫停，寫交接」）
+## 2026-10-26 Codex：效能修正已驗證；遊戲驗收未完成
+- 使用者已恢復「繼續完成地圖編輯器」；起始 HEAD `cecdbd5`。保留 AGENTS.md、README.md 與暫時實測模組的既有變更。
+- Codex #43 已完成：批次家族移動共用索引／候選資料池，ParticlePool 延遲 raw payload SHA-256（PFIL 保留原檔指紋）；新增位元組、歷程與 TEMP APT／操作計時回歸。大型 fixture 52.658→1.174 秒，DATA 建立／載入／移動 31.704 秒→116 ms。最終 Design Check 267 ms、Safe Save 338 ms、重載 35 ms、無頭首幀 9.74 ms、APT 冷／快取與尋路 28.8／23.4 ms。日誌 `re_workspace/batch43-final-timings.log`。
+- Agy 驗收唯讀審查及獨立效能 diff 審查完成（job `556719d8a2dc`），未發現具體回歸；父代理另核對 raw/PFIL 指紋、候選位移及測試入口。子代理聚焦核心 223 passed／5 ignored、工作流程 22 passed。父代理依序 `cargo check`／`cargo test`／`cargo build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target`（test 加 `--no-fail-fast`），全部 exit 0；287 組、**2708 passed／0 failed／25 ignored**，無 MSVC 連結錯誤。日誌 `re_workspace/batch43-parent-{check,test,build}.log`；`git diff --check` 通過。子代理曾因測試誤用未直接相依的 zip crate 編譯失敗，改用既有 Rust ZIP 匯出器後通過，未新增相依套件。
+- 遊戲驗收未通過：以 computer-use 啟動 Against_Rome.exe，視窗持續全黑；前景化與 Escape 後仍無法判讀，Alt+F4 未結束，最後只停止本次啟動的 PID 23732。不能據此推論遊戲或劇本故障。
+- ENDL_005 已還原：先驗證準備時雜湊全數一致，將測試狀態另存 `%TEMP%\arm_ingame_attempt_20261026_b0d4745d4e304727bc63357fa8855ee0`，核對原備份 55 檔後還原，移除 6 個新增檔；還原後 **55/55 SHA-256 相符、檔數 55**。原備份仍保留。下方「地圖已修改」狀態已過時。
+- 暫時實測模組與 app.rs 註冊已移除，原稿留在忽略的 `re_workspace/ingame_prep_endl005.rs`，不提交。驗收清單已補實際失敗邊界、指定單位與波次辨識條件；主屋被毀失敗案例尚未準備。
+- 下一步：修復或更換可可靠擷取遊戲畫面的驗收環境，再重新準備自製地圖，完成波次／區域／勝敗與 GUI／GPU 首幀驗收。新增 APT 量測只涵蓋合成 TEMP 資產，不代表零售資產驗收；整體編輯器目標維持進行中。
+
+## 2026-10-26 Claude：暫停交接（已過時；已恢復開發，測試地圖已還原）
 
 **目前狀態**
 - 分支 `主要開發`，最新已推送 `a4a43ae`。完整測試（Claude 正常環境，`cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target`）：**2,705 passed／0 failed／26 ignored**。
