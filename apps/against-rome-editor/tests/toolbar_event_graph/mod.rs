@@ -92,6 +92,27 @@ fn request_apply(app: &mut EditorApp) {
 }
 
 #[test]
+fn graph_delete_apply_uses_unified_journal_and_preserves_draft_until_apply() {
+    let (_fixture, mut app) = Fixture::new(false);
+    app.open_toolbar_event_graph();
+    app.collect_pilot_receipts();
+    let before = app.scenario.document().clone();
+    let trigger = app.event_graph.graph.nodes.iter()
+        .find(|n| matches!(n.kind, NodeKind::EventTrigger { .. })).unwrap().id;
+    app.event_graph.selected_nodes.insert(trigger);
+    app.event_graph.delete_selected();
+    assert_eq!(app.scenario.document(), &before);
+    request_apply(&mut app);
+    assert!(app.scenario.document().events.is_empty());
+    app.collect_pilot_receipts();
+    assert!(app.undo_journal.can_undo());
+    app.navigate_journal(false);
+    assert_eq!(app.scenario.document(), &before);
+    app.navigate_journal(true);
+    assert!(app.scenario.document().events.is_empty());
+}
+
+#[test]
 fn toolbar_apply_then_safe_save_and_reload_raw_and_pfil() {
     for pfil in [false, true] {
         let (fixture, mut app) = Fixture::new(pfil);

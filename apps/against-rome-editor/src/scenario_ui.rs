@@ -1549,6 +1549,7 @@ impl ScenarioUi {
             }
         }
         if !self.open {
+            self.graph_ui.english = self.english;
             self.graph_ui.show(ctx);
             return;
         }
@@ -1825,6 +1826,7 @@ impl ScenarioUi {
                     });
                 });
         }
+        self.graph_ui.english = self.english;
         self.graph_ui.show(ctx);
     }
 }

@@ -44,6 +44,10 @@ pub struct EventGraphUi {
     pub pending_close: bool,
     pub apply_requested: bool,
     pub last_canvas_size: Vec2,
+    pub english: bool,
+    draft_undo: Option<(EventGraph, EventGraph, bool)>,
+    #[cfg(test)]
+    validation_count: usize,
 }
 
 impl Default for EventGraphUi {
@@ -66,11 +70,62 @@ impl Default for EventGraphUi {
             pending_close: false,
             apply_requested: false,
             last_canvas_size: Vec2::new(800.0, 500.0),
+            english: false,
+            draft_undo: None,
+            #[cfg(test)]
+            validation_count: 0,
         }
     }
 }
 
 impl EventGraphUi {
+    /// 刪除共用草稿路徑；套用仍由 Scenario 的交易及統一日誌處理。
+    pub(crate) fn delete_selected(&mut self) {
+        if !self.graph.nodes.iter().any(|n| self.selected_nodes.contains(&n.id)) { return; }
+        let before = self.graph.clone();
+        let dirty = self.is_dirty;
+        for id in self.selected_nodes.drain().collect::<Vec<_>>() { self.graph.remove_node(id); }
+        self.mark_dirty();
+        self.draft_undo = Some((before, self.graph.clone(), dirty));
+    }
+
+    fn can_undo_draft(&self) -> bool {
+        self.is_dirty && self.draft_undo.as_ref().is_some_and(|(_, after, _)| after == &self.graph)
+    }
+
+    fn undo_draft(&mut self) {
+        if !self.can_undo_draft() { return; }
+        if let Some((before, _, dirty)) = self.draft_undo.take() {
+            self.graph = before;
+            self.selected_nodes.retain(|id| self.graph.find_node(*id).is_some());
+            self.is_dirty = dirty;
+            self.validate();
+        }
+    }
+
+    /// 選取仍存在的錯誤節點，不修改草稿。
+    fn select_error_nodes(&mut self) {
+        self.selected_nodes = self.diagnostics.iter()
+            .filter(|d| d.severity == GraphDiagnosticSeverity::Error)
+            .filter_map(|d| d.node_id)
+            .filter(|id| self.graph.find_node(*id).is_some()).collect();
+    }
+
+    fn canvas_shortcuts(&mut self, ctx: &egui::Context, active: bool, size: Vec2) {
+        if !active || ctx.wants_keyboard_input() || self.pending_close { return; }
+        if ctx.input(|i| i.modifiers != egui::Modifiers::NONE) { return; }
+        let delete = ctx.input_mut(|i| {
+            i.consume_key(egui::Modifiers::NONE, egui::Key::Delete)
+                | i.consume_key(egui::Modifiers::NONE, egui::Key::Backspace)
+        });
+        if delete { self.delete_selected(); }
+        let fit = ctx.input_mut(|i| {
+            i.consume_key(egui::Modifiers::NONE, egui::Key::F)
+                | i.consume_key(egui::Modifiers::NONE, egui::Key::Home)
+        });
+        if fit { self.zoom_to_fit(size); }
+    }
+
     pub fn is_dirty(&self) -> bool {
         self.is_dirty
     }
@@ -81,6 +136,7 @@ impl EventGraphUi {
     }
 
     pub fn clear_transient(&mut self) {
+        self.draft_undo = None;
         self.dragging_node_id = None;
         self.connecting_port_id = None;
         self.connecting_start_pos = None;
@@ -91,6 +147,8 @@ impl EventGraphUi {
     }
 
     pub fn validate(&mut self) {
+        #[cfg(test)]
+        { self.validation_count += 1; }
         self.diagnostics = validator::validate(&self.graph, None, None);
         let errors = self
             .diagnostics
@@ -163,6 +221,8 @@ impl EventGraphUi {
             return;
         }
 
+        let before = self.graph.clone();
+        let dirty = self.is_dirty;
         let mut visited: HashSet<Uuid> = HashSet::new();
         let mut current_y = 60.0_f32;
 
@@ -276,7 +336,10 @@ impl EventGraphUi {
             }
         }
 
-        self.mark_dirty();
+        if before != self.graph {
+            self.is_dirty = true;
+            self.draft_undo = Some((before, self.graph.clone(), dirty));
+        }
     }
 
     /// Validates graph structure and port connections before compilation.
@@ -589,13 +652,16 @@ impl EventGraphUi {
                         )
                         .clicked()
                     {
-                        for node_id in self.selected_nodes.drain().collect::<Vec<_>>() {
-                            self.graph.remove_node(node_id);
-                        }
-                        self.mark_dirty();
+                        self.delete_selected();
                     }
                     if ui.button("新增節點 (Add Node)...").clicked() {
                         self.show_add_menu = !self.show_add_menu;
+                    }
+                    if ui.add_enabled(self.can_undo_draft(), egui::Button::new(crate::toolbox::tl(self.english, "復原上次刪除／排列（草稿）", "Undo last delete/layout (draft)"))).clicked() {
+                        self.undo_draft();
+                    }
+                    if ui.button(crate::toolbox::tl(self.english, "選取錯誤節點", "Select error nodes")).clicked() {
+                        self.select_error_nodes();
                     }
                     if ui.button("整齊排列 (Tidy / Auto-Layout)").clicked() {
                         self.auto_layout();
@@ -688,29 +754,7 @@ impl EventGraphUi {
                     self.pan += response.drag_delta();
                 }
 
-                // 快捷鍵處理：Delete / Backspace 刪除選取節點
-                let delete_pressed = ctx.input(|i| {
-                    i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)
-                });
-                if delete_pressed && !self.selected_nodes.is_empty() {
-                    for node_id in self.selected_nodes.drain().collect::<Vec<_>>() {
-                        self.graph.remove_node(node_id);
-                    }
-                    self.mark_dirty();
-                }
-
-                // 快捷鍵處理：F 或 Home 觸發符合全圖 (Fit View)
-                if response.hovered()
-                    && ctx.input(|i| {
-                        !i.modifiers.ctrl
-                            && !i.modifiers.alt
-                            && !i.modifiers.shift
-                            && (i.key_pressed(egui::Key::F) || i.key_pressed(egui::Key::Home))
-                    })
-                {
-                    self.zoom_to_fit(canvas_rect.size());
-                }
-
+                self.canvas_shortcuts(ctx, response.hovered(), canvas_rect.size());
                 let hover_pos = response.hover_pos();
                 if response.hovered() {
                     let scroll_delta = ctx.input(|i| i.raw_scroll_delta.y);
@@ -1370,6 +1414,146 @@ mod small_ux_tests {
     }
 
     #[test]
+    fn layout_preserves_compile_order_edges_and_cached_diagnostics_and_undoes() {
+        let events = vec![against_rome_scenario::Event {
+            name: "事件乙".into(), enabled: true,
+            actions: vec![against_rome_scenario::Action { text: "先".into(), ..Default::default() },
+                against_rome_scenario::Action { text: "後".into(), ..Default::default() }],
+            ..Default::default()
+        }, against_rome_scenario::Event { name: "事件甲".into(), ..Default::default() }];
+        let mut ui = EventGraphUi::default();
+        ui.load_from_scenario_events(&events);
+        ui.graph.nodes[0].x = -500.0;
+        let before = ui.graph.clone();
+        let compiled = ui.compile_to_scenario_events();
+        let diagnostics = ui.diagnostics.clone();
+        let count = ui.validation_count;
+        ui.auto_layout();
+        assert_eq!(ui.compile_to_scenario_events(), compiled);
+        assert_eq!(ui.graph.edges, before.edges);
+        assert_eq!(ui.graph.nodes.iter().map(|n| n.id).collect::<Vec<_>>(), before.nodes.iter().map(|n| n.id).collect::<Vec<_>>());
+        assert_eq!(ui.validation_count, count);
+        assert_eq!(ui.diagnostics, diagnostics);
+        assert!(ui.can_undo_draft());
+        ui.undo_draft();
+        assert_eq!(ui.graph, before);
+        assert!(!ui.is_dirty);
+    }
+
+    #[test]
+    fn delete_restores_incident_edges_and_cannot_overwrite_later_edits() {
+        let mut ui = EventGraphUi::default();
+        let trigger = GraphNode::new_event_trigger("事件", 0, false, true);
+        let action = GraphNode::new_message_action("訊息");
+        let out = trigger.find_port_by_name("ExecOut").unwrap().id;
+        let input = action.find_port_by_name("ExecIn").unwrap().id;
+        ui.selected_nodes.insert(action.id);
+        ui.graph.add_node(trigger);
+        ui.graph.add_node(action);
+        ui.graph.connect(out, input).unwrap();
+        let before = ui.graph.clone();
+        ui.delete_selected();
+        assert!(ui.graph.edges.is_empty());
+        ui.undo_draft();
+        assert_eq!(ui.graph, before);
+        ui.selected_nodes.insert(ui.graph.nodes[1].id);
+        ui.delete_selected();
+        ui.graph.add_node(GraphNode::new_defeat_action());
+        let later = ui.graph.clone();
+        ui.undo_draft();
+        assert_eq!(ui.graph, later);
+        ui.clear_transient();
+        assert!(ui.draft_undo.is_none());
+    }
+
+    #[test]
+    fn shortcuts_respect_text_focus_canvas_scope_and_consume_fit_keys() {
+        for key in [egui::Key::Delete, egui::Key::Backspace, egui::Key::F, egui::Key::Home] {
+            for (focused, active) in [(true, true), (false, false), (false, true)] {
+                let mut ui = EventGraphUi::default();
+                let node = GraphNode::new_message_action("保留文字");
+                ui.selected_nodes.insert(node.id);
+                ui.graph.add_node(node);
+                let before = ui.graph.clone();
+                let ctx = egui::Context::default();
+                let id = egui::Id::new("文字欄位");
+                let mut text = String::from("保留文字");
+                if focused {
+                    let _ = ctx.run(Default::default(), |ctx| {
+                        egui::CentralPanel::default().show(ctx, |u| {
+                            u.add(egui::TextEdit::singleline(&mut text).id(id)).request_focus();
+                        });
+                    });
+                }
+                let _ = ctx.run(egui::RawInput {
+                    events: vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE }],
+                    ..Default::default()
+                }, |ctx| {
+                    ui.canvas_shortcuts(ctx, active, Vec2::new(800.0, 500.0));
+                    if focused || !active {
+                        assert_eq!(ui.graph, before);
+                        assert_eq!(ui.zoom, 1.0);
+                        assert!(!ui.is_dirty);
+                    } else {
+                        assert!(!ctx.input(|i| i.key_pressed(key)));
+                        if matches!(key, egui::Key::Delete | egui::Key::Backspace) {
+                            assert!(ui.graph.nodes.is_empty());
+                            assert!(ui.can_undo_draft());
+                        }
+                    }
+                });
+            }
+        }
+    }
+
+    #[test]
+    fn modified_canvas_keys_preserve_graph_view_and_input() {
+        for modifiers in [egui::Modifiers::SHIFT, egui::Modifiers::ALT, egui::Modifiers::CTRL] {
+            for key in [egui::Key::Delete, egui::Key::Backspace, egui::Key::F, egui::Key::Home] {
+                let mut ui = EventGraphUi::default();
+                let node = GraphNode::new_message_action("保留");
+                ui.selected_nodes.insert(node.id);
+                ui.graph.add_node(node);
+                let ctx = egui::Context::default();
+                let _ = ctx.run(egui::RawInput {
+                    modifiers,
+                    events: vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers }],
+                    ..Default::default()
+                }, |ctx| {
+                    ui.canvas_shortcuts(ctx, true, Vec2::new(800.0, 500.0));
+                    assert_eq!(ui.graph.nodes.len(), 1);
+                    assert_eq!(ui.zoom, 1.0);
+                    assert!(!ui.is_dirty);
+                    assert!(ctx.input(|i| i.key_pressed(key)));
+                });
+            }
+        }
+    }
+
+    #[test]
+    fn select_errors_filters_stale_warning_and_global_diagnostics_without_dirtying() {
+        let mut ui = EventGraphUi::default();
+        let node = GraphNode::new_message_action("錯誤");
+        let id = node.id;
+        ui.graph.add_node(node);
+        for (severity, node_id) in [(GraphDiagnosticSeverity::Error, Some(id)),
+            (GraphDiagnosticSeverity::Error, Some(Uuid::new_v4())),
+            (GraphDiagnosticSeverity::Warning, Some(id)), (GraphDiagnosticSeverity::Error, None)] {
+            let mut d = GraphDiagnostic::new(severity, "測試", "測試");
+            d.node_id = node_id;
+            ui.diagnostics.push(d);
+        }
+        ui.select_error_nodes();
+        assert_eq!(ui.selected_nodes, HashSet::from([id]));
+        assert!(!ui.is_dirty);
+        assert_eq!(ui.validation_count, 0);
+        ui.open = true;
+        let ctx = egui::Context::default();
+        for _ in 0..3 { let _ = ctx.run(Default::default(), |ctx| ui.show(ctx)); }
+        assert_eq!(ui.validation_count, 0);
+    }
+
+    #[test]
     fn test_event_graph_zoom_to_fit() {
         let mut ui = EventGraphUi::default();
         let canvas_size = Vec2::new(800.0, 500.0);
@@ -1478,7 +1662,7 @@ mod small_ux_tests {
             }],
             ..Default::default()
         }, |ctx| {
-            ui.show(ctx);
+            ui.canvas_shortcuts(ctx, true, Vec2::new(800.0, 500.0));
         });
 
         assert!(ui.is_dirty());

@@ -1798,6 +1798,7 @@ impl EditorApp {
         if self.event_graph.open {
             self.sync_toolbar_event_graph();
         }
+        self.event_graph.english = self.lang() == AppLanguage::English;
         self.event_graph.show(ctx);
         self.apply_toolbar_event_graph_request();
     }
@@ -11149,7 +11150,7 @@ angle=0.00
     }
     #[test]
     fn global_shortcuts_do_not_escape_dialogs_or_event_graph() {
-        for context in 0..6 {
+        for context in 0..8 {
             let mut app = EditorApp::default();
             app.ambience.mark_dirty();
             app.design_check.open = false;
@@ -11159,17 +11160,25 @@ angle=0.00
                 2 => app.skirmish_wizard.open = true,
                 3 => app.event_graph.open = true,
                 4 => app.event_graph.pending_close = true,
+                6 => app.scenario.graph_ui.open = true,
+                7 => app.scenario.graph_ui.pending_close = true,
                 _ => app.pending_save_warnings = Some((PathBuf::new(), vec![])),
             }
+            app.zoom = 1.7;
+            app.pan = egui::vec2(73.0, 29.0);
             let tool = app.active_tool;
             let radius = app.brush_radius;
             let ctx = egui::Context::default();
             gui_frame(&mut app, &ctx, vec![]);
-            gui_frame(&mut app, &ctx, [egui::Key::Num9, egui::Key::CloseBracket, egui::Key::F5]
+            let status = app.status_message.clone();
+            gui_frame(&mut app, &ctx, [egui::Key::Num9, egui::Key::CloseBracket, egui::Key::F5, egui::Key::F, egui::Key::Home]
                 .into_iter().map(|key| egui::Event::Key {
                     key, physical_key: None, pressed: true, repeat: false,
                     modifiers: egui::Modifiers::NONE,
                 }).collect());
+            assert_eq!(app.zoom, 1.7, "情境 {context}");
+            assert_eq!(app.pan, egui::vec2(73.0, 29.0), "情境 {context}");
+            assert_eq!(app.status_message, status, "情境 {context}");
             assert_eq!(app.active_tool, tool, "情境 {context}");
             assert_eq!(app.brush_radius, radius, "情境 {context}");
             assert!(!app.design_check.open, "情境 {context}");
@@ -11501,6 +11510,7 @@ impl EditorApp {
         self.pending_action.is_some() || self.pending_save_warnings.is_some() || self.environment.has_modal()
             || self.terrain_confirm.is_some() || self.recovery.offer.is_some()
             || self.skirmish_wizard.open || self.event_graph.open || self.event_graph.pending_close
+            || self.scenario.graph_ui.open || self.scenario.graph_ui.pending_close
     }
 
     /// Invalidate navigation passability & building footprints cache.

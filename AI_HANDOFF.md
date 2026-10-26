@@ -1,3 +1,6 @@
+## 2026-10-26 Codex：批次 #30（完成；環境失敗分列）
+- 審查 4665d8a：修正文字焦點誤刪、刪除／排列單步草稿復原與內嵌圖 F/Home 全域穿透；回歸確認連線／編譯順序不變、套用接統一復原、閒置不重算診斷。新增雙語「選取錯誤節點」並更新指南。cargo check／test／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target（test 加 --no-fail-fast）：check/build exit 0；test 287 組，2661 passed、4 failed、25 ignored，exit 101，日誌 re_workspace/codex-batch-30-test.log；僅 install_resource_discovery:55/111/128/162 拾取祖先目錄既有資源而失敗；ui_literal_sweep／guide_shortcuts 各 1 passed。初次 re_workspace 暫存觸發安全防護，改 repo/TEMP 後相關測試通過。未暫存／提交；安裝目錄唯讀，既有 AGENTS.md／README.md 保留；GUI 未驗收。
+
 ## 2026-10-26 Agy：自主批次 #29 劇情事件節點圖（Visual Event Graph）易用性三大改進（已驗證）
 - 1. 節點自動整齊排列（apps/against-rome-editor/src/event_graph/ui.rs:141-260、600-605）：工具列新增「整齊排列 (Tidy / Auto-Layout)」按鈕與 `auto_layout` 演算法，依觸發器（X=360）、連入條件（X=60）與執行動作鏈（X=660+260*n）階層式分欄定位，孤立節點整齊排列於下方網格，杜絕節點重疊與手動拖曳錯位，新增 `test_event_graph_auto_layout` 無頭測試。
 - 2. 畫布全圖自適應縮放聚焦（apps/against-rome-editor/src/event_graph/ui.rs:114-139、609-612、700-710）：原「重設視角」僅固定至 zoom=1.0、pan=(100, 100)，大圖或多節點常超出可見範圍；現新增 `zoom_to_fit` 與「符合全圖 (Fit View)」按鈕（及畫布焦點下 `F` / `Home` 快捷鍵），動態計算所有節點包圍盒並置中縮放適應（0.25..2.5 倍），新增 `test_event_graph_zoom_to_fit` 無頭測試。
