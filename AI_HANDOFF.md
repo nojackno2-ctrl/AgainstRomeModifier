@@ -1,3 +1,9 @@
+## 2026-10-26 Codex：任務 #37 設計流程端到端測試（已驗證）
+- 新增單一 designer_workflow_e2e：TEMP 合成平坦範本、雙人聚落、波次／目標、地形／材質、Spawn／DATA 建築、Design Check、就緒狀態、安全儲存、全新 EditorApp 重載、統一復原及復原快照清除。重用精靈 fixture，僅放寬測試模組可見性。
+- 已確認並修正：精靈 apply_settlement 後漏呼叫 EnvironmentUi::plan_queued，導致成功套用的聚落計畫仍阻擋 Safe Save；現在循既有面板路徑清除已套用計畫。聚落與新增建築的混合 DATA 保護保留；測試先安全儲存精靈成果，再進行後續編輯。
+- 聚焦 cargo test -p against-rome-editor-app --lib designer_workflow_e2e --locked --offline --target-dir re_workspace/codex-wave-dest-target：1 passed／0 failed。初稿使用中文遊戲名稱被既有編碼防護拒絕、路徑正規化差異及錯誤目標類型已修正為有效 fixture 輸入，未弱化測試。完整 cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target：287 組、2676 passed／0 failed／25 ignored，exit 0；日誌 re_workspace/codex-batch-37-test.log。install_resource_discovery 12 passed，提權環境限定失敗 0。cargo check／cargo build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 均 exit 0，日誌 codex-batch-37-check.log／codex-batch-37-build.log；git diff --check 通過。
+- 本次變更：AI_HANDOFF.md、apps/against-rome-editor/src/app.rs、src/skirmish_wizard_ui.rs、src/app/tests/designer_workflow_e2e.rs（新增未追蹤，後三者皆位於編輯器 crate）。未委派／暫存／提交；既有 AGENTS.md、README.md 變更保留；安裝目錄唯讀，GUI／遊戲內未驗收。
+
 ## 2026-10-26 Codex：自主批次 #34–#36（六項完成；完整測試通過）
 - 起始 HEAD ccbfcd4；指南 3.3／4.1／5.4 與交接均未記載本次六項操作；缺口：起始 textures_ui.rs:2160 只有搜尋欄、spawn_placement_ui.rs:1200 只有搜尋／類別／民族篩選、campaign_ui.rs:982／1138 只有新增／編譯／套用。未進行逆向工程或修改 Design Check。
 - #34：清除材質搜尋、複製目前材質／印章原始識別碼（textures_ui.rs:2172、2176）；#35：重設調色盤三種篩選、複製可見原始別名（spawn_placement_ui.rs:1222、1225）；#36：複製目標標題／說明清單、複製目前波次設定（campaign_ui.rs:1001、1160）。新增三組無頭回歸測試，指南 3.3／4.1／5.4 同步更新。

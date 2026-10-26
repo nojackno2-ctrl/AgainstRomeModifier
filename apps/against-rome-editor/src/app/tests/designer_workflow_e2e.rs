@@ -1,0 +1,107 @@
+use super::*;
+
+#[test]
+fn designer_workflow_e2e() {
+    let (root, _) = crate::skirmish_wizard_ui::tests::setup_test_game_fixture("designer_e2e");
+    let aliases = root.join("SYSTEM/CLAK/cl_scint.ini");
+    let catalog = std::fs::read_to_string(&aliases).unwrap().replace("HOUSE=", "GER_HAU00=");
+    std::fs::write(aliases, catalog).unwrap();
+    let mut app = EditorApp::initial_state();
+    app.recovery.root = Some(root.join("recovery"));
+    app.open_skirmish_wizard();
+    let wizard = &mut app.skirmish_wizard;
+    wizard.game_path_input = root.to_string_lossy().into_owned();
+    wizard.source_slot = 1;
+    wizard.target_slot = 5;
+    wizard.target_name = "Designer workflow".into();
+    wizard.briefing = "Hold the base until reinforcements arrive".into();
+    wizard.players = 2;
+    wizard.add_attack_waves = true;
+    wizard.wave_alias = "TROOP".into();
+    wizard.wave_count = 2;
+    wizard.add_objectives = true;
+    assert_eq!(wizard.template_kind, crate::skirmish_wizard_ui::SkirmishTemplateKind::FlatTemplate);
+    app.execute_skirmish_wizard().unwrap();
+    assert!(!app.environment.is_dirty());
+    spawn_save_tests::save_ok(&mut app);
+    let map = app.loaded_map_path.clone().unwrap();
+    assert!(std::fs::canonicalize(&map).unwrap().starts_with(std::fs::canonicalize(&root).unwrap()));
+
+    // 使用與畫筆相同的筆畫交易，保留其他地形頂點。
+    let terrain = app.session.as_mut().unwrap();
+    let before = terrain.heights()[0];
+    terrain.apply_height_changes(&[crate::terrain::SampleChange { index: 0, before, after: before + 3 }]);
+    assert!(terrain.commit_stroke());
+    app.textures.load_session(&map).unwrap();
+    let materials_before = app.textures.session_textures().unwrap().to_vec();
+    let textures = app.textures.session_mut().unwrap();
+    assert!(textures.stamp_texture(0, 0, "4BA___51").is_some());
+    assert!(textures.commit_stroke());
+    assert_ne!(app.textures.session_textures().unwrap(), materials_before);
+
+    app.spawn_ui.sync_with_document(&app.scenario, Some(&map));
+    app.spawn_ui.select_type("FigGerInf02_Zweihandaxt");
+    app.spawn_ui.set_placement_values(0, 1, 0);
+    app.spawn_ui.place_at_tile(&mut app.scenario, &spawn_save_tests::cx(), 10, 10);
+    assert!(!app.spawn_ui.status().1, "{}", app.spawn_ui.status().0);
+    spawn_save_tests::place_house(&mut app, (12, 12), 0);
+    app.scenario.wave_generator.waves = 1;
+    app.scenario.wave_generator.first = 600;
+    app.scenario.generate_attack_waves().unwrap();
+    let troop = app.scenario.document().spawns.iter().find(|s| s.alias == "GER_HAU00").unwrap().id;
+    app.scenario.add_objective(None, Some(troop), 0).unwrap();
+    app.run_design_check();
+    let report = app.design_check.report.as_ref().unwrap();
+    assert_eq!(report.error_count(), 0, "{report:?}");
+    app.ready_to_test.open = true;
+    let ready = app.evaluate_test_readiness();
+    assert_eq!(ready.design_errors, 0);
+    assert!(ready.unsaved_changes && !ready.is_ready);
+    assert!(ready.has_victory && ready.has_defeat);
+    assert_eq!(ready.total_waves, 3);
+    assert_eq!(ready.waves_with_destination, 3);
+    assert!(!ready.has_wave_not_hostile);
+    let pending = app.recovery_pending();
+    app.recovery.save(&map, true, pending).unwrap();
+    app.recovery.flush();
+    let snapshot = crate::recovery::snapshot_path(app.recovery.root.as_ref().unwrap(), &map);
+    assert!(snapshot.exists());
+    spawn_save_tests::save_ok(&mut app);
+    app.recovery.flush();
+    assert!(!snapshot.exists());
+    assert!(!app.has_unsaved_changes());
+    let heights = app.session.as_ref().unwrap().heights().to_vec();
+    let materials = app.textures.session_textures().unwrap().to_vec();
+    let document = app.scenario.document().clone();
+    let objects = spawn_save_tests::data_objects(&map);
+    assert!(document.spawns.iter().any(|s| s.prebuilt));
+    assert!(document.events.iter().flat_map(|e| &e.actions).any(|a| a.kind == 1 && a.hostile));
+    let briefing = app.ambience.briefing_title.clone();
+
+    let mut loaded = EditorApp::initial_state();
+    loaded.recovery.root = Some(root.join("recovery"));
+    loaded.set_loaded_map(map.clone(), crate::storage::load_map(&map).unwrap()).unwrap();
+    loaded.scenario.load_session(&map).unwrap();
+    loaded.textures.load_session(&map).unwrap();
+    assert_eq!(loaded.session.as_ref().unwrap().heights(), heights);
+    assert_eq!(loaded.textures.session_textures().unwrap(), materials);
+    assert_eq!(loaded.scenario.document(), &document);
+    assert_eq!(spawn_save_tests::data_objects(&map).len(), objects.len());
+    assert_eq!(loaded.ambience.briefing_title, briefing);
+    assert_eq!(briefing, "Hold the base until reinforcements arrive");
+    let ready = loaded.evaluate_test_readiness();
+    assert_eq!(ready.design_errors, 0);
+    assert!(!ready.unsaved_changes);
+    assert!(ready.is_ready || ready.is_warning_only);
+
+    let terrain = loaded.session.as_mut().unwrap();
+    terrain.apply_height_changes(&[crate::terrain::SampleChange { index: 0, before: heights[0], after: heights[0] + 1 }]);
+    assert!(terrain.commit_stroke());
+    loaded.collect_pilot_receipts();
+    assert!(loaded.undo_journal.can_undo());
+    loaded.navigate_journal(false);
+    assert_eq!(loaded.session.as_ref().unwrap().heights(), heights);
+    assert_eq!(loaded.scenario.document(), &document);
+    drop((app, loaded));
+    std::fs::remove_dir_all(root).unwrap();
+}

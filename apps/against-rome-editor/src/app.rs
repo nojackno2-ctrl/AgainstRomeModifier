@@ -5050,6 +5050,7 @@ mod tests {
     mod settlement_apply_tests;
     pub(super) mod spawn_save_tests;
     mod starter_kit_tests;
+    mod designer_workflow_e2e;
 
     #[test]
     fn test_editor_app_panel_persistence_and_snapshot() {

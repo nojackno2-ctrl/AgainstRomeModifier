@@ -712,8 +712,10 @@ impl EditorApp {
             )
             .map_err(|e| format!("Step 3 (Settlement generation) failed: {e}"))?;
 
-        self.apply_settlement()
+        let settlement_count = self.apply_settlement()
             .map_err(|e| format!("Step 3 (Settlement generation) failed: {e}"))?;
+
+        self.environment.plan_queued(crate::environment_ui::EnvApply::Settlement, settlement_count, "");
 
         // 3. Step 3: Attack waves (if toggled)
         if self.skirmish_wizard.add_attack_waves {
@@ -782,7 +784,7 @@ impl EditorApp {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::storage::safe_save_map;
     use crate::terrain::TerrainSession;
@@ -850,7 +852,7 @@ mod tests {
         }
     }
 
-    fn setup_test_game_fixture(tag: &str) -> (PathBuf, PathBuf) {
+    pub(crate) fn setup_test_game_fixture(tag: &str) -> (PathBuf, PathBuf) {
         let root = temp_test_dir(tag);
         let src = root.join("MAPS").join("ENDL_001");
         std::fs::create_dir_all(&src).unwrap();
