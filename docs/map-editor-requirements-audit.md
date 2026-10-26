@@ -1,5 +1,12 @@
 # 地圖編輯器需求與證據核對
 
+## 2026-10-26 最新 Rust 驗收補記
+
+- 原生 DATA 群組副本現在可批次變更隊伍／方向；來源 family 不變，原生 root 及保留中的既有 binding 仍拒絕直接更改。Rust 專項：`apps/against-rome-editor/tests/spawn_placement.rs`（35 passed）、`native/against-rome-maps/tests/spawn_data_tests.rs`（12 passed）；全 workspace app 849 passed／6 ignored，`cargo check`／`cargo build --workspace --locked --offline` 均成功。此功能尚未經實際桌面操作驗收。細節見 `AI_HANDOFF.md` 2026-10-26 原生 DATA 群組副本編輯。
+- 實際桌面：TEMP 地圖已完成 2D 高度筆畫→Safe Save→關閉→重新開啟；另驗證水位與起始鏡頭的 undo／redo。結果與 hash 記錄見 `docs/map-editor-ingame-checklist.md`。
+- 遊戲啟動：2026-10-26 安裝版標題正常，但畫面仍黑。程序有回應、載入 `ddraw.dll`／NVIDIA `nvd3dum.dll`／`ds_andll.dll`／`Quartz.dll`；約 12 秒 CPU 增量 0.03 秒、PID 專屬 GPU 3D 三次取樣皆 0%。WPR 因追蹤權限失敗（`0xc5585011`），因此尚無堆疊證據。這不推翻 2026-10-23 既有遊戲內勝敗／波次／尋路證據，也不構成目前版本重驗通過；詳見最新 `AI_HANDOFF.md`。
+- 待完成仍包括：可觀察遊戲啟動後重驗必要玩法、原版材質／地形／部隊／事件全流程及支援範圍；實體高 DPI／跨螢幕；3D 通行覆蓋與 picker 畫面；空白地圖開局。整體目標未完成。
+
 ## 2026-10-22 Rust 現況（取代下方 C# 時期細節）
 
 下方 2026-10-07 表格引用的 `.cs` 測試與 WinForms 表單已隨 Rust 遷移退役；需求本身仍有效，證據改看 Rust 測試與 `AI_HANDOFF.md`。安裝目錄存取規則已改為 AGENTS.md 2026-10-08 授權（只寫自製測試圖並先備份）。
@@ -48,7 +55,7 @@
 | 3D 真貼圖、水面、光照、標記、筆刷與 fallback | `MapEditorOpenGlTests.cs` 真實 GPU 離屏擷取（RTX 4080／GL 3.3） | 高度/undo/材質/水面更新已有真實畫面證據；修正關閉表單時 GL 資源在 context 銷毀後才釋放、觸發重新初始化與 BeginInvoke 例外。資源失敗診斷、無 GPU fallback 與互動效能尚待驗收 |
 | UI 中英／尺寸／DPI | 96 DPI 證據；`MapEditorHighDpiTests.cs` 100/150/200% 模擬 | 編輯器視窗（AI 對話框除外）改 AutoScaleMode.Dpi 並修正截字；實體高 DPI 螢幕未驗證 |
 | AI 正式生成／預覽／套用 | 序列鎖、取消、部分失敗、套用與儲存；視覺預覽接UI，隔離/拒絕區域/統計/圖片釋放、角色進度合成測試 | 第4階段續做新UI視覺與真實生成→預覽→套用→儲存/reload；不能沿用舊live結果 |
-| 遊戲載入、存讀檔、原版品質 | 本輪沒有執行遊戲 | 尚未完成；仍遵守 AGENTS.md 禁止存取安裝目錄 |
+| 遊戲載入、存讀檔、原版品質 | 2026-10-22 舊輪未執行遊戲；10-26 已依授權啟動安裝版並檢查模組、CPU、執行緒及 GPU counters，畫面黑且 WPR 無權錄製 | 遊戲內 gate 未完成；依 `AGENTS.md` 僅能改動先備份的自製測試地圖，原版檔案唯讀；追蹤權限或可觀察環境仍待解決 |
 
 ## 下一批優先工作
 
