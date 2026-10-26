@@ -1058,10 +1058,10 @@ impl Viewport3d {
             self.scene_dragging = false;
         }
 
-        // Ramp endpoints use integer tile centers; hover_grid/brush dabs stay continuous.
-        let terrain_pick_grid = self
-            .hover_tile
-            .map(|tile| Self::terrain_tile_to_grid(session, &field, tile));
+        // Ramp endpoints use the continuous terrain hit grid, matching the 2D canvas.
+        // `hover_tile` is the coarser 64x64 terrain/material cell and would snap 257x257
+        // height-grid endpoints to every fourth vertex.
+        let terrain_pick_grid = self.hover_grid;
         // Capture only presses inside this canvas; a release outside or in the sky
         // must not reuse the last valid terrain coordinate.
         if self.terrain_pick_mode {
@@ -3002,7 +3002,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ramp_gesture_uses_tile_centers_and_ignores_same_tile_release() {
+    fn test_ramp_gesture_uses_continuous_grid_and_ignores_same_point_release() {
         let session = TerrainSession::create_blank(257, 32);
         let field = Viewport3d::build_height_field(&session, 6.0, 4.0).unwrap();
         let mut vp = Viewport3d::new();
@@ -3045,25 +3045,19 @@ mod tests {
             ]
         };
         let start = screen(30.2, 30.2);
-        let same_tile = screen(30.8, 30.8);
-        assert_eq!(
-            run(&mut vp, pointer(start, true)).picked_terrain(),
-            Some((122.0, 122.0))
-        );
-        assert_eq!(vp.terrain_pick_press, Some((122.0, 122.0)));
-        assert_eq!(
-            run(&mut vp, pointer(same_tile, false)),
-            ViewportAction::None
-        );
+        let same_point = screen(30.2, 30.2);
+        let nearby_point = screen(30.8, 30.8);
+        let first = run(&mut vp, pointer(start, true)).picked_terrain().unwrap();
+        assert!((first.0 - 120.8).abs() < 0.05, "x={}", first.0);
+        assert!((first.1 - 120.8).abs() < 0.05, "y={}", first.1);
+        assert_eq!(vp.terrain_pick_press, Some(first));
+        assert_eq!(run(&mut vp, pointer(same_point, false)), ViewportAction::None);
         assert_eq!(vp.terrain_pick_press, None);
-        assert_eq!(
-            run(&mut vp, pointer(start, true)).picked_terrain(),
-            Some((122.0, 122.0))
-        );
-        assert_eq!(
-            run(&mut vp, pointer(screen(31.2, 32.2), false)).picked_terrain(),
-            Some((126.0, 130.0))
-        );
+        let first = run(&mut vp, pointer(start, true)).picked_terrain().unwrap();
+        let second = run(&mut vp, pointer(nearby_point, false)).picked_terrain().unwrap();
+        assert!((second.0 - 123.2).abs() < 0.05, "x={}", second.0);
+        assert!((second.1 - 123.2).abs() < 0.05, "y={}", second.1);
+        assert_ne!(first, second, "different points in one coarse terrain cell remain selectable");
         assert!(!vp.is_dragging_terrain);
         assert!(!session.can_undo());
     }

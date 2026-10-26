@@ -1853,3 +1853,6 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 ## 2026-10-27 Codex / GPT-6 Luna：2D／3D 地形檢視切換驗收
 - 同一獨立桌面視窗與 TEMP `ENDL_005` 實際切換 2D Blended、Height、Collision、3D Textured。Height 顯示的地形島與 Minimap 輪廓吻合；Collision 模式可顯示碰撞網格；3D Textured 保持 atlas 材質、`Atlas: 3 tiles` 與 viewport HUD 可見。UIA 讀到 3D hover tile／高度；狀態列座標採完整 256 網格，3D tile 標籤採 4 倍降採樣網格索引，兩種讀值尺度不同。這輪只操作模式控制，沒有點畫布或儲存。
 - 狀態：本機 2D／3D 視圖切換及 3D 材質顯示通過；筆刷落點／選取一致性、最小視窗、跨螢幕／高 DPI、失敗資源路徑及遊戲內驗收仍未完成。
+## 2026-10-27 Codex / GPT-6 Luna：3D Ramp 端點精度與 2D 對齊
+- Phase 5 檢視中發現 3D Ramp 將 ray hit 先量化為 64×64 terrain tile，再轉成 tile center，257×257 高度格只能選每隔四格的位置；同一 2D 工具可連續選取頂點格座標。3D Ramp 手勢改用既有連續 `hover_grid`，保持細粒度 ray hit，避免吸附到粗網格；普通 terrain tile pick 及 `terrain_tile_to_grid` 相容契約未更動。
+- 更新 viewport gesture 回歸：在一個粗 terrain cell 內取兩個不同位置可形成 Ramp 端點，同點按放不會產生第二端點；聚焦 `ramp_gesture_uses_continuous_grid` 1 passed。`cargo check --workspace --locked --offline --target-dir re_workspace/codex-ramp-pick-target`、序列完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-ramp-pick-target -- --test-threads=1 --quiet`（editor app 878 passed／6 ignored；全 workspace exit 0）、`cargo build --workspace --locked --offline --target-dir re_workspace/codex-ramp-pick-target` 與 `git diff --check` 通過。headless ray/gesture 證據；尚未做桌面 Ramp 點選或遊戲內驗收。

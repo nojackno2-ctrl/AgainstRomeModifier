@@ -2,6 +2,7 @@
 
 ## 2026-10-27 最新 Rust 驗收補記
 
+- 3D Ramp 起點／終點原先經 64×64 terrain tile 中心量化；257×257 高度格因此每隔四格才可選，與 2D 連續 vertex 點選不一致。現改用 3D ray hit 的連續 `hover_grid`，兩個不同落點即使位於同一粗 terrain cell 仍可成為 Ramp 端點；原普通 tile pick 的 C# tile-center 契約保留。更新 headless ray/gesture 測試驗證小數精度及同點拒絕。聚焦 1 passed；workspace check、序列完整 test（editor app 878 passed／6 ignored）與 build 通過。桌面 Ramp 手動操作及遊戲內地形結果未驗。
 - 零售 4T ignored audit 現輸出四張拒收 tile 的四尺度角點材質指派、RGB 距離與 nearest-color 格網。`4T2KM_02`、`4TK2M_01`、`4TK2V_06`、`4TV2K_01` 在 1/4、1/8 都只辨識兩種角材質；1/16 與 1/32 各有一張短暫出現第三種，但沒有相鄰尺度相同拓撲，穩定 16/32 樣本為 0。4 張全圖都含名稱指定三材質代表色，仍無法據此確認角點拓撲；production gate 維持拒收。333 張總數中 329 張通過、234 張修正名稱推測；安裝素材唯讀。ignored retail gate 1 passed；workspace check／序列 test（editor app 878 passed／6 ignored）／build 均通過。詳見 `AI_HANDOFF.md` 2026-10-27 零售 4T 角點拒收細節。
 - 3D 材質 fallback 長診斷在窄窗會省略顯示並可換行，不再擠出複製按鈕／工具狀態；滑過診斷可讀全文，複製仍得到完整材質清單。680×720 logical px headless egui 回歸 1 passed；完整 workspace check／序列 test（editor app 878 passed／6 ignored）／build 均通過。這只驗證合成窄寬排版，實體 DPI／多螢幕及游標同 frame 尚未驗收。詳見 `AI_HANDOFF.md` 2026-10-27 3D 材質診斷窄視窗呈現。
 - Safe Save app 層回歸涵蓋無效事件拒存與修復重試、重載後複製／移動／隊伍變更及 DATA 降級／升級；root＋child＋direct Light 與 particle-linked Light family 均驗證 root-only binding、重載和平移。複合 family 的 enabled event 刪除守衛、停用後整族清除，以及 `BeforeFinalCommit` 跨 objects／particle／light／scenario 回滾與重試均有 EditorApp 合成測試。`spawn_save_tests` 聚焦 16 passed；workspace check、序列完整 test（editor app 871 passed／6 ignored）及 build 均 exit 0。零售範本、桌面 OpenGL 與遊戲內行為未驗。詳見 `AI_HANDOFF.md` 2026-10-27 複合 family 事件防護、Particle-linked Light 與多池回滾。
