@@ -1,3 +1,7 @@
+## 2026-10-26 Codex：AI 湖泊／河流水深落實至筆刷與預覽（已驗證）
+- `amount` 現正式代表水面下高度差單位；lake／river 缺省 16，正規化範圍 5–30。`EditorBrushStroke` 與 replayable `/brush --depth` 傳遞水深；AI 湖泊、河流各執行一次筆刷，水域預覽依深度調整藍色明暗。
+- 新增 lake／river amount 缺省與 clamp、筆刷命令 roundtrip／無效值拒絕、不同深度水床精確值與預覽色差測試。`cargo test -p against-rome-ai-planner --locked --offline` 全數通過；`cargo check --workspace --locked --offline --target-dir re_workspace/codex-ai-visual-preview-target`、`cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-ai-visual-preview-target -- --test-threads=1 --quiet`（exit 0；editor app 855 passed／6 ignored，workspace 其餘 target 無失敗）、`cargo build --workspace --locked --offline --target-dir re_workspace/codex-ai-visual-preview-target` 與 `git diff --check` 均通過。桌面視覺／AI 生成套用與 Safe Save 重載尚未驗收。
+
 ## 2026-10-26 Codex：Briefing 文字接入全域復原（已驗證）
 - 修正地圖屬性與氛圍本地化面板的 briefing 標題、副標題、說明與隊伍名稱可繞過全域 Undo/Redo 的缺口；新增 `BriefingText` 子系統歷程，保存文字與 ambience dirty 狀態，連續文字編輯可合併為一步。兩個面板在原版地圖上停用文字欄位，歷程入口也拒絕原版地圖文字變更。
 - 新增 `briefing_text_uses_global_undo_redo_and_original_maps_reject_edits`，涵蓋四類文字復原、重做、dirty 還原與原版唯讀拒絕。首次 workspace 測試抓到只變更氛圍 dirty 也誤記成文字歷程，已限縮為實際 briefing 欄位變化；控制歷程聚焦測試 6 passed。`cargo check --workspace --locked --offline`、`cargo build --workspace --locked --offline` 及 workspace 測試（含單執行緒 app library 855 passed／6 ignored；其他 target 全通過）均成功。`cargo fmt --all --check` 因 repo 多處既有格式差異失敗，未執行全倉庫格式改寫。尚未做真實桌面文字編輯或 Safe Save 後重載驗收。

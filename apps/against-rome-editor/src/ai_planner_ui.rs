@@ -913,8 +913,8 @@ impl AiPlannerUi {
                             ui.image((preview.texture.id(), Vec2::splat(side)));
                             ui.vertical(|ui| {
                                 ui.label(tl(self.english,
-                                    "地圖預覽：綠／藍為地形／水域，橙為材質變更，紅為阻擋，紫為遭拒特徵，灰為保護區。",
-                                    "Map preview: green/blue terrain/water, orange material changes, red blocked cells, purple rejected features, grey protected areas."));
+                                    "地圖預覽：綠為地形，藍色水域依深度加深，橙為材質變更，紅為阻擋，紫為遭拒特徵，灰為保護區。",
+                                    "Map preview: green terrain; blue water darkens with depth; orange material changes, red blocked cells, purple rejected features, grey protected areas."));
                                 ui.label(format!("{} {}", tl(self.english, "預計高度取樣點：", "Height samples:"), preview.changes.height_samples_changed));
                                 ui.label(format!("{} {}", tl(self.english, "預計阻擋像素：", "Collision pixels:"), preview.changes.collision_pixels_changed));
                                 ui.label(format!("{} {}", tl(self.english, "材質筆刷：", "Material strokes:"), preview.changes.material_strokes));

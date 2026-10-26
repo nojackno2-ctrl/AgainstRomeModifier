@@ -64,7 +64,7 @@ fn test_parse_normalizes_coordinates_radii_amounts_and_base_height() {
     assert_eq!((0, 63, Some(63), Some(0)), (first.x, first.y, first.x2, first.y2));
     assert_eq!((63, 0, Some(0), Some(63)), (second.x, second.y, second.x2, second.y2));
     assert_eq!(Some(255), first.amount);
-    assert_eq!(Some(0), second.amount);
+    assert_eq!(Some(5), second.amount);
 
     let radii: Vec<i32> = plan.features.iter().map(|f| f.radius).collect();
     assert_eq!(vec![32, 4, 4, 1], radii);
@@ -73,6 +73,17 @@ fn test_parse_normalizes_coordinates_radii_amounts_and_base_height() {
         Some(0),
         AiMapPlan::parse(r#"{"baseHeight":-9}"#, MATERIAL_IDS).unwrap().base_height
     );
+}
+
+#[test]
+fn lake_and_river_depths_default_and_clamp_to_documented_height_units() {
+    let plan = AiMapPlan::parse(
+        r#"{"features":[{"type":"lake","x":10,"y":10},{"type":"river","x":1,"y":1,"x2":20,"y2":20,"amount":99}]}"#,
+        MATERIAL_IDS,
+    )
+    .unwrap();
+    assert_eq!(Some(16), plan.features[0].amount);
+    assert_eq!(Some(30), plan.features[1].amount);
 }
 
 #[test]

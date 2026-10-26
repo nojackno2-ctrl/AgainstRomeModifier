@@ -605,20 +605,8 @@ impl AiEditorOperator {
                     stroke.size = brush_size;
                     stroke.strength_level = 2;
                     stroke.height_operation = EditorHeightBrush::Water;
+                    stroke.water_depth = Some(feature.amount.unwrap_or(16).clamp(5, 30));
 
-                    run_stroke(
-                        &stroke,
-                        &mut heights,
-                        &mut blend,
-                        dimension,
-                        water_level_sample,
-                        commit_per_stroke,
-                        allows_tile_ref,
-                        paint_material_fallback,
-                        &mut on_texture,
-                        &mut on_rejected_material,
-                        &mut counters,
-                    );
                     run_stroke(
                         &stroke,
                         &mut heights,
@@ -646,20 +634,8 @@ impl AiEditorOperator {
                     stroke.size = brush_size;
                     stroke.strength_level = 2;
                     stroke.height_operation = EditorHeightBrush::Water;
+                    stroke.water_depth = Some(feature.amount.unwrap_or(16).clamp(5, 30));
 
-                    run_stroke(
-                        &stroke,
-                        &mut heights,
-                        &mut blend,
-                        dimension,
-                        water_level_sample,
-                        commit_per_stroke,
-                        allows_tile_ref,
-                        paint_material_fallback,
-                        &mut on_texture,
-                        &mut on_rejected_material,
-                        &mut counters,
-                    );
                     run_stroke(
                         &stroke,
                         &mut heights,

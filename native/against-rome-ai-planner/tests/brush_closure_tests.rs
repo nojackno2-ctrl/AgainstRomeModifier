@@ -110,6 +110,23 @@ fn canonical_format_matches_csharp_brush_command() {
 }
 
 #[test]
+fn water_depth_commands_are_strict_and_roundtrip_canonically() {
+    let mut stroke = EditorBrushStroke::new(EditorBrushTool::Height, vec![(4, 5)]);
+    stroke.height_operation = EditorHeightBrush::Water;
+    stroke.strength_level = 2;
+    stroke.water_depth = Some(24);
+    let command = BrushCommand::format(&stroke).unwrap();
+    assert!(command.ends_with("--strength strong --depth 24"));
+    let parsed = BrushCommand::parse(&command, 64).unwrap();
+    assert_eq!(Some(24), parsed.water_depth);
+    assert_eq!(command, BrushCommand::format(&parsed).unwrap());
+    for depth in ["4", "31", "abc"] {
+        assert!(BrushCommand::parse(&format!("/brush height water 4,5 --depth {depth}"), 64).is_err());
+    }
+    assert!(BrushCommand::parse("/brush height raise 4,5 --depth 16", 64).is_err());
+}
+
+#[test]
 fn invalid_commands_are_rejected_before_editing() {
     for text in [
         "/brush height raise 1,1 --size 2",

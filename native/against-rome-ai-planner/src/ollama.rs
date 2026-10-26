@@ -685,9 +685,9 @@ impl OllamaMapPlanner {
         prompt.push_str("- hill / mountain: raise around the location; amount = height gain (hill ~30-60, mountain ~80-140).\n");
         prompt.push_str("- valley: lower around the location by amount.\n");
         prompt.push_str("- plateau: flatten the area to absolute height amount.\n");
-        prompt.push_str("- lake: carve a lake below water; amount = depth below the water level (5-30).\n");
+        prompt.push_str("- lake: carve a lake below water; amount = water depth in height units below the water level (5-30, default 16).\n");
         prompt.push_str("- ridge: raised line from location to toLocation; radius = half width; amount = height gain.\n");
-        prompt.push_str("- river: water channel from location to toLocation; radius = half width (1-3); amount = depth below water.\n");
+        prompt.push_str("- river: water channel from location to toLocation; radius = half width (1-3); amount = water depth in height units below the water level (5-30, default 16).\n");
         prompt.push_str("- material: paint ground material inside the circle; material must be one of the ids below.\n");
         prompt.push_str("- blocked / passable: mark impassable or passable ground (line if toLocation given).\n");
         prompt.push_str("Keep settlements playable: leave several large flat dry areas, avoid covering the whole map with water or mountains, and give each region a distinct location.\n");

@@ -189,6 +189,31 @@ fn test_lake_creates_samples_below_water_level() {
 }
 
 #[test]
+fn lake_amount_sets_distinct_exact_bed_depth_and_logs_replayable_brushes() {
+    let make_lake = |depth| AiMapPlan {
+        features: vec![AiMapFeature {
+            feature_type: Some("lake".to_string()),
+            x: 25,
+            y: 25,
+            radius: 6,
+            amount: Some(depth),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let mut shallow = create_session(64, 100);
+    let mut deep = create_session(64, 100);
+    let shallow_result = AiEditorOperator::apply(&make_lake(8), Some(&mut shallow), None, 64, 60.0, false, None, None, None);
+    let deep_result = AiEditorOperator::apply(&make_lake(24), Some(&mut deep), None, 64, 60.0, false, None, None, None);
+    let center = (25 * 4 + 2) * 257 + 25 * 4 + 2;
+    assert_eq!(52, shallow.heights()[center], "水床應為水面下 8 單位");
+    assert_eq!(36, deep.heights()[center], "水床應為水面下 24 單位");
+    assert_ne!(shallow.heights(), deep.heights());
+    assert!(shallow_result.operation_log.iter().any(|line| line.contains("--depth 8")));
+    assert!(deep_result.operation_log.iter().any(|line| line.contains("--depth 24")));
+}
+
+#[test]
 fn test_scope_is_strictly_respected_and_outside_tiles_are_untouched() {
     let mut session = create_session(64, 100);
     let scope = AiMapEditScope::parse("20,20,20,20", "28,28,4,4", true).unwrap();

@@ -34,6 +34,8 @@ pub struct EditorBrushStroke {
     pub block: bool,
     pub material: Option<String>,
     pub auto_bridge: bool,
+    /// 只供 AI lake/river brush 指定水面以下高度差；人工水域筆刷維持既有預設深度。
+    pub water_depth: Option<i32>,
 }
 
 impl EditorBrushStroke {
@@ -49,6 +51,7 @@ impl EditorBrushStroke {
             block: true,
             material: None,
             auto_bridge: false,
+            water_depth: None,
         }
     }
 
@@ -115,6 +118,15 @@ impl EditorBrushExecutor {
             -1
         } else {
             surface - surface.min(Self::WATER_BED_DEPTH)
+        }
+    }
+
+    pub fn water_bed_height_with_depth(surface_height: f32, depth: i32) -> i32 {
+        let surface = surface_height.floor() as i32;
+        if !(5..=30).contains(&depth) || surface < depth {
+            -1
+        } else {
+            surface - depth
         }
     }
 
@@ -396,7 +408,10 @@ impl EditorBrushExecutor {
         let strength = stroke.strength_value();
 
         if stroke.height_operation == EditorHeightBrush::Water {
-            let bed = Self::water_bed_height(surface_height);
+            let bed = stroke.water_depth.map_or_else(
+                || Self::water_bed_height(surface_height),
+                |depth| Self::water_bed_height_with_depth(surface_height, depth),
+            );
             if bed < 0 {
                 return (0, 0, Some("水面太低，無法使用水域筆刷；請先設定水面高度。".to_string()));
             }
@@ -536,14 +551,14 @@ impl EditorBrushExecutor {
 }
 
 /// Canonical, replayable `/brush` command text. Mirrors C# `BrushCommand.Format/Execute`:
-/// `/brush height <raise|lower|smooth|flatten|roughen|water> <x,y> ... [--size 1|3|5|9|15] [--strength gentle|medium|strong]`,
+/// `/brush height <raise|lower|smooth|flatten|roughen|water> <x,y> ... [--size 1|3|5|9|15] [--strength gentle|medium|strong] [--depth 5..30]`,
 /// `/brush collision <block|passable> <x,y> ... [--size 1|3|5|9|15]`,
 /// `/brush material <materialId> <x,y> ... [--size N] [--auto-bridge]`.
 pub struct BrushCommand;
 
 impl BrushCommand {
     /// Canonical usage syntax string.
-    pub const USAGE: &'static str = "/brush height <raise|lower|smooth|flatten|roughen|water> <x,y> ... [--size 1|3|5|9|15] [--strength gentle|medium|strong] | /brush collision <block|passable> <x,y> ... [--size 1|3|5|9|15] | /brush material <materialId> <x,y> ... [--size N] [--auto-bridge]";
+    pub const USAGE: &'static str = "/brush height <raise|lower|smooth|flatten|roughen|water> <x,y> ... [--size 1|3|5|9|15] [--strength gentle|medium|strong] [--depth 5..30] | /brush collision <block|passable> <x,y> ... [--size 1|3|5|9|15] | /brush material <materialId> <x,y> ... [--size N] [--auto-bridge]";
 
     /// Formats an [`EditorBrushStroke`] into canonical, replayable command text.
     ///
@@ -596,6 +611,15 @@ impl BrushCommand {
                 2 => " --strength strong",
                 _ => return Err("Invalid strength.".to_string()),
             });
+        }
+        if let Some(depth) = stroke.water_depth {
+            if stroke.tool != EditorBrushTool::Height
+                || stroke.height_operation != EditorHeightBrush::Water
+                || !(5..=30).contains(&depth)
+            {
+                return Err("Invalid water depth; expected 5..=30 on a water height brush.".to_string());
+            }
+            text.push_str(&format!(" --depth {depth}"));
         }
         if stroke.tool == EditorBrushTool::Material && stroke.auto_bridge {
             text.push_str(" --auto-bridge");
@@ -656,6 +680,7 @@ impl BrushCommand {
         let mut positional: Vec<String> = Vec::new();
         let mut size_flag: Option<String> = None;
         let mut strength_flag: Option<String> = None;
+        let mut depth_flag: Option<String> = None;
         let mut auto_bridge = false;
         let rest: Vec<String> = it.collect();
         let mut i = 0;
@@ -664,11 +689,15 @@ impl BrushCommand {
             if let Some(name) = t.strip_prefix("--") {
                 let has_value = rest.get(i + 1).is_some_and(|n| !n.starts_with("--"));
                 match name.to_ascii_lowercase().as_str() {
-                    "size" | "strength" => {
+                    "size" | "strength" | "depth" => {
                         if !has_value {
                             return Err(format!("旗標 --{name} 缺少值。"));
                         }
-                        let slot = if name.eq_ignore_ascii_case("size") { &mut size_flag } else { &mut strength_flag };
+                        let slot = match name.to_ascii_lowercase().as_str() {
+                            "size" => &mut size_flag,
+                            "strength" => &mut strength_flag,
+                            _ => &mut depth_flag,
+                        };
                         if slot.replace(rest[i + 1].clone()).is_some() {
                             return Err(format!("旗標 --{name} 重複。"));
                         }
@@ -728,6 +757,16 @@ impl BrushCommand {
             || (auto_bridge && tool != EditorBrushTool::Material)
         {
             return Err("此旗標不適用於選取的筆刷。".to_string());
+        }
+        if let Some(depth) = depth_flag {
+            if tool != EditorBrushTool::Height || stroke.height_operation != EditorHeightBrush::Water {
+                return Err("旗標 --depth 僅適用於水域高度筆刷。".to_string());
+            }
+            let depth = depth.parse::<i32>().map_err(|_| "水深須介於 5 到 30。".to_string())?;
+            if !(5..=30).contains(&depth) {
+                return Err("水深須介於 5 到 30。".to_string());
+            }
+            stroke.water_depth = Some(depth);
         }
         if let Some(s) = size_flag {
             let size: i32 = s.parse().map_err(|_| "筆刷大小無效。".to_string())?;

@@ -49,3 +49,22 @@ fn test_preview_keeps_source_intact_and_preserves_pending_stroke() {
     assert_eq!(edited[4 * 9 + 4], source.heights()[4 * 9 + 4]);
     assert_ne!(20, source.heights()[4 * 9 + 4]);
 }
+
+#[test]
+fn preview_distinguishes_shallow_and_deep_water() {
+    let source = TerrainSession::new(9, vec![100u8; 81], 8, Some(vec![0u8; 64])).unwrap();
+    let make_plan = |depth| AiMapPlan {
+        features: vec![AiMapFeature {
+            feature_type: Some("lake".into()),
+            x: 1,
+            y: 1,
+            radius: 1,
+            amount: Some(depth),
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let shallow = AiMapPlanPreviewBuilder::build(&make_plan(8), &source, None, 4, 60.0, None);
+    let deep = AiMapPlanPreviewBuilder::build(&make_plan(24), &source, None, 4, 60.0, None);
+    assert_ne!(shallow.image.get_pixel(4, 4), deep.image.get_pixel(4, 4));
+}

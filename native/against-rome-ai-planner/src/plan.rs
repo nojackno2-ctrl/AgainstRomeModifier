@@ -207,7 +207,11 @@ impl AiMapPlan {
             feature.x2 = feature.x2.map(|v| v.clamp(0, 63));
             feature.y2 = feature.y2.map(|v| v.clamp(0, 63));
             feature.radius = if feature.radius <= 0 { 4 } else { feature.radius }.clamp(1, 32);
-            feature.amount = feature.amount.map(|a| a.clamp(0, 255));
+            feature.amount = if ftype == "lake" || ftype == "river" {
+                Some(feature.amount.unwrap_or(16).clamp(5, 30))
+            } else {
+                feature.amount.map(|amount| amount.clamp(0, 255))
+            };
             feature.material = resolve_material(feature.material.as_deref());
 
             // Filter out invalid material features

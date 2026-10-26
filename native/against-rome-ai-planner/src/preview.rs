@@ -94,7 +94,12 @@ impl AiMapPlanPreviewBuilder {
             for x in 0..img_width {
                 let height = heights.heights()[y * img_width + x];
                 let mut color = if (height as f32) < water {
-                    (35u8, 95u8, 170u8)
+                    let depth = ((water.floor() as i32 - height as i32).clamp(0, 30)) as u8;
+                    (
+                        19u8.saturating_add(depth),
+                        127u8.saturating_sub(depth.saturating_mul(2)),
+                        202u8.saturating_sub(depth.saturating_mul(2)),
+                    )
                 } else {
                     (
                         65 + height / 2,
