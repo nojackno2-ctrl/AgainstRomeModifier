@@ -2,7 +2,7 @@
 
 ## 2026-10-27 最新 Rust 驗收補記
 
-- 3D 筆刷筆畫以連續 `hover_grid` 落點，但游標 perimeter 原先錨定整數 `hover_tile` 中心；現在共用 scene draw list 接受連續地形中心／浮點半徑，3D editor 轉換 ray-hit 座標並生成依地形高度取樣的 64 點圓周。舊 tile-snapped／選取矩形路徑保留。連續中心與半徑定向測試通過；workspace check、完整序列 test（editor app 878 passed／6 ignored）及 build 均通過。尚未做桌面視覺重疊與遊戲內驗收。
+- 3D 筆刷筆畫以連續 `hover_grid` 落點，但游標 perimeter 原先錨定整數 `hover_tile` 中心；現在共用 scene draw list 接受連續地形中心／浮點半徑，3D editor 轉換 ray-hit 座標並生成依地形高度取樣的 64 點圓周。舊 tile-snapped／選取矩形路徑保留。連續中心與半徑定向測試通過；workspace check、完整序列 test（editor app 878 passed／6 ignored）及 build 均通過。新建置的 TEMP 桌面畫面確認圓周與 ray-hit 中心對齊並貼合地形起伏；未 dirty，來源／副本 66 檔 SHA-256 相符。實際筆刷效果位置的像素級對照與遊戲內驗收仍待完成。
 - 3D Ramp 起點／終點原先經 64×64 terrain tile 中心量化；257×257 高度格因此每隔四格才可選，與 2D 連續 vertex 點選不一致。現改用 3D ray hit 的連續 `hover_grid`，普通 tile pick 的 C# tile-center 契約保留。headless ray/gesture 測試通過；最新建置桌面操作確認起點 `(123,125)`，終點在相同粗 terrain cell `(30,31)`，Ramp 修改 30 個高度樣本，Undo 清除 dirty 狀態。TEMP 與來源 66 檔 SHA-256 全相符；未 Safe Save、未做遊戲內地形驗收。workspace check、序列完整 test（editor app 878 passed／6 ignored）與 build 已通過。遊戲內坡道外觀及其他工具對位仍未驗。
 - 零售 4T ignored audit 現輸出四張拒收 tile 的四尺度角點材質指派、RGB 距離與 nearest-color 格網。`4T2KM_02`、`4TK2M_01`、`4TK2V_06`、`4TV2K_01` 在 1/4、1/8 都只辨識兩種角材質；1/16 與 1/32 各有一張短暫出現第三種，但沒有相鄰尺度相同拓撲，穩定 16/32 樣本為 0。4 張全圖都含名稱指定三材質代表色，仍無法據此確認角點拓撲；production gate 維持拒收。333 張總數中 329 張通過、234 張修正名稱推測；安裝素材唯讀。ignored retail gate 1 passed；workspace check／序列 test（editor app 878 passed／6 ignored）／build 均通過。詳見 `AI_HANDOFF.md` 2026-10-27 零售 4T 角點拒收細節。
 - 3D 材質 fallback 長診斷在窄窗會省略顯示並可換行，不再擠出複製按鈕／工具狀態；滑過診斷可讀全文，複製仍得到完整材質清單。680×720 logical px headless egui 回歸 1 passed；完整 workspace check／序列 test（editor app 878 passed／6 ignored）／build 均通過。這只驗證合成窄寬排版，實體 DPI／多螢幕及游標同 frame 尚未驗收。詳見 `AI_HANDOFF.md` 2026-10-27 3D 材質診斷窄視窗呈現。
