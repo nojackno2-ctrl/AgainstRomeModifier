@@ -220,9 +220,23 @@ fn deleting_event_target_requires_disabling_event_before_save_and_reload() {
     sync(&mut app, &map);
 
     app.spawn_ui.select_all();
-    app.spawn_ui.delete_selected(&mut app.scenario, &cx());
+    let english = cx();
+    app.spawn_ui.delete_selected(&mut app.scenario, &english);
     assert!(app.spawn_ui.status().1, "啟用事件引用的目標必須拒絕刪除");
-    assert!(app.spawn_ui.status().0.contains("missing condition target"), "{}", app.spawn_ui.status().0);
+    assert_eq!(
+        app.spawn_ui.status().0,
+        "Cannot delete: an enabled event still references this object. Disable the event or choose another target first."
+    );
+
+    let mut traditional_chinese = cx();
+    traditional_chinese.lang = AppLanguage::TraditionalChinese;
+    app.spawn_ui.select_all();
+    app.spawn_ui.delete_selected(&mut app.scenario, &traditional_chinese);
+    assert!(app.spawn_ui.status().1);
+    assert_eq!(
+        app.spawn_ui.status().0,
+        "無法刪除：啟用中的事件仍引用此物件。請先停用該事件或改選其他目標。"
+    );
     assert_eq!(app.scenario.document().spawns.len(), 1, "拒絕後物件仍保留");
     assert_eq!(app.scenario.document().spawns[0].id, target_id);
     assert!(!app.scenario.dirty(), "拒絕後劇本文件仍維持乾淨");

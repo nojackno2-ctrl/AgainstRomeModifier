@@ -575,7 +575,19 @@ impl SpawnPlacementUi {
                     false,
                 );
             }
-            Err(e) => self.set_status(e, true),
+            Err(e) => {
+                let message = if e.contains("missing condition target") {
+                    tr(
+                        cx.lang,
+                        "Cannot delete: an enabled event still references this object. Disable the event or choose another target first.",
+                        "無法刪除：啟用中的事件仍引用此物件。請先停用該事件或改選其他目標。",
+                    )
+                    .to_owned()
+                } else {
+                    e
+                };
+                self.set_status(message, true);
+            }
         }
     }
 
