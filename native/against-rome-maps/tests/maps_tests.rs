@@ -1515,6 +1515,97 @@ fn test_blank_map_builder_build_with_spec_and_verify_disk_artifacts() {
     fs::remove_dir_all(&temp_dir).unwrap();
 }
 
+#[test]
+fn test_blank_map_verifier_rejects_any_terrain_pixel_and_material_cell_mismatch() {
+    let temp_dir = std::env::temp_dir().join(format!("arm_test_blank_terrain_verify_{}", Uuid::new_v4().simple()));
+    fs::create_dir_all(&temp_dir).unwrap();
+    let maps_dir = temp_dir.join("MAPS");
+    fs::create_dir_all(&maps_dir).unwrap();
+    create_full_synthetic_map(&maps_dir.join("ENDL_000"));
+
+    let result = BlankMapBuilder::build_with_spec(
+        &temp_dir,
+        &BlankMapSpec::new("ENDL_000", 13, "Terrain Verification"),
+    )
+    .unwrap();
+    result.verify_disk_artifacts(&temp_dir).unwrap();
+
+    for (name, width, height) in [
+        ("boden.bmp", 257usize, 257usize),
+        ("vertex.bmp", 257, 257),
+        ("smooth.bmp", 257, 257),
+        ("emboss.bmp", 257, 257),
+        ("collision.bmp", 256, 256),
+        ("minimap.bmp", 256, 256),
+    ] {
+        let path = result.map_path.join(name);
+        let original = fs::read(&path).unwrap();
+        let mut corrupted = original.clone();
+        let row_stride = ((width * 3 + 3) / 4) * 4;
+        // Touch the green channel of the rightmost pixel in the last stored row. Positive-height
+        // BMP storage is bottom-up; including aligned stride catches 257-wide row padding errors.
+        let pixel = 54 + (height - 1) * row_stride + (width - 1) * 3 + 1;
+        corrupted[pixel] ^= 1;
+        fs::write(&path, corrupted).unwrap();
+        let error = result.verify_disk_artifacts(&temp_dir).unwrap_err();
+        assert!(error.contains("pixel mismatch"), "{name}: {error}");
+        fs::write(&path, original).unwrap();
+    }
+
+    let texture_path = result.map_path.join("boden.txt");
+    let original_texture_file = fs::read(&texture_path).unwrap();
+    let mut textures = BodenTexturesDocument::load(&texture_path).unwrap();
+    textures.set_texture(63, 63, "SAND_1").unwrap();
+    textures.save().unwrap();
+    let error = result.verify_disk_artifacts(&temp_dir).unwrap_err();
+    assert!(error.contains("texture mismatch at [63, 63]"), "{error}");
+    fs::write(&texture_path, original_texture_file).unwrap();
+
+    fs::remove_dir_all(&temp_dir).unwrap();
+}
+
+#[test]
+fn test_blank_map_staging_terrain_verification_failure_never_publishes_or_registers() {
+    let temp_dir = std::env::temp_dir().join(format!("arm_test_blank_stage_verify_{}", Uuid::new_v4().simple()));
+    fs::create_dir_all(&temp_dir).unwrap();
+    let maps_dir = temp_dir.join("MAPS");
+    fs::create_dir_all(&maps_dir).unwrap();
+    let source_dir = maps_dir.join("ENDL_000");
+    create_full_synthetic_map(&source_dir);
+    let source_boden = fs::read(source_dir.join("boden.bmp")).unwrap();
+
+    let callback_game = temp_dir.clone();
+    let callback_spec = BlankMapSpec::new("ENDL_000", 14, "Rejected Terrain");
+    let result = EndlessMapCloner::new().clone_prepared(
+        &temp_dir,
+        "ENDL_000",
+        14,
+        "Rejected Terrain",
+        move |staging| {
+            let metrics = BlankMapBuilder::prepare_with_spec(&callback_game, staging, &callback_spec)?;
+            let path = staging.join("collision.bmp");
+            let mut bytes = fs::read(&path).map_err(|e| e.to_string())?;
+            bytes[54 + (255 * 3)] ^= 1;
+            fs::write(&path, bytes).map_err(|e| e.to_string())?;
+            verify_blank_terrain_artifacts(
+                staging,
+                metrics.applied_height,
+                &metrics.representative_texture,
+            )?;
+            Ok(())
+        },
+        Some(true),
+    );
+
+    assert!(result.unwrap_err().contains("collision.bmp pixel mismatch"));
+    assert!(!maps_dir.join("ENDL_014").exists());
+    assert!(!maps_dir.join("ENDL_014.tmp_arm").exists());
+    let manifest = CustomMapManifest::load(&temp_dir).unwrap();
+    assert!(!manifest.entries().iter().any(|entry| entry.slot == 14));
+    assert_eq!(fs::read(source_dir.join("boden.bmp")).unwrap(), source_boden);
+    fs::remove_dir_all(&temp_dir).unwrap();
+}
+
 // ==========================================
 // 22. Plain Spec Auto-Height Build Tests
 // ==========================================

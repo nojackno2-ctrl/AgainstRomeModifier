@@ -183,6 +183,157 @@ pub struct DiskArtifactSummary {
     pub has_custom_marker: bool,
 }
 
+/// 空白場景建置所產生之確定性地形的唯讀驗證摘要。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BlankTerrainArtifactSummary {
+    pub boden_bmp_dim: (i32, i32),
+    pub boden_height: u8,
+    pub collision_bmp_dim: (i32, i32),
+    pub minimap_bmp_dim: (i32, i32),
+    pub representative_texture: String,
+}
+
+/// 驗證所有灰階像素，以及原生 64×64 材質表的每一格。
+/// BMP 格式採建置器使用的標準規格：54-byte header、未壓縮 24-bit、正高度（由下往上）、
+/// 四位元組對齊列，以及 BGR 像素通道。
+pub fn verify_blank_terrain_artifacts(
+    map_dir: &Path,
+    applied_height: u8,
+    expected_texture: &str,
+) -> Result<BlankTerrainArtifactSummary, String> {
+    let layers = [
+        ("boden.bmp", 257, applied_height),
+        ("vertex.bmp", 257, 255),
+        ("smooth.bmp", 257, 0),
+        ("emboss.bmp", 257, 0),
+        ("collision.bmp", 256, 0),
+        ("minimap.bmp", 256, 128),
+    ];
+    for (name, dimension, fill) in layers {
+        let path = map_dir.join(name);
+        let bytes = fs::read(&path).map_err(|e| format!("Failed to read {name}: {e}"))?;
+        verify_solid_grayscale_bmp(name, &bytes, dimension, dimension, fill)?;
+    }
+
+    let textures_doc = BodenTexturesDocument::load(&map_dir.join("boden.txt"))?;
+    let dimension = textures_doc.dimension()?;
+    if dimension != 64 {
+        return Err(format!("boden.txt dimension mismatch: expected 64, got {dimension}"));
+    }
+    let textures = textures_doc.textures()?;
+    let expected_cells = dimension * dimension;
+    if textures.len() != expected_cells {
+        return Err(format!(
+            "boden.txt texture count mismatch: expected {expected_cells}, got {}",
+            textures.len()
+        ));
+    }
+    if let Some((index, actual)) = textures
+        .iter()
+        .enumerate()
+        .find(|(_, actual)| actual.as_str() != expected_texture)
+    {
+        return Err(format!(
+            "boden.txt texture mismatch at [{}, {}]: expected {}, got {}",
+            index % dimension,
+            index / dimension,
+            expected_texture,
+            actual
+        ));
+    }
+
+    Ok(BlankTerrainArtifactSummary {
+        boden_bmp_dim: (257, 257),
+        boden_height: applied_height,
+        collision_bmp_dim: (256, 256),
+        minimap_bmp_dim: (256, 256),
+        representative_texture: expected_texture.to_string(),
+    })
+}
+
+fn verify_solid_grayscale_bmp(
+    name: &str,
+    bytes: &[u8],
+    expected_width: i32,
+    expected_height: i32,
+    expected_value: u8,
+) -> Result<(), String> {
+    if bytes.len() < 54 || bytes[0..2] != *b"BM" {
+        return Err(format!("{name} has an invalid BMP header"));
+    }
+    let u32_at = |offset: usize| {
+        u32::from_le_bytes(bytes[offset..offset + 4].try_into().expect("header range checked"))
+    };
+    let i32_at = |offset: usize| {
+        i32::from_le_bytes(bytes[offset..offset + 4].try_into().expect("header range checked"))
+    };
+    let u16_at = |offset: usize| {
+        u16::from_le_bytes(bytes[offset..offset + 2].try_into().expect("header range checked"))
+    };
+
+    let pixel_offset = u32_at(10) as usize;
+    let dib_size = u32_at(14);
+    let width = i32_at(18);
+    let signed_height = i32_at(22);
+    let planes = u16_at(26);
+    let bits_per_pixel = u16_at(28);
+    let compression = u32_at(30);
+    if pixel_offset != 54
+        || dib_size != 40
+        || width != expected_width
+        || signed_height != expected_height
+        || planes != 1
+        || bits_per_pixel != 24
+        || compression != 0
+    {
+        return Err(format!(
+            "{name} BMP format mismatch: offset={pixel_offset}, DIB={dib_size}, dimensions={width}x{signed_height}, planes={planes}, bpp={bits_per_pixel}, compression={compression}"
+        ));
+    }
+
+    // BMP 正高度代表資料列由下往上儲存。寬度 257 需要一個 padding byte：
+    // ((257 * 3 + 3) / 4) * 4 = 每列 772 bytes。
+    let row_stride = ((expected_width as usize * 3 + 3) / 4) * 4;
+    let pixel_bytes = row_stride * expected_height as usize;
+    let expected_file_len = pixel_offset + pixel_bytes;
+    if bytes.len() != expected_file_len
+        || u32_at(2) as usize != expected_file_len
+        || u32_at(34) as usize != pixel_bytes
+    {
+        return Err(format!(
+            "{name} BMP length mismatch: expected file={expected_file_len}, image={pixel_bytes}, got file={}, image={}",
+            bytes.len(),
+            u32_at(34)
+        ));
+    }
+
+    for storage_row in 0..expected_height as usize {
+        let row_start = pixel_offset + storage_row * row_stride;
+        for x in 0..expected_width as usize {
+            let pixel = row_start + x * 3;
+            // Windows 24-bit BMP 依 B、G、R 順序儲存通道。
+            if bytes[pixel] != expected_value
+                || bytes[pixel + 1] != expected_value
+                || bytes[pixel + 2] != expected_value
+            {
+                let y_from_top = expected_height as usize - 1 - storage_row;
+                return Err(format!(
+                    "{name} pixel mismatch at ({x}, {y_from_top}): expected grayscale {expected_value}, got BGR ({}, {}, {})",
+                    bytes[pixel], bytes[pixel + 1], bytes[pixel + 2]
+                ));
+            }
+        }
+        let pixel_end = row_start + expected_width as usize * 3;
+        if bytes[pixel_end..row_start + row_stride]
+            .iter()
+            .any(|&padding| padding != 0)
+        {
+            return Err(format!("{name} BMP row padding is not zero at storage row {storage_row}"));
+        }
+    }
+    Ok(())
+}
+
 impl BlankMapBuildResult {
     /// Directly verifies all physical disk artifacts generated by the builder.
     pub fn verify_disk_artifacts(&self, game_path: &Path) -> Result<DiskArtifactSummary, String> {
@@ -205,47 +356,11 @@ impl BlankMapBuildResult {
             }
         }
 
-        let boden_bmp_path = map_dir.join("boden.bmp");
-        let boden_bytes = fs::read(&boden_bmp_path)
-            .map_err(|e| format!("Failed to read boden.bmp: {e}"))?;
-        let boden_bmp_dim = read_bmp_dimensions(&boden_bytes)?;
-        if boden_bmp_dim != (257, 257) {
-            return Err(format!("boden.bmp dimensions mismatch: {:?}", boden_bmp_dim));
-        }
-        let boden_height = if boden_bytes.len() > 54 { boden_bytes[54] } else { 0 };
-        if boden_height != self.applied_height {
-            return Err(format!(
-                "boden.bmp height byte mismatch: expected {}, got {}",
-                self.applied_height, boden_height
-            ));
-        }
-
-        let collision_bmp_path = map_dir.join("collision.bmp");
-        let collision_bytes = fs::read(&collision_bmp_path)
-            .map_err(|e| format!("Failed to read collision.bmp: {e}"))?;
-        let collision_bmp_dim = read_bmp_dimensions(&collision_bytes)?;
-        if collision_bmp_dim != (256, 256) {
-            return Err(format!("collision.bmp dimensions mismatch: {:?}", collision_bmp_dim));
-        }
-
-        let minimap_bmp_path = map_dir.join("minimap.bmp");
-        let minimap_bytes = fs::read(&minimap_bmp_path)
-            .map_err(|e| format!("Failed to read minimap.bmp: {e}"))?;
-        let minimap_bmp_dim = read_bmp_dimensions(&minimap_bytes)?;
-        if minimap_bmp_dim != (256, 256) {
-            return Err(format!("minimap.bmp dimensions mismatch: {:?}", minimap_bmp_dim));
-        }
-
-        let boden_txt_path = map_dir.join("boden.txt");
-        let textures_doc = BodenTexturesDocument::load(&boden_txt_path)?;
-        let textures = textures_doc.textures()?;
-        let representative_texture = textures.first().cloned().unwrap_or_default();
-        if representative_texture != self.representative_texture {
-            return Err(format!(
-                "Representative texture mismatch: expected {}, got {}",
-                self.representative_texture, representative_texture
-            ));
-        }
+        let terrain = verify_blank_terrain_artifacts(
+            map_dir,
+            self.applied_height,
+            &self.representative_texture,
+        )?;
 
         let scenario_path = map_dir.join("arm_scenario.json");
         let scenario_bytes = fs::read_to_string(&scenario_path)
@@ -299,11 +414,11 @@ impl BlankMapBuildResult {
             slot: self.info.slot,
             map_id: self.info.id(),
             has_manifest_entry,
-            boden_bmp_dim,
-            boden_height,
-            collision_bmp_dim,
-            minimap_bmp_dim,
-            representative_texture,
+            boden_bmp_dim: terrain.boden_bmp_dim,
+            boden_height: terrain.boden_height,
+            collision_bmp_dim: terrain.collision_bmp_dim,
+            minimap_bmp_dim: terrain.minimap_bmp_dim,
+            representative_texture: terrain.representative_texture,
             scenario_spawns_count: scenario.spawns.len(),
             has_idle_level_script,
             has_custom_marker,
@@ -561,6 +676,10 @@ impl BlankMapBuilder {
                 }
             }
         }
+
+        // 在尚未登記的 cloner staging 目錄中驗證完整地形；不符時回傳至 clone_prepared，
+        // 由其移除 staging，且不發布正式槽位或登記自製地圖 manifest。
+        verify_blank_terrain_artifacts(directory, height as u8, &representative_texture)?;
 
         rollback.commit();
 

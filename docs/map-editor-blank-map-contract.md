@@ -2,6 +2,8 @@
 
 2026-10-08 Codex；已實作獨立「空白場景（實驗）」選項，完成編輯器保存／重開驗證；遊戲內啟動驗收與其他 DATA 池的相容性仍待完成。平坦建立流程另在輸入名稱時列出保留的來源內容；讀取失敗的項目明確列為未知。
 
+2026-10-27 更新：空白場景在 staging 發布前會逐像素驗證 boden／vertex／smooth／emboss／collision／minimap 六張 BMP，並驗證 `boden.txt` 全部 4096 格材質一致；同一唯讀 verifier 也用於正式建置後的磁碟檢查。此項只證明確定性地形產物正確，保留的其他 DATA／SDL 相容性與遊戲內開局仍未驗。
+
 ## TEMP副本的新證據
 
 唯讀分析 `%TEMP%/ArmGameCompare_20261007/ENDL_000`；這是現有副本，數量不代表所有原版版本。`SCRIPT/ak_level.bci` SHA256為 `336e3a5cb808e7f2ef6aaa77ac2ef54a0fb00de04cb00d1abb4fbd5b937d5f27`，PFIL解壓120657 bytes、CODE115244 bytes。
