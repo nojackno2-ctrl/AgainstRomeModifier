@@ -1,3 +1,7 @@
+## 2026-10-27 Codex / GPT-6 Luna：3D Ramp 同影格原生點擊補正
+- `viewport_3d.rs` Ramp terrain-pick 在缺少跨影格 press 記錄時，增加 egui `clicked_by(Primary)` fallback；仍要求 viewport 內有效 terrain ray hit 且未命中物件，原 press/release 拖曳流程保留。新增 app regression，將 press+release 放在同一 egui frame，確認產生 terrain pick、記錄 ramp 起點，且不修改高度／dirty／undo。
+- TEMP `ENDL_005` 桌面以新建置載入 6,651 objects / 3 atlas tiles；3D Ramp 起點點擊後 UIA 顯示 `Ramp start selected at (251, 76); choose the endpoint.`。後續測試點落在物件上，未完成終點操作；取消選取，未 Safe Save。TEMP 與基準副本 64 檔 SHA-256 相符。
+- 聚焦回歸 1 passed、3D viewport 測試 12 passed；`cargo check --workspace --locked --offline`、完整序列 `cargo test --workspace --locked --offline --no-fail-fast -j 1`（editor app 885 passed／6 ignored，workspace 通過）、`cargo build --workspace --locked --offline` 均通過。真實桌面已證明 Ramp 起點點擊可用；終點／坡道實際編輯與遊戲內效果仍未驗。整體目標未完成。
 ## 2026-10-27 Codex / GPT-6 Luna：3D 筆刷游標連續對位
 - 稽核發現 3D 筆刷實際筆畫使用連續 `hover_grid`，但共用 draw list 的 perimeter cursor 仍以 `hover_tile` 的整數方格中心及整數尺寸生成。`BrushCursorOptions` 新增可選連續地形中心／浮點半徑；3D app 將 ray hit vertex 座標轉成 field tile 座標，draw list 以地形取樣高度產生 64 點圓周。原整數 tile／selection rectangle 路徑保持相容。
 - 新增 `frame_continuous_brush_cursor_tracks_raycast_point_and_fractional_radius` 驗證中心與半徑。定向測試通過；完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-cont-brush -- --test-threads=1 --quiet` 通過（editor app 878 passed／6 ignored，所有 workspace targets 通過）；workspace `cargo check`、`cargo build` 及 `git diff --check` 通過。2026-10-27 以此 build 開啟 TEMP `ENDL_005`，在 3D 於命中 `(30,31)` 粗格時確認圓周游標中心對齊黃色 ray-hit 指示，圓周依地形起伏投影；未 dirty、未 Safe Save。來源與 TEMP 根目錄 66 檔 SHA-256 差異 0。實際筆刷落點像素級對照及遊戲內效果仍未驗。
@@ -1873,3 +1877,7 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 - `EditorApp` 依載入地圖路徑尋找原生 sprite 定義；地圖副本缺少素材時，改由只讀安裝遊戲目錄載入 `NativeSpriteCatalog`。載入 objdef 名稱並傳入 `Viewport3d`；viewport 依唯一物件素材建立並快取 atlas，交由既有 OpenGL texture 路徑呈現，也沿用 sprite alpha mask 點選。快取在地圖、素材目錄或型別名稱變動時更新。
 - 聚焦 `viewport_3d::tests` 27 passed、`viewport_sprite_asset_tests` 3 passed；`cargo check --workspace --locked --offline --target-dir re_workspace/codex-alpha-pick` 通過。序列完整 workspace test 通過（editor app 884 passed／6 ignored；workspace exit 0），`cargo build --workspace --locked --offline --target-dir re_workspace/codex-alpha-pick` 通過，無 MSVC 連結錯誤。
 - 新建置桌面載入 TEMP `ENDL_005` 並載入 DATA：UI 顯示 6,651 objects、`Atlas: 3 tiles`，實際 3D 畫面可見樹木／建物 Sprite。只載入及切換視圖，未 Safe Save；地圖 64 檔逐檔 SHA-256 與預先建立的 TEMP 基準副本完全一致（0 差異），安裝遊戲目錄唯讀。透明 sprite 實際點擊穿透、最小視窗／多螢幕 DPI 與遊戲內驗收仍待完成。
+
+## 2026-10-27 Codex / GPT-6 Luna：透明 Sprite 桌面點選驗收續查
+- 以 `re_workspace/codex-alpha-pick/debug/against-rome-editor.exe` 載入同一 TEMP `ENDL_005`，桌面確認 3D 場景、6,651 objects 與 `Atlas: 3 tiles`。本次以實體座標啟動 Ramp 後，在 viewport 地形點擊，UIA 顯示游標命中 `Tile: (58, 23) Y: 0.91`，但 Ramp 起點狀態未前進；Escape 可取消模式。座標點擊可更新 hover，尚不能證明 click handler 收到點擊，也未驗證透明／不透明 Sprite 選取。未 Safe Save。
+- 程式入口已有 800×600 最小視窗設定。驗收後 TEMP 地圖與基準副本各 64 檔逐檔 SHA-256 比對為 0 差異；原安裝遊戲維持唯讀。`git diff --check` 通過。狀態：圖集顯示及 hover 對位可見；需確認 viewport click handler 的可觀察回饋後再驗透明區點選。

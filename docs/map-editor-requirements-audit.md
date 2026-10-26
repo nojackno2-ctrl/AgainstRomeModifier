@@ -1,7 +1,8 @@
 # 地圖編輯器需求與證據核對
 
-## 2026-10-27 最新 Rust 驗收補記
+## 2026-10-27 最新 Rust 驗收補記- 2026-10-27 新增 3D Ramp same-frame click fallback：若原生 press/release 均在同一 egui frame，使用 `clicked_by(Primary)` 讀取有效 terrain ray hit，保留物件命中優先。新增回歸與 12 項 viewport 定向測試通過；workspace check、完整序列 test（editor app 885 passed／6 ignored）及 build 通過。TEMP 桌面確認起點 UI 狀態更新為 `(251,76)`，之後點擊命中物件故未驗終點；Escape 取消、未 Safe Save，TEMP 與基準 64 檔 SHA-256 相符。坡道完成編輯及遊戲內效果仍未驗。
 
+- 續查 3D 透明 Sprite 實際點選：新建置可載入 TEMP `ENDL_005` DATA，顯示 6,651 objects、`Atlas: 3 tiles` 與原生樹木 Sprite；viewport 地形點擊使 UIA hover 更新為 `Tile: (58, 23) Y: 0.91`，但 Ramp 起點狀態未前進，故 click handler 與透明／不透明像素點選仍未驗。Escape 取消模式；未 Safe Save。TEMP 與基準副本 64 檔 SHA-256 0 差異。程式入口已有 800×600 最小視窗設定。詳見 `AI_HANDOFF.md` 2026-10-27 透明 Sprite 桌面點選驗收續查。
 - 3D 筆刷筆畫以連續 `hover_grid` 落點，但游標 perimeter 原先錨定整數 `hover_tile` 中心；現在共用 scene draw list 接受連續地形中心／浮點半徑，3D editor 轉換 ray-hit 座標並生成依地形高度取樣的 64 點圓周。舊 tile-snapped／選取矩形路徑保留。連續中心與半徑定向測試通過；workspace check、完整序列 test（editor app 878 passed／6 ignored）及 build 均通過。新建置的 TEMP 桌面畫面確認圓周與 ray-hit 中心對齊並貼合地形起伏；未 dirty，來源／副本 66 檔 SHA-256 相符。實際筆刷效果位置的像素級對照與遊戲內驗收仍待完成。
 - 3D 物件點選原先把已解析 native sprite 當成整張矩形皆不透明，透明區會攔截底下地形筆刷／點選。`NativeSprite` 現提供共享 alpha mask，viewport 將 mask 傳給 picker；合成測試確認透明像素穿透及不透明像素仍可選取，sprite crop 亦保有正確 mask。聚焦測試、workspace check、完整序列 test（editor app 878 passed／6 ignored）及 build 均通過；實際桌面點擊與遊戲內驗收仍待完成。詳見 `AI_HANDOFF.md` 2026-10-27 3D 透明 Sprite 點選穿透。
 - 3D viewport 原本未注入原生 Sprite catalog、objdef 名稱或圖集，因此 6,651 個已載入 DATA 物件皆只能顯示 fallback marker。現在 app 由地圖素材根目錄載入 catalog，缺素材時回退到只讀安裝遊戲目錄；viewport 建置快取 atlas 並將圖集 texture 接入 OpenGL 顯示。聚焦 27＋3 項測試及完整 workspace check/test/build 通過（editor app 884 passed／6 ignored）。新建置桌面以 TEMP `ENDL_005` 載入 DATA，HUD 顯示 `Objects: 6651`、`Atlas: 3 tiles`，可見樹木／建物 Sprite；TEMP 地圖 64 檔逐檔 SHA-256 與基準副本相符，未 Safe Save。這證明本機顯示路徑與安裝素材 fallback，不代表點選透明區的桌面驗收、其他 GPU／DPI 或遊戲 renderer parity。詳見 `AI_HANDOFF.md` 2026-10-27 3D 物件 Sprite 圖集接線與桌面確認。

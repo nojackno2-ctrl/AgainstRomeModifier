@@ -1252,6 +1252,20 @@ impl Viewport3d {
                                 grid_y: point.1,
                             };
                         }
+                    } else if response.clicked_by(egui::PointerButton::Primary) {
+                        // Some native event loops deliver a complete click between egui
+                        // frames, so the press edge is unavailable even though egui has
+                        // recognized a click on this canvas. Preserve click-to-pick for
+                        // Ramp while retaining press/release tracking for drag gestures.
+                        if let Some(point) = terrain_pick_grid.filter(|_| {
+                            pointer_pos.is_some_and(|pos| rect.contains(pos))
+                                && picked_obj_idx.is_none()
+                        }) {
+                            action = ViewportAction::PickTerrain {
+                                grid_x: point.0,
+                                grid_y: point.1,
+                            };
+                        }
                     }
                 }
             } else {

@@ -10480,6 +10480,46 @@ angle=0.00
     }
 
     #[test]
+    fn viewport_3d_ramp_accepts_native_click_completed_between_frames() {
+        let mut app = EditorApp::initial_state();
+        let terrain = TerrainSession::create_blank(257, 32);
+        let before = terrain.heights().to_vec();
+        app.session = Some(terrain);
+        app.ramp_selecting = true;
+        let ctx = egui::Context::default();
+        ramp_viewport_frame(&mut app, &ctx, vec![]);
+        let point = app.viewport_3d.last_rect.unwrap().center();
+
+        // Native click injection can deliver press and release in one egui frame.
+        let action = ramp_viewport_frame(
+            &mut app,
+            &ctx,
+            vec![
+                egui::Event::PointerMoved(point),
+                egui::Event::PointerButton {
+                    pos: point,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Default::default(),
+                },
+                egui::Event::PointerButton {
+                    pos: point,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: Default::default(),
+                },
+            ],
+        );
+
+        assert!(action.picked_terrain().is_some());
+        assert_eq!(app.ramp_start, action.picked_terrain());
+        assert!(app.ramp_selecting);
+        assert_eq!(app.session.as_ref().unwrap().heights(), before);
+        assert!(!app.session.as_ref().unwrap().is_dirty());
+        assert!(!app.session.as_ref().unwrap().can_undo());
+    }
+
+    #[test]
     fn viewport_3d_ramp_cancel_miss_and_pending_action_preserve_terrain() {
         let mut app = EditorApp::initial_state();
         app.session = Some(TerrainSession::create_blank(257, 32));
