@@ -515,6 +515,7 @@ pub fn extend_catalog(catalog: &mut StandardFloorMaterialCatalog, names: &[Strin
     if let Some(probe) = probe.as_deref_mut() {
         register_mask_transitions(catalog, names, probe);
         register_regional_transitions(catalog, &groups, probe);
+        register_three_material_transitions(catalog, names, probe);
         if !path_bases.is_empty() {
             register_path_transitions(catalog, names, &path_bases[0], probe, &mut path_owned, &mut path_resolution);
         }
@@ -586,6 +587,70 @@ fn distinct_count(corners: &[String; 4]) -> usize {
         }
     }
     seen.len()
+}
+
+fn parse_three_material_transition(name: &str) -> Option<[String; 3]> {
+    let b = name.as_bytes();
+    if b.len() != 8
+        || !b[0].eq_ignore_ascii_case(&b'4')
+        || !b[1].eq_ignore_ascii_case(&b'T')
+        || !b[2].is_ascii_alphanumeric()
+        || !b[3].is_ascii_alphanumeric()
+        || !b[4].is_ascii_alphanumeric()
+        || b[5] != b'_'
+        || !b[6].is_ascii_alphanumeric()
+        || !b[7].is_ascii_alphanumeric()
+    {
+        return None;
+    }
+    Some([
+        format!("B{}", (b[2] as char).to_ascii_uppercase()),
+        format!("B{}", (b[3] as char).to_ascii_uppercase()),
+        format!("B{}", (b[4] as char).to_ascii_uppercase()),
+    ])
+}
+
+fn register_three_material_transitions(
+    catalog: &mut StandardFloorMaterialCatalog,
+    names: &[String],
+    probe: &mut dyn FnMut(&str) -> Option<TerrainLayer>,
+) {
+    let mut color_cache: HashMap<String, Option<Rgb>> = HashMap::new();
+    for name in names {
+        let Some(ids) = parse_three_material_transition(name) else { continue };
+        if ids[0].eq_ignore_ascii_case(&ids[1])
+            || ids[0].eq_ignore_ascii_case(&ids[2])
+            || ids[1].eq_ignore_ascii_case(&ids[2])
+            || ids.iter().any(|id| !material_known(catalog, id))
+        {
+            continue;
+        }
+        let mut refs = Vec::with_capacity(3);
+        for id in &ids {
+            if !color_cache.contains_key(id) {
+                color_cache.insert(id.clone(), representative_color(catalog, id, probe));
+            }
+            let Some(color) = color_cache[id] else { refs.clear(); break };
+            refs.push((id.clone(), color));
+        }
+        if refs.len() != 3 {
+            continue;
+        }
+        let Some(layer) = probe(name) else { continue };
+        let Some(samples) = corner_colors(&layer) else { continue };
+        let Some(corners) = infer_corners(&layer, &refs) else { continue };
+        if distinct_count(&corners) != 3
+            || samples.iter().zip(corners.iter()).any(|(sample, id)| {
+                let Some((_, color)) = refs.iter().find(|(candidate, _)| candidate.eq_ignore_ascii_case(id)) else {
+                    return true;
+                };
+                dist2(sample, color).sqrt() > REGIONAL_TRANSITION_MAX_CORNER_DISTANCE
+            })
+        {
+            continue;
+        }
+        catalog.native_corners_by_texture.insert(name.to_ascii_uppercase(), corners);
+    }
 }
 
 fn register_mask_transitions(
@@ -1177,6 +1242,133 @@ mod tests {
             .is_some_and(|t| t.eq_ignore_ascii_case("4UJX__05")));
         // The road border resolves via the approximate outer materials as well.
         assert!(catalog.resolve_native_tile(&["PFAD", "PFAD", "BX", "BX"], 3, 4).is_some());
+    }
+
+    #[test]
+    fn pixel_probe_corrects_three_material_tiles_for_all_shapes_and_orders() {
+        let shapes = [2, 4, 6, 8];
+        let name_derived = |shape: u8, reverse: bool| {
+            let (a, b, c) = if reverse { ("BC", "BB", "BA") } else { ("BA", "BB", "BC") };
+            match shape {
+                2 => [c, b, a, a],
+                4 => [a, c, b, a],
+                6 => [c, a, a, b],
+                _ => [a, a, b, c],
+            }.map(str::to_string)
+        };
+        for shape in shapes {
+            for (reverse, prefix) in [(false, "ABC"), (true, "CBA")] {
+                let name = format!("4T{prefix}_{shape}A");
+                let fallback = name_derived(shape, reverse);
+                // Rotate the name guess to create a different valid three-material topology.
+                // One 4T per catalog prevents another tile from aliasing the requested corners.
+                let pixel_expected = [fallback[1].clone(), fallback[2].clone(), fallback[3].clone(), fallback[0].clone()];
+                assert_eq!(distinct_count(&pixel_expected), 3);
+                assert_ne!(pixel_expected, fallback);
+                let names: Vec<String> = ["4BA___50", "4BB___50", "4BC___50", &name]
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect();
+                let layers = HashMap::from([
+                    ("4BA___50".to_string(), layer([GRASS; 4])),
+                    ("4BB___50".to_string(), layer([DIRT; 4])),
+                    ("4BC___50".to_string(), layer([ROAD; 4])),
+                    (name.clone(), layer(pixel_expected.clone().map(|id| match id.as_str() {
+                        "BA" => GRASS,
+                        "BB" => DIRT,
+                        _ => ROAD,
+                    }))),
+                ]);
+                let plain = build_full_catalog(&names, None);
+                assert_eq!(plain.try_resolve_native_corners(&name).unwrap(), fallback);
+                let mut probe = |candidate: &str| layers.get(&candidate.to_ascii_uppercase()).cloned();
+                let catalog = build_full_catalog(&names, Some(&mut probe));
+                assert_eq!(catalog.try_resolve_native_corners(&name).unwrap(), pixel_expected);
+                assert_ne!(catalog.try_resolve_native_corners(&name).unwrap(), plain.try_resolve_native_corners(&name).unwrap());
+                let refs = pixel_expected.each_ref().map(String::as_str);
+                assert_eq!(catalog.resolve_native_tile(&refs, 0, 0).as_deref(), Some(name.as_str()));
+            }
+        }
+    }
+
+    #[test]
+    fn three_material_probe_keeps_name_mapping_for_weak_or_invalid_evidence() {
+        let names: Vec<String> = ["4BA___50", "4BB___50", "4BC___50", "4TABC_2A", "4TABC_4A", "4TABC_6A", "4TABC_8A", "4TABX_2A"]
+            .map(Into::into)
+            .into();
+        let layers = HashMap::from([
+            ("4BA___50".to_string(), layer([GRASS; 4])),
+            ("4BB___50".to_string(), layer([DIRT; 4])),
+            ("4BC___50".to_string(), layer([ROAD; 4])),
+            ("4TABC_2A".to_string(), layer([GRASS, DIRT, DIRT, DIRT])),
+            // Three references classify normally; the final corner is nearest to DIRT but is
+            // still farther than 32 RGB units, so the confidence gate must reject the override.
+            ("4TABC_4A".to_string(), layer([GRASS, DIRT, ROAD, 0x70_70_70])),
+            ("4TABC_6A".to_string(), layer([GRASS, DIRT, DIRT, GRASS])),
+        ]);
+        let before = build_full_catalog(&names, None);
+        let mut probe = |name: &str| layers.get(&name.to_ascii_uppercase()).cloned();
+        let after = build_full_catalog(&names, Some(&mut probe));
+        assert_eq!(
+            after.try_resolve_native_corners("4TABC_2A"),
+            before.try_resolve_native_corners("4TABC_2A")
+        );
+        assert_eq!(
+            after.try_resolve_native_corners("4TABC_4A"),
+            before.try_resolve_native_corners("4TABC_4A")
+        );
+        let low_confidence_samples = corner_colors(&layers["4TABC_4A"]).unwrap();
+        let low_confidence_refs = vec![
+            ("BA".to_string(), [48.0, 160.0, 48.0]),
+            ("BB".to_string(), [160.0, 96.0, 48.0]),
+            ("BC".to_string(), [200.0, 200.0, 180.0]),
+        ];
+        let low_confidence_guess = infer_corners(&layers["4TABC_4A"], &low_confidence_refs).unwrap();
+        assert_eq!(distinct_count(&low_confidence_guess), 3);
+        assert!(low_confidence_samples
+            .iter()
+            .zip(low_confidence_guess.iter())
+            .any(|(sample, id)| {
+                let color = &low_confidence_refs.iter().find(|(candidate, _)| candidate == id).unwrap().1;
+                dist2(sample, color).sqrt() > REGIONAL_TRANSITION_MAX_CORNER_DISTANCE
+            }));
+        assert_eq!(
+            after.try_resolve_native_corners("4TABC_6A"),
+            before.try_resolve_native_corners("4TABC_6A")
+        );
+        let two_color_guess = infer_corners(
+            &layers["4TABC_6A"],
+            &[
+                ("BA".to_string(), [48.0, 160.0, 48.0]),
+                ("BB".to_string(), [160.0, 96.0, 48.0]),
+                ("BC".to_string(), [200.0, 200.0, 180.0]),
+            ],
+        )
+        .unwrap();
+        assert_eq!(distinct_count(&two_color_guess), 2);
+        assert_eq!(
+            after.try_resolve_native_corners("4TABC_8A"),
+            before.try_resolve_native_corners("4TABC_8A")
+        );
+        assert!(before.try_resolve_native_corners("4TABC_8A").is_some());
+        assert_eq!(
+            after.try_resolve_native_corners("4TABX_2A"),
+            before.try_resolve_native_corners("4TABX_2A")
+        );
+        assert!(parse_three_material_transition("4TABC_!A").is_none());
+        assert!(parse_three_material_transition("4TABC_0").is_none());
+    }
+
+    #[test]
+    fn three_material_probe_requires_representative_colors() {
+        let names: Vec<String> = ["4BA___51", "4BB___51", "4BC___51", "4TABC_2A"].map(Into::into).into();
+        let catalog = build_full_catalog(&names, None);
+        let mut probe = |name: &str| (name.eq_ignore_ascii_case("4TABC_2A")).then(|| layer([GRASS, DIRT, ROAD, GRASS]));
+        let probed = build_full_catalog(&names, Some(&mut probe));
+        assert_eq!(
+            probed.try_resolve_native_corners("4TABC_2A"),
+            catalog.try_resolve_native_corners("4TABC_2A")
+        );
     }
 
 

@@ -1,8 +1,9 @@
 use against_rome_data::sha256::sha256_hex;
 use against_rome_textures::{
-    BodenTexturesDocument, FloortexLibrary, StandardFloorMaterialCatalog,
+    BodenTexturesDocument, FloortexLibrary, NativeTerrainMaterialResolver, StandardFloorMaterialCatalog,
     TerrainBlendAuthoringMap, TerrainBlendEditSession,
 };
+use against_rome_textures::palette::build_full_catalog;
 
 use std::fs;
 use std::path::PathBuf;
@@ -16,6 +17,95 @@ fn get_game_dir() -> PathBuf {
         default_path.display()
     );
     default_path
+}
+
+#[test]
+#[ignore = "requires installed retail floortex.dat; read-only 4T topology audit"]
+fn test_installed_4t_tiles_use_pixel_inferred_three_material_corners() {
+    let game_dir = get_game_dir();
+    let mut library = FloortexLibrary::open(game_dir.join("floortex.dat")).unwrap();
+    let names = library.names().to_vec();
+    assert_eq!(names.len(), 3005, "retail floor archive inventory changed");
+
+    let name_catalog = StandardFloorMaterialCatalog::from_texture_names(&names);
+    let mut probe = |name: &str| library.get_layer(name);
+    let pixel_catalog = build_full_catalog(&names, Some(&mut probe));
+    drop(probe);
+    let three_material_tiles: Vec<&String> = names
+        .iter()
+        .filter(|name| {
+            name.len() == 8
+                && name.as_bytes()[0] == b'4'
+                && name.as_bytes()[1].eq_ignore_ascii_case(&b'T')
+        })
+        .collect();
+    assert_eq!(three_material_tiles.len(), 333, "retail 4T inventory changed");
+
+    let mut corrected = 0usize;
+    let mut unresolved = 0usize;
+    let mut roundtripped = 0usize;
+    let mut unresolved_names = Vec::new();
+    let mut invalid_name_chars = 0usize;
+    let mut missing_materials = 0usize;
+    let mut missing_base_variants = 0usize;
+    let mut missing_pixels = 0usize;
+    let mut shapes = std::collections::BTreeMap::<char, usize>::new();
+    for name in &three_material_tiles {
+        let Some(pixel_corners) = pixel_catalog.try_resolve_native_corners(name) else {
+            unresolved += 1;
+            unresolved_names.push(name.as_str());
+            let bytes = name.as_bytes();
+            if !bytes[6].is_ascii_alphanumeric() {
+                invalid_name_chars += 1;
+            } else {
+                let ids: Vec<String> = bytes[2..5]
+                    .iter()
+                    .map(|code| format!("B{}", (*code as char).to_ascii_uppercase()))
+                    .collect();
+                if ids.iter().any(|id| !name_catalog.materials.iter().any(|m| m.eq_ignore_ascii_case(id))) {
+                    missing_materials += 1;
+                } else if ids.iter().any(|id| name_catalog.variants_by_material.get(id).is_none_or(Vec::is_empty)) {
+                    missing_base_variants += 1;
+                } else if library.get_layer(name).is_none() {
+                    missing_pixels += 1;
+                }
+            }
+            continue;
+        };
+        let distinct: std::collections::HashSet<String> = pixel_corners
+            .iter()
+            .map(|material| material.to_ascii_uppercase())
+            .collect();
+        assert_eq!(distinct.len(), 3, "{name} did not resolve to three materials");
+        let corner_refs = pixel_corners.each_ref().map(String::as_str);
+        let baked = pixel_catalog
+            .resolve_native_tile(&corner_refs, 0, 0)
+            .unwrap_or_else(|| panic!("{name} corner topology did not bake"));
+        assert_eq!(
+            pixel_catalog.try_resolve_native_corners(&baked).as_ref(),
+            Some(&pixel_corners),
+            "{name} did not round-trip through native tile {baked}"
+        );
+        roundtripped += 1;
+        *shapes.entry(name.as_bytes()[6] as char).or_default() += 1;
+        if name_catalog.try_resolve_native_corners(name).as_ref() != Some(&pixel_corners) {
+            corrected += 1;
+        }
+    }
+
+    println!(
+        "retail 4T tiles: {}, pixel-resolved: {}, round-tripped: {}, name mapping corrected: {}, unresolved: {}, by shape character: {:?}",
+        three_material_tiles.len(),
+        three_material_tiles.len() - unresolved,
+        roundtripped,
+        corrected,
+        unresolved,
+        shapes,
+    );
+    println!("unresolved examples: {:?}", unresolved_names.iter().take(24).collect::<Vec<_>>());
+    println!("unresolved causes (invalid name / missing material / missing base variants / missing BMP): {invalid_name_chars}/{missing_materials}/{missing_base_variants}/{missing_pixels}; pixel evidence rejected: {}", unresolved - invalid_name_chars - missing_materials - missing_base_variants - missing_pixels);
+    assert!(corrected > 0, "pixel probing did not correct any name-derived 4T topology");
+    assert!(three_material_tiles.len() - unresolved >= 308, "pixel inference coverage regressed");
 }
 
 #[test]
