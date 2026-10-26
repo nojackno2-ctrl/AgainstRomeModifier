@@ -1,3 +1,7 @@
+## 2026-10-27 Codex：3D Ramp 真實桌面端點與復原驗收
+- 在新建置桌面視窗開啟 TEMP `ENDL_005`，先關閉「Show buildings and objects」以在本機檢查裸地形點選，保留 DATA 內容不變。Ramp 起點 `(46,200)`、終點 `(196,58)`，UI 顯示 `Ramp applied: 1283 height samples modified.` 與 `[Unsaved Changes]`；按頂端 Undo 後 UI 顯示 `Undo performed.` 且未儲存標記消失。未 Safe Save、未啟動遊戲。
+- 操作前後 TEMP 地圖與基準副本皆 64 檔，逐檔 SHA-256 差異 0。此為真實 3D viewport 的坡道建立／復原證據，不代表坡道存檔後重載或遊戲內渲染驗收；桌面程序使用的地形物件顯示選項只影響視圖。
+- 下一步仍為可觀察遊戲畫面下驗收存檔坡道／主要編輯流程，並補實體 DPI／多螢幕與遊戲 renderer 覆蓋；遊戲畫面目前仍有既有全黑阻礙，整體目標未完成。
 ## 2026-10-27 Codex / GPT-6 Luna：3D Ramp 同影格原生點擊補正
 - `viewport_3d.rs` Ramp terrain-pick 在缺少跨影格 press 記錄時，增加 egui `clicked_by(Primary)` fallback；仍要求 viewport 內有效 terrain ray hit 且未命中物件，原 press/release 拖曳流程保留。新增 app regression，將 press+release 放在同一 egui frame，確認產生 terrain pick、記錄 ramp 起點，且不修改高度／dirty／undo。
 - TEMP `ENDL_005` 桌面以新建置載入 6,651 objects / 3 atlas tiles；3D Ramp 起點點擊後 UIA 顯示 `Ramp start selected at (251, 76); choose the endpoint.`。後續測試點落在物件上，未完成終點操作；取消選取，未 Safe Save。TEMP 與基準副本 64 檔 SHA-256 相符。
