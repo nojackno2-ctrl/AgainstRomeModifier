@@ -1,3 +1,8 @@
+## 2026-10-26 Codex：3D 材質缺檔 fallback 診斷（已驗證；桌面待驗）
+- Phase 5 稽核發現 `floortex.dat` 不存在時 3D Textured 模式會靜默改繪 relief，HUD 不顯示狀態。本次以當前 GPT-6 繼續；指定 GPT-6 Luna 的 CLI 代理回報仍執行 GPT-6，依限制停止，未執行工作。此對話模型未切換。
+- `EditorApp::refresh_3d_floor_atlas` 現於缺少圖集檔時顯示繁中／英文 relief fallback 狀態；3D Textured HUD 同步標示材質檔不可用與 relief 替代。新增雙語訊息測試。
+- `cargo check --workspace --locked --offline --target-dir re_workspace/codex-phase5-fallback-target`、`cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-phase5-fallback-target -- --test-threads=1 --quiet`、`cargo build --workspace --locked --offline --target-dir re_workspace/codex-phase5-fallback-target` 均完成；editor app 856 passed／6 ignored。新測試獨立重跑 1 passed／0 failed；既有 unused warnings。未做缺資源桌面畫面驗收，遊戲 fallback 效果未驗。
+
 ## 2026-10-26 Codex：水深功能真實桌面驗收（已完成；遊戲內未驗）
 - 首次以單獨 `--map` 開啟的 TEMP 副本因缺遊戲別名目錄而被 Safe Save 擋下，保留在 TEMP 記憶體中。改以 TEMP 遊戲根目錄（`MAPS\ENDL_005` 複本、`SYSTEM`／`ToEng` 連至安裝資料的 junction）及 `--game <TEMP> --map ENDL_005` 重新驗收，未將安裝版地圖作為儲存目標。
 - `laguna-xs-2.1:latest` 三角色規劃成功；預覽顯示地形與水域，方案含湖泊 amount 12、河流 amount 16／16。套用報告：35,025 個高度取樣點、5,245 個阻擋像素、1 個材質筆刷、62 個操作。Safe Save 提示既有設計警告（不可通行物件與事件缺少目的地），確認後回報 `Saved safely in one transaction (6 files, 0 cache deletions)`。關閉再以同一 TEMP 遊戲根目錄重開，狀態為 `Loaded ...game_root\MAPS\ENDL_005` 且無 dirty 標記；`boden.bmp`、`collision.bmp`、`arm_scenario.json`、`SCRIPT\ak_level.bci` 均與安裝版來源內容不同，寫入目標為 TEMP 副本。另一個未儲存 TEMP 執行中另以 Ctrl+Z／Ctrl+Y 操作統一復原歷程，編輯器回報已套用復原紀錄；尚未進遊戲驗證水面效果。

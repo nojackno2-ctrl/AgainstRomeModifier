@@ -251,6 +251,14 @@ pub enum TerrainBulkAction {
 }
 
 impl EditorApp {
+    fn floor_atlas_fallback_message(english: bool) -> &'static str {
+        if english {
+            "3D floor texture archive floortex.dat not found; showing relief fallback."
+        } else {
+            "找不到 3D 地表材質檔 floortex.dat；目前以地形起伏色彩替代顯示。"
+        }
+    }
+
     fn refresh_3d_floor_atlas(&mut self) {
         let Some(map_path) = self.loaded_map_path.clone() else {
             if self.floor_atlas_source.take().is_some() {
@@ -295,6 +303,11 @@ impl EditorApp {
         }
         let Some(archive_path) = archive_path else {
             self.viewport_3d.set_floor_atlas(None);
+            self.status_message = Self::floor_atlas_fallback_message(
+                self.lang() == AppLanguage::English,
+            )
+            .into();
+            self.status_is_error = false;
             return;
         };
         let result = (|| {
@@ -5165,6 +5178,14 @@ mod tests {
     pub(super) mod spawn_save_tests;
     mod starter_kit_tests;
     mod designer_workflow_e2e;
+
+    #[test]
+    fn missing_floor_atlas_reports_relief_fallback_in_both_languages() {
+        assert!(EditorApp::floor_atlas_fallback_message(false).contains("floortex.dat"));
+        assert!(EditorApp::floor_atlas_fallback_message(false).contains("地形起伏色彩"));
+        assert!(EditorApp::floor_atlas_fallback_message(true).contains("floortex.dat"));
+        assert!(EditorApp::floor_atlas_fallback_message(true).contains("relief fallback"));
+    }
 
     #[test]
     fn test_editor_app_panel_persistence_and_snapshot() {

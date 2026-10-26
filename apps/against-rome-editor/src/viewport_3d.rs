@@ -1464,6 +1464,12 @@ impl Viewport3d {
             } else {
                 if self.english { " | Atlas: Fallback" } else { " | 圖集：備用" }
             }
+        } else if self.shading_mode == ShadingMode::Textured {
+            if self.english {
+                " | Atlas: Relief fallback"
+            } else {
+                " | 圖集：地形起伏替代"
+            }
         } else {
             ""
         };
