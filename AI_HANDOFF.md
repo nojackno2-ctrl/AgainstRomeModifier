@@ -1,6 +1,7 @@
 ## 2026-10-26 GPT-6 Luna：3D 通行遮罩繪製與 LOD 修正
 - `ShadingMode::Collision` 原本每個 LOD 四邊形只取中心通行格；高 LOD 可能漏掉四邊形內的阻擋格。現改為掃描四邊形覆蓋的 collision 區間，任一格阻擋即將該四邊形染紅。
 - 無視窗 egui 渲染測試設定 257 頂點／64 tile 地形、LOD 4，只阻擋 (129,129)；中心取樣 (136,136) 為通行，覆蓋範圍掃描仍需產生紅色 polygon。聚焦測試通過 1 passed；app crate `cargo check`、`cargo build` 及 `git diff --check` 通過，均使用 `--locked --offline --target-dir re_workspace/collision-shading-target`。`cargo fmt --all -- --check` 顯示大量 workspace 格式差異，未執行全 repo 格式化。
+- 隨後依序執行 `cargo check --workspace --locked --offline`、`cargo test --workspace --locked --offline --no-fail-fast`、`cargo build --workspace --locked --offline`（target-dir=`re_workspace/codex-wave-dest-target`），全部 exit 0；測試輸出含既有 unused 警告，沒有失敗。
 - 此為 CPU egui paint-output 證據，尚未驗證 GPU framebuffer 像素，也未證明滑鼠 picker 與通行格的實際畫面對位。
 
 ## 2026-10-26 Codex：遊戲黑畫面唯讀診斷（部分證據）
