@@ -56,3 +56,8 @@
 - AI 地圖工作室生成、預覽、套用已由實際 Ollama 與桌面驗證；水深案例另完成 Safe Save、關閉重開，Undo／Redo 在另一個未儲存 TEMP 執行中分開驗證。此前 live gate 有完整閉環證據；本次水深 desktop 用例尚未在同一地圖連續跑完 Undo／Redo→Safe Save→重載。這些都不等於地圖遊戲內可玩。
 - Safe Save 的 TEMP 測試必須由 `--game <TEMP 根目錄> --map ENDL_005` 開啟，讓別名 catalog 從 TEMP 遊戲根目錄可見；直接 `--map <路徑>` 的測試會缺少 catalog。TEMP 測試仍可能有既存設計警告，須在確認後走正常 Safe Save，不可用「立即儲存」略過驗證。
 - 第 3 階段已補 Safe Save 無效事件拒存、重載後編輯、root＋child＋direct／particle-linked Light family 平移／重載、事件刪除守衛及多池回滾；其他原生 family 變體與支援邊界仍待核對。下一步進第 5 階段真實 OpenGL 畫面、資源失敗／fallback、實體高 DPI 與多螢幕驗收。桌面目前有兩個同名編輯器視窗，待使用者選定目標；第 6 階段仍受安裝版黑畫面阻擋，需先取得可觀察遊戲畫面或進程堆疊證據，再驗地形、水面、物件、事件與存讀檔。
+
+## 2026-10-27 續作驗收更新
+
+- 最新建置在獨立桌面視窗成功載入 TEMP `ENDL_005`；實際切換 2D Blended／Height／Collision 與 3D Textured，材質 atlas 畫面可見，Height 起伏與 Minimap 輪廓吻合。僅切換檢視，未編輯／儲存地圖；安裝版保持唯讀。此前「桌面有同名視窗、待選定目標」已由獨立啟動的新建置視窗避開。
+- 第 5 階段剩餘：筆刷落點與物件選取對位、缺失素材／GL context failure 操作性 fallback、最小視窗與多螢幕／DPI。第 6 階段仍需先讓安裝版遊戲畫面可觀察，再進行實機地圖驗收。

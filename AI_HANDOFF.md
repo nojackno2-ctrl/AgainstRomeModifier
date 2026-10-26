@@ -1849,3 +1849,7 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 ## 2026-10-27 Codex / GPT-6 Luna：桌面 3D OpenGL 材質畫面驗收
 - 以 `re_workspace/codex-narrow-diagnostic-target/debug/against-rome-editor.exe --game <TEMP Against Rome 根目錄> --map ENDL_005` 啟動獨立視窗，載入 `C:\Users\nojac\AppData\Local\Temp\arm_gui_acceptance_20261026\Against Rome\MAPS\ENDL_005`。實際畫面可切換 Relief 與 Textured；Textured 模式呈現 atlas 地表材質，3D 視窗、操作提示、材質 atlas 計數與側邊工具控制正常可見。這是本機 OpenGL render/upload 路徑成功顯示的桌面證據，不代表涵蓋其他 GPU、context loss、實體高 DPI／多螢幕或遊戲 renderer parity。
 - 驗收只載入 TEMP 地圖並切換顯示模式，沒有編輯或儲存地圖；原安裝遊戲保持唯讀。狀態：3D Relief／Textured 畫面通過；高 DPI／多螢幕及遊戲內驗收仍待完成。
+
+## 2026-10-27 Codex / GPT-6 Luna：2D／3D 地形檢視切換驗收
+- 同一獨立桌面視窗與 TEMP `ENDL_005` 實際切換 2D Blended、Height、Collision、3D Textured。Height 顯示的地形島與 Minimap 輪廓吻合；Collision 模式可顯示碰撞網格；3D Textured 保持 atlas 材質、`Atlas: 3 tiles` 與 viewport HUD 可見。UIA 讀到 3D hover tile／高度；狀態列座標採完整 256 網格，3D tile 標籤採 4 倍降採樣網格索引，兩種讀值尺度不同。這輪只操作模式控制，沒有點畫布或儲存。
+- 狀態：本機 2D／3D 視圖切換及 3D 材質顯示通過；筆刷落點／選取一致性、最小視窗、跨螢幕／高 DPI、失敗資源路徑及遊戲內驗收仍未完成。
