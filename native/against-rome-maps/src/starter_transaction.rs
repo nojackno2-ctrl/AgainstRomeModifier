@@ -58,7 +58,11 @@ pub fn apply_to_candidate_with_copies(store: &ObjectStore, previous: &ScenarioDo
             return Err(format!("副本來源槽位 {} 的群組無效或非獨立支援群組。", req.source_slot));
         }
         let radians = store.native_rotation(root.slot, root.uid)?;
-        let translate_only = || "群組副本目前只能平移；變更隊伍或方向尚未支援。".to_string();
+        let translate_only = || "群組副本目標隊伍或方向與副本請求不一致。".to_string();
+        if !(0..=8).contains(&t.team) || t.team as u16 != req.target_team
+            || norm(t.angle) as f32 != req.target_rotation_degrees
+        { return Err(translate_only()); }
+        if !req.target_raw_rotation.is_finite() { return Err("副本目標原生旋轉弧度必須有限。".into()); }
         if req.is_native_source {
             if previous.data_slots.iter().any(|b| b.slot == req.source_slot && b.uid == req.source_uid && !b.spawn_id.is_nil()) {
                 return Err(format!("原生副本來源槽位 {} 已存在場景綁定，應使用一般副本請求。", req.source_slot));
@@ -68,13 +72,9 @@ pub fn apply_to_candidate_with_copies(store: &ObjectStore, previous: &ScenarioDo
                 Some(a) if !a.trim().is_empty() && a.eq_ignore_ascii_case(&t.alias) => {}
                 _ => return Err(format!("原生副本來源 TypeId {} 解析的別名與目標別名不一致。", root.type_id)),
             }
-            if root.team as i32 != t.team { return Err(translate_only()); }
-            let raw = t.raw_rotation.filter(|r| r.is_finite())
-                .ok_or("原生群組副本目標必須明確提供有限的原生旋轉弧度。")?;
-            if !radians.is_finite() || raw.to_bits() != radians.to_bits() {
-                return Err("原生群組副本目標旋轉弧度必須與來源 bit-exact 一致。".into());
-            }
-            if norm(t.angle) != angle(radians) { return Err(translate_only()); }
+            if !radians.is_finite() { return Err("原生來源旋轉無效。".into()); }
+            if t.raw_rotation.is_some_and(|r| r.to_bits() != req.target_raw_rotation.to_bits())
+                || angle(req.target_raw_rotation) != norm(t.angle) { return Err(translate_only()); }
         } else {
             let matching: Vec<_> = previous.data_slots.iter()
                 .filter(|b| b.slot == req.source_slot && b.uid == req.source_uid && !b.spawn_id.is_nil()).collect();
@@ -84,19 +84,17 @@ pub fn apply_to_candidate_with_copies(store: &ObjectStore, previous: &ScenarioDo
             let src = previous.spawns.iter().find(|s| s.id == matching[0].spawn_id).filter(|s| s.prebuilt)
                 .ok_or("副本來源在 previous 中必須是預建物件。")?;
             if !src.alias.eq_ignore_ascii_case(&t.alias) { return Err("副本物件的別名必須與來源一致。".into()); }
-            if src.team != t.team || root.team as i32 != t.team { return Err(translate_only()); }
-            if src.raw_rotation.is_some() || t.raw_rotation.is_some() {
-                match (src.raw_rotation, t.raw_rotation) {
-                    (Some(a), Some(b)) if a.is_finite() && b.is_finite() && a.to_bits() == b.to_bits()
-                        && radians.to_bits() == b.to_bits() && norm(src.angle) == norm(t.angle) => {}
-                    _ => return Err(translate_only()),
-                }
+            if src.team != root.team as i32 || !radians.is_finite() { return Err(translate_only()); }
+            if let Some(source_raw) = src.raw_rotation {
+                if !source_raw.is_finite() || source_raw.to_bits() != radians.to_bits()
+                    || angle(source_raw) != norm(src.angle) { return Err("預建來源旋轉資料與 DATA 群組不一致。".into()); }
             } else {
-                let actual = radians as f64 * 180. / std::f64::consts::PI;
-                let desired = norm(t.angle) as f64;
-                let diff = ((actual - desired + 540.).rem_euclid(360.) - 180.).abs();
-                if norm(src.angle) as f64 != desired || !actual.is_finite() || diff > 0.001 { return Err(translate_only()); }
+                let source_angle = radians as f64 * 180. / std::f64::consts::PI;
+                let diff = ((source_angle - norm(src.angle) as f64 + 540.).rem_euclid(360.) - 180.).abs();
+                if diff > 0.001 { return Err("預建來源旋轉資料與 DATA 群組不一致。".into()); }
             }
+            if t.raw_rotation.is_some_and(|r| r.to_bits() != req.target_raw_rotation.to_bits())
+                || angle(req.target_raw_rotation) != norm(t.angle) { return Err(translate_only()); }
         }
     }
     let mut ordered: Vec<_> = copies.iter().collect();
@@ -108,6 +106,12 @@ pub fn apply_to_candidate_with_copies(store: &ObjectStore, previous: &ScenarioDo
         let delta = fixed_displacement(root.position, [t.x, t.y, t.z])?;
         let (slot, uid) = working.clone_family_fixed(req.source_slot as usize, req.source_uid, delta)
             .map_err(|e| format!("建立群組副本候選失敗（池容量不足或配置無法滿足）：{e}"))?;
+        working.set_family_team(slot, uid, req.target_team)?;
+        working.set_family_rotation(slot, uid, req.target_rotation_degrees)?;
+        let actual = working.native_rotation(slot, uid)?;
+        if actual.to_bits() != req.target_raw_rotation.to_bits() {
+            return Err("副本群組旋轉與場景資料無法 bit-exact 對應。".into());
+        }
         if !slots.insert(slot) || !uids.insert(uid) { return Err("多個群組副本之間發生槽位或 UID 衝突。".into()); }
         prev.spawns.push(t);
         prev.data_slots.push(DataSlot { slot: slot as i32, uid, spawn_id: *target });

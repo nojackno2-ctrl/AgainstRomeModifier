@@ -269,7 +269,7 @@ fn duplicate_of_a_bound_family_copies_the_whole_data_family() {
 }
 
 #[test]
-fn native_family_copy_requires_exact_native_rotation_and_alias() {
+fn native_family_copy_preserves_source_and_applies_target_orientation() {
     let f = fixture(&[(232, None), (233, Some(0))]);
     let radians = (90f32 as f64 * (std::f64::consts::PI / 180.0)) as f32;
     let mut s = spawn(5, "HOUSE", 4500.0, 4500.0, 0, 90, true);
@@ -285,6 +285,19 @@ fn native_family_copy_requires_exact_native_rotation_and_alias() {
     let b = &plan.scenario.data_slots[0];
     assert_ne!((b.slot, b.uid), (0, 1), "the native source stays untouched and unbound");
     assert_eq!(object_at(&store, b.slot, b.uid).position[0], 4500.0);
+    assert_eq!(object_at(&store, 0, 1).team, 0);
+
+    let mut changed = spawn(6, "HOUSE", 4700.0, 4700.0, 3, 180, true);
+    let mut changed_item = placed(6, "HOUSE", 4700.0, 4700.0, 3, 180.0);
+    changed.raw_rotation = Some((180f32 as f64 * (std::f64::consts::PI / 180.0)) as f32);
+    changed_item.raw_rotation = changed.raw_rotation;
+    changed_item.native_source_identity = Some(NativeObjectIdentity { slot: 0, uid: 1 });
+    let changed_plan = plan_spawn_data(&f.map, &f.catalog, &ScenarioDocument::default(), &doc(vec![changed], vec![]), &[changed_item]).unwrap().unwrap();
+    let changed_store = apply(&changed_plan, &f.map, &f.root);
+    let changed_binding = changed_plan.scenario.data_slots.iter().find(|binding| binding.spawn_id == Uuid::from_u128(6)).unwrap();
+    assert_eq!(object_at(&changed_store, changed_binding.slot, changed_binding.uid).team, 3);
+    assert_eq!(against_rome_maps::starter_kit::transaction::display_angle(changed_store.native_rotation(changed_binding.slot as usize, changed_binding.uid).unwrap()), 180);
+    assert_eq!(object_at(&changed_store, 0, 1).team, 0, "source team remains unchanged");
 
     // A rotation that is not bit-identical to the source is refused.
     let mut off = item;
@@ -296,18 +309,23 @@ fn native_family_copy_requires_exact_native_rotation_and_alias() {
 }
 
 #[test]
-fn bound_copy_with_changed_team_fails_closed_without_writing() {
+fn bound_copy_can_change_team_and_rotation_without_changing_source() {
     let f = fixture(&[(232, None), (233, Some(0))]);
     let before = disk_bytes(&f.map);
     let prev = doc(vec![spawn(1, "HOUSE", 4000.0, 4000.0, 0, 90, true)], vec![DataSlot { slot: 0, uid: 1, spawn_id: Uuid::from_u128(1) }]);
     let next = doc(
-        vec![spawn(1, "HOUSE", 4000.0, 4000.0, 0, 90, true), spawn(2, "HOUSE", 4256.0, 4256.0, 3, 90, true)],
+        vec![spawn(1, "HOUSE", 4000.0, 4000.0, 0, 90, true), spawn(2, "HOUSE", 4256.0, 4256.0, 3, 180, true)],
         vec![],
     );
-    let mut copy = placed(2, "HOUSE", 4256.0, 4256.0, 3, 90.0);
+    let mut copy = placed(2, "HOUSE", 4256.0, 4256.0, 3, 180.0);
     copy.copy_source_scenario_id = Uuid::from_u128(1);
-    let err = plan_spawn_data(&f.map, &f.catalog, &prev, &next, &[placed(1, "HOUSE", 4000.0, 4000.0, 0, 90.0), copy]).unwrap_err();
-    assert!(err.contains("平移"), "{err}");
+    let plan = plan_spawn_data(&f.map, &f.catalog, &prev, &next, &[placed(1, "HOUSE", 4000.0, 4000.0, 0, 90.0), copy]).unwrap().unwrap();
+    let store = apply(&plan, &f.map, &f.root);
+    let original = plan.scenario.data_slots.iter().find(|binding| binding.spawn_id == Uuid::from_u128(1)).unwrap();
+    let copied = plan.scenario.data_slots.iter().find(|binding| binding.spawn_id == Uuid::from_u128(2)).unwrap();
+    assert_eq!(object_at(&store, original.slot, original.uid).team, 0);
+    assert_eq!(object_at(&store, copied.slot, copied.uid).team, 3);
+    assert_eq!(against_rome_maps::starter_kit::transaction::display_angle(store.native_rotation(copied.slot as usize, copied.uid).unwrap()), 180);
     assert_eq!(disk_bytes(&f.map), before);
 }
 

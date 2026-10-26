@@ -390,7 +390,8 @@ impl SpawnPlacementSession {
         let mut commands = Vec::new();
         for &index in &selected {
             let before = &self.objects[index];
-            if before.raw_rotation.is_some() || before.native_source_identity.is_some() {
+            let family_copy = !before.copy_source_scenario_id.is_nil() || before.native_source_identity.is_some();
+            if before.raw_rotation.is_some() && !family_copy {
                 if team.is_some_and(|t| t != before.team) {
                     return Err(PlacementError::InvalidOperation(
                         "所選物件中包含原生群組物件，目前僅支援平移；變更隊伍尚未支援。".into(),
@@ -407,6 +408,12 @@ impl SpawnPlacementSession {
             let mut after = before.clone();
             after.team = team.unwrap_or(before.team);
             after.angle = angle.unwrap_or(before.angle);
+            if family_copy && before.raw_rotation.is_some()
+                && normalize_angle(round_angle(after.angle)) != normalize_angle(round_angle(before.angle))
+            {
+                after.raw_rotation = Some((normalize_angle(round_angle(after.angle)) as f64
+                    * (std::f64::consts::PI / 180.0)) as f32);
+            }
             map_validate(&after, true)?;
             if after.team != before.team || after.angle != before.angle {
                 commands.push(Command::Edit { index, before: before.clone(), after });
@@ -424,7 +431,8 @@ impl SpawnPlacementSession {
         let mut commands = Vec::new();
         for &index in &selected {
             let before = &self.objects[index];
-            if before.raw_rotation.is_some() || before.native_source_identity.is_some() {
+            let family_copy = !before.copy_source_scenario_id.is_nil() || before.native_source_identity.is_some();
+            if before.raw_rotation.is_some() && !family_copy {
                 return Err(PlacementError::InvalidOperation(
                     "原生群組物件目前僅支援平移；變更方向尚未支援。".into(),
                 ));
@@ -432,6 +440,9 @@ impl SpawnPlacementSession {
             let angle = normalize_angle(round_angle(before.angle) + degrees % 360) as f32;
             let mut after = before.clone();
             after.angle = angle;
+            if family_copy && before.raw_rotation.is_some() {
+                after.raw_rotation = Some((normalize_angle(round_angle(angle)) as f64 * (std::f64::consts::PI / 180.0)) as f32);
+            }
             map_validate(&after, false)?;
             if after.angle != before.angle {
                 commands.push(Command::Edit { index, before: before.clone(), after });

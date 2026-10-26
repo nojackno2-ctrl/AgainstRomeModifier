@@ -73,8 +73,17 @@ fn rounded_angle(angle: f32) -> i32 {
     normalize_angle(angle.round_ties_even() as i32)
 }
 
+fn is_family_copy(item: &SdlPlacedObject) -> bool {
+    !item.copy_source_scenario_id.is_nil() || item.native_source_identity.is_some()
+}
+
+fn raw_rotation_from_degrees(angle: f32) -> f32 {
+    let normalized = angle.rem_euclid(360.0);
+    (normalized as f64 * (std::f64::consts::PI / 180.0)) as f32
+}
+
 fn check_native_translation_only(before: &SdlPlacedObject, team: i32, angle: f32) -> Result<(), String> {
-    if before.raw_rotation.is_some() || before.native_source_identity.is_some() {
+    if before.raw_rotation.is_some() && !is_family_copy(before) {
         if team != before.team {
             return Err("原生群組物件目前僅支援平移；變更隊伍尚未支援。".into());
         }
@@ -85,15 +94,23 @@ fn check_native_translation_only(before: &SdlPlacedObject, team: i32, angle: f32
     Ok(())
 }
 
-/// C# `Edit(index, updated)`: returns the validated replacement for `before`, preserving the
-/// persistent scenario id, copy source, native source identity and raw rotation.
+/// C# `Edit(index, updated)`: returns the validated replacement for `before`, preserving identity
+/// and provenance. A copied native family may change team and orientation; its raw rotation is
+/// regenerated from the edited angle while the original DATA source remains immutable.
 pub fn edit_placement(before: &SdlPlacedObject, updated: &SdlPlacedObject) -> Result<SdlPlacedObject, String> {
     check_native_translation_only(before, updated.team, updated.angle)?;
     let mut fixed = updated.clone();
     fixed.scenario_id = before.scenario_id;
     fixed.copy_source_scenario_id = before.copy_source_scenario_id;
     fixed.native_source_identity = before.native_source_identity;
-    fixed.raw_rotation = before.raw_rotation;
+    fixed.raw_rotation = if is_family_copy(before)
+        && before.raw_rotation.is_some()
+        && rounded_angle(updated.angle) != rounded_angle(before.angle)
+    {
+        Some(raw_rotation_from_degrees(updated.angle))
+    } else {
+        before.raw_rotation
+    };
     validate_bounds(&fixed, true)?;
     Ok(fixed)
 }
@@ -122,11 +139,14 @@ pub fn edit_placement_values(
 }
 
 /// C# `ScenarioFamilyCopyRequest`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ScenarioFamilyCopyRequest {
     pub source_slot: i32,
     pub source_uid: u32,
     pub is_native_source: bool,
+    pub target_team: u16,
+    pub target_rotation_degrees: f32,
+    pub target_raw_rotation: f32,
 }
 
 fn item_alias(item: &SdlPlacedObject) -> &str {
@@ -195,26 +215,23 @@ pub fn build_family_copy_requests(
                     ))
                 }
             }
-            if root.team as i32 != item.team {
-                return Err(format!(
-                    "群組副本目前只能平移；來源隊伍 ({}) 與目標隊伍 ({}) 不一致，變更隊伍尚未支援。",
-                    root.team, item.team
-                ));
-            }
+            if !(0..=8).contains(&item.team) { return Err("預建物件的隊伍必須介於 0 與 8。".into()); }
             let target_raw = match item.raw_rotation {
                 Some(r) if r.is_finite() => r,
                 _ => return Err("原生群組副本目標必須明確提供有限的原生旋轉弧度。".into()),
             };
             let source_rotation = root_rotation(root.rotation_degrees);
-            if !source_rotation.is_finite() || target_raw.to_bits() != source_rotation.to_bits() {
-                return Err("原生群組副本目標旋轉弧度必須與來源 bit-exact 一致。".into());
-            }
-            if rounded_angle(item.angle) != radians_to_display_angle(source_rotation) {
-                return Err("群組副本目前只能平移；變更方向尚未支援。".into());
+            if !source_rotation.is_finite() { return Err("原生來源旋轉無效。".into()); }
+            let target_degrees = rounded_angle(item.angle);
+            let expected_raw = raw_rotation_from_degrees(target_degrees as f32);
+            if target_raw.to_bits() != expected_raw.to_bits() {
+                return Err("原生群組副本的目標旋轉弧度與顯示方向不一致。".into());
             }
             requests.insert(
                 item.scenario_id,
-                ScenarioFamilyCopyRequest { source_slot: slot, source_uid: uid, is_native_source: true },
+                ScenarioFamilyCopyRequest { source_slot: slot, source_uid: uid, is_native_source: true,
+                    target_team: item.team as u16, target_rotation_degrees: target_degrees as f32,
+                    target_raw_rotation: target_raw },
             );
         } else {
             let is_prebuilt = (item.obj_type.category == SdlObjectCategory::Building
@@ -245,42 +262,34 @@ pub fn build_family_copy_requests(
             if !spawn.alias.eq_ignore_ascii_case(item_alias(item)) {
                 return Err("副本物件的別名必須與來源一致。".into());
             }
-            if spawn.team != item.team || root.team as i32 != item.team {
-                return Err(format!(
-                    "群組副本目前只能平移；來源隊伍 ({}) 與目標隊伍 ({}) 不一致，變更隊伍尚未支援。",
-                    spawn.team, item.team
-                ));
-            }
+            if !(0..=8).contains(&item.team) { return Err("預建物件的隊伍必須介於 0 與 8。".into()); }
             let root_rot = root_rotation(root.rotation_degrees);
             if spawn.raw_rotation.is_some() || item.raw_rotation.is_some() {
-                let ok = match (spawn.raw_rotation, item.raw_rotation) {
-                    (Some(s), Some(t)) => {
-                        s.is_finite()
-                            && t.is_finite()
-                            && s.to_bits() == t.to_bits()
-                            && root_rot.to_bits() == t.to_bits()
-                            && normalize_angle(spawn.angle) == rounded_angle(item.angle)
-                    }
-                    _ => false,
+                let source_ok = match spawn.raw_rotation {
+                    Some(r) => r.is_finite() && root_rot.to_bits() == r.to_bits()
+                        && normalize_angle(spawn.angle) == radians_to_display_angle(r),
+                    None => false,
                 };
-                if !ok {
-                    return Err("群組副本目前只能平移；變更隊伍或方向尚未支援。".into());
+                if !source_ok || !item.raw_rotation.is_some_and(f32::is_finite) {
+                    return Err("已綁定群組的原生旋轉資料無效。".into());
                 }
             } else {
                 let actual = root_rot as f64 * (180.0 / std::f64::consts::PI);
-                let desired = ((item.angle as f64 % 360.0) + 360.0) % 360.0;
-                let diff = ((((actual - desired + 540.0) % 360.0) + 360.0) % 360.0 - 180.0).abs();
-                let spawn_angle = ((spawn.angle as f64 % 360.0) + 360.0) % 360.0;
-                if spawn_angle != desired || !actual.is_finite() || diff > 0.001 {
-                    return Err("群組副本目前只能平移；變更方向尚未支援。".into());
-                }
+                let source_angle = ((spawn.angle as f64 % 360.0) + 360.0) % 360.0;
+                let diff = ((((actual - source_angle + 540.0) % 360.0) + 360.0) % 360.0 - 180.0).abs();
+                if !actual.is_finite() || diff > 0.001 { return Err("來源群組旋轉資料無效。".into()); }
             }
+            let target_degrees = rounded_angle(item.angle);
+            let target_raw = item.raw_rotation.unwrap_or_else(|| raw_rotation_from_degrees(target_degrees as f32));
             requests.insert(
                 item.scenario_id,
                 ScenarioFamilyCopyRequest {
                     source_slot: binding.slot,
                     source_uid: binding.uid,
                     is_native_source: false,
+                    target_team: item.team as u16,
+                    target_rotation_degrees: target_degrees as f32,
+                    target_raw_rotation: target_raw,
                 },
             );
         }
@@ -428,19 +437,36 @@ mod tests {
         assert!(build_family_copy_requests(&[native.clone()], &prev, &store, None).is_err());
         let resolver = |t: i32| (t == 232).then(|| "BauX".to_string());
         let req = build_family_copy_requests(&[native.clone()], &prev, &store, Some(&resolver)).unwrap();
-        assert_eq!(
-            req[&Uuid::from_u128(5)],
-            ScenarioFamilyCopyRequest { source_slot: 0, source_uid: 1, is_native_source: true }
-        );
+        assert_eq!(req[&Uuid::from_u128(5)].source_slot, 0);
+        assert_eq!(req[&Uuid::from_u128(5)].source_uid, 1);
+        assert_eq!(req[&Uuid::from_u128(5)].target_team, 0);
+        assert_eq!(req[&Uuid::from_u128(5)].target_rotation_degrees, 90.0);
+        assert_eq!(req[&Uuid::from_u128(5)].target_raw_rotation.to_bits(), radians.to_bits());
         let mut turned = native.clone();
         turned.angle = 180.0;
-        assert!(build_family_copy_requests(&[turned], &prev, &store, Some(&resolver)).is_err());
+        turned.raw_rotation = Some(raw_rotation_from_degrees(180.0));
+        assert_eq!(build_family_copy_requests(&[turned], &prev, &store, Some(&resolver)).unwrap()[&Uuid::from_u128(5)].target_rotation_degrees, 180.0);
         let mut other_team = native.clone();
         other_team.team = 3;
-        assert!(build_family_copy_requests(&[other_team], &prev, &store, Some(&resolver)).is_err());
+        assert_eq!(build_family_copy_requests(&[other_team], &prev, &store, Some(&resolver)).unwrap()[&Uuid::from_u128(5)].target_team, 3);
         let mut stale = native;
         stale.native_source_identity = Some(NativeObjectIdentity { slot: 0, uid: 2 });
         assert!(build_family_copy_requests(&[stale], &prev, &store, Some(&resolver)).is_err());
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn copied_native_family_can_change_team_and_direction_but_source_cannot() {
+        let mut source = obj("BauX", SdlObjectCategory::Building, 0, 0);
+        source.raw_rotation = Some(raw_rotation_from_degrees(90.0));
+        source.angle = 90.0;
+        assert!(edit_placement_values(&source, 3, source.world_x, source.world_y, source.world_z, 180.0, 0).is_err());
+
+        let mut copy = source.clone();
+        copy.native_source_identity = Some(NativeObjectIdentity { slot: 0, uid: 1 });
+        let updated = edit_placement_values(&copy, 3, copy.world_x, copy.world_y, copy.world_z, 180.0, 0).unwrap();
+        assert_eq!(updated.team, 3);
+        assert_eq!(updated.angle, 180.0);
+        assert_eq!(updated.raw_rotation.unwrap().to_bits(), raw_rotation_from_degrees(180.0).to_bits());
     }
 }

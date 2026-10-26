@@ -1,3 +1,9 @@
+## 2026-10-26 GPT-6 Luna：原生 DATA 群組副本編輯（已驗證）
+- 只開放複製副本變更隊伍／方向；原生來源 root 與既有保留綁定仍拒絕直接變更。`SpawnPlacementSession` 會為副本更新 `raw_rotation`；DATA 交易在 detached store 複製整個 family 後套用隊伍與方向，核對角度弧度 bit-exact，來源資料不變。
+- 唯讀逆向研究確認 `ObjectStore::set_family_team/set_family_rotation` 對所有 family 成員更新 `objects.dat` 隊伍與 `position.dat` 方向，既有 C# Oracle 覆蓋此底層契約。新增測試涵蓋原生副本、綁定副本、來源不變與根物件拒絕；指南已說明此行為。
+- 初次 workspace 測試發現一項舊測試把 `native_source_identity` 當成唯讀 root；修正測試案例分類後重跑。`cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-native-copy-target` 完成；編輯器 app 849 passed／6 ignored，專項 `spawn_placement` 35 passed、`spawn_data_tests` 12 passed。`cargo check --workspace --locked --offline` 與 `cargo build --workspace --locked --offline` 均成功；`git diff --check` 通過。未做遊戲內實機驗收。
+- 下一步：保留此功能並繼續處理編輯器未完成項目；遊戲黑畫面仍應依 `docs/map-editor-ingame-checklist.md` 以程序模組／執行緒堆疊取樣診斷。
+
 ## 2026-10-26 Codex：批次 #44 與桌面驗收（進行中）
 - 起始 HEAD `d320257`，既有 AGENTS.md／README.md 修改保留。先前 Codex job `4a259d0f06d9` 寫入水位／開局鏡頭 undo/redo 與 5 項端到端測試，使用者要求換 GPT-6 Luna 時中止；聚焦 `cargo check` 與 5 測試當時已 pass。GPT-6 Luna 接手審查並負責全 workspace 驗證。
 - Agy 唯讀調查 job `bfec2451bc82` 曾推測遊戲工作目錄可能是黑畫面原因；GPT-6 Luna 後續用安裝目錄作為實際 `WorkingDirectory` 重試仍全黑，已排除「只因 cwd 錯誤」的解釋。不要啟動 SafeDisc 外殼 `ar.exe`；安裝目錄沒有 DDraw wrapper。本次未改系統相容性或安裝內容。

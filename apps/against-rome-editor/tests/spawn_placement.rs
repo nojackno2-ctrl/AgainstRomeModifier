@@ -204,12 +204,26 @@ fn edit_many_is_atomic_and_one_undo_step() {
 #[test]
 fn edit_many_refuses_native_group_objects() {
     let mut native = placed(building(), 100.0, 100.0, 2, 0.0, 0);
-    native.native_source_identity = Some(NativeObjectIdentity { slot: 3, uid: 9 });
+    native.raw_rotation = Some(0.0);
     let mut s = session_with(&[placed(building(), 50.0, 50.0, 0, 0.0, 0), native]);
     assert!(matches!(s.edit_many(&[0, 1], Some(5), None), Err(PlacementError::InvalidOperation(_))));
     assert_eq!(s.get(0).unwrap().team, 0, "atomic");
     // unchanged team passes for the native object
     s.edit_many(&[1], Some(2), None).unwrap();
+}
+
+#[test]
+fn copied_native_group_allows_team_and_direction_edits() {
+    let mut copy = placed(building(), 100.0, 100.0, 2, 90.0, 0);
+    copy.raw_rotation = Some((90f32 as f64 * (std::f64::consts::PI / 180.0)) as f32);
+    copy.native_source_identity = Some(NativeObjectIdentity { slot: 3, uid: 9 });
+    let mut s = session_with(&[copy]);
+    s.edit_many(&[0], Some(5), Some(180.0)).unwrap();
+    assert_eq!((s.get(0).unwrap().team, s.get(0).unwrap().angle), (5, 180.0));
+    assert_eq!(s.get(0).unwrap().raw_rotation.unwrap().to_bits(), std::f32::consts::PI.to_bits());
+    s.rotate_many(&[0], 45).unwrap();
+    assert_eq!(s.get(0).unwrap().angle, 225.0);
+    assert_eq!(s.get(0).unwrap().raw_rotation.unwrap().to_bits(), ((225f32 as f64 * (std::f64::consts::PI / 180.0)) as f32).to_bits());
 }
 
 #[test]
