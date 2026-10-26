@@ -1,3 +1,6 @@
+## 2026-10-26 Codex：接入 3D 地表紋理圖集
+- `Viewport3d` 已具備 `FloorTextureAtlas` 渲染能力但 app 未接線。現在切入 3D 時沿用材質 session 單次載入地圖 `boden.txt`，依 tile 名稱集合建立 atlas，從地圖祖先目錄尋找 `floortex.dat`；地圖／材質修訂不變時不重建。無檔案或載入錯誤則維持 fallback；錯誤狀態會顯示路徑及原因。
+- 驗證：`cargo check --workspace --locked --offline --target-dir re_workspace/codex-floor-atlas-target`、`cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-floor-atlas-target`、`cargo build --workspace --locked --offline --target-dir re_workspace/codex-floor-atlas-target` 與 `git diff --check` 均 exit 0；編輯器 app 851 passed／0 failed／6 ignored。未做原生 GPU 視覺驗收，需後續以有 `floortex.dat` 的地圖確認實際貼圖與 atlas 載入耗時。
 ## 2026-10-26 GPT-6 Luna：3D 通行遮罩繪製、LOD 與游標格定位
 - `ShadingMode::Collision` 原本每個 LOD 四邊形只取中心通行格；高 LOD 可能漏掉四邊形內的阻擋格。現改為掃描四邊形覆蓋的 collision 區間，任一格阻擋即將該四邊形染紅。
 - 無視窗 egui 渲染測試設定 257 頂點／64 tile 地形、LOD 4，只阻擋 (129,129)；中心取樣 (136,136) 為通行，覆蓋範圍掃描仍需產生紅色 polygon。聚焦測試通過 1 passed；app crate `cargo check`、`cargo build` 及 `git diff --check` 通過，均使用 `--locked --offline --target-dir re_workspace/collision-shading-target`。`cargo fmt --all -- --check` 顯示大量 workspace 格式差異，未執行全 repo 格式化。

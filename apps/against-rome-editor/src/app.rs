@@ -203,6 +203,8 @@ pub struct EditorApp {
     pub ambience: AmbienceUi,
     pub modifier: ModifierUi,
     pub viewport_3d: Viewport3d,
+    /// Game archive and map material names used to build the current 3D floor atlas.
+    floor_atlas_source: Option<(PathBuf, u64)>,
     pub tech_doc: TechDocUi,
     pub minimap: MinimapUi,
     pub(crate) design_check: crate::design_check_ui::DesignCheckUi,
@@ -249,6 +251,71 @@ pub enum TerrainBulkAction {
 }
 
 impl EditorApp {
+    fn refresh_3d_floor_atlas(&mut self) {
+        let Some(map_path) = self.loaded_map_path.clone() else {
+            if self.floor_atlas_source.take().is_some() {
+                self.viewport_3d.set_floor_atlas(None);
+            }
+            return;
+        };
+        if self.textures.session_textures().is_none()
+            && self.material_autoload_tried.as_ref() != Some(&map_path)
+        {
+            self.material_autoload_tried = Some(map_path.clone());
+            if let Err(error) = self.textures.load_session(&map_path) {
+                self.status_message = format!(
+                    "3D floor textures unavailable / 3D 地表材質無法載入：{error}"
+                );
+                self.status_is_error = true;
+            }
+        }
+        let revision = self.textures.material_revision();
+        let source = (map_path.clone(), revision);
+        if self.floor_atlas_source.as_ref() == Some(&source) {
+            return;
+        }
+        self.floor_atlas_source = Some(source);
+        let Some(names) = self.textures.session_textures() else {
+            self.viewport_3d.set_floor_atlas(None);
+            return;
+        };
+        let mut unique = BTreeSet::new();
+        let names: Vec<String> = names
+            .iter()
+            .map(|name| name.trim().to_string())
+            .filter(|name| !name.is_empty() && unique.insert(name.to_ascii_lowercase()))
+            .collect();
+        if names.is_empty() {
+            self.viewport_3d.set_floor_atlas(None);
+            return;
+        }
+        let archive_path = map_path
+            .ancestors()
+            .map(|parent| parent.join("floortex.dat"))
+            .find(|path| path.is_file());
+        let Some(archive_path) = archive_path else {
+            self.viewport_3d.set_floor_atlas(None);
+            return;
+        };
+        let result = (|| {
+            let mut library = against_rome_textures::FloortexLibrary::open(&archive_path)
+                .map_err(|error| error.to_string())?;
+            against_rome_textures::FloorTextureAtlas::create(names, &mut library)
+                .map_err(|error| error.to_string())
+        })();
+        match result {
+            Ok(atlas) => self.viewport_3d.set_floor_atlas(Some(std::sync::Arc::new(atlas))),
+            Err(error) => {
+                self.viewport_3d.set_floor_atlas(None);
+                self.status_message = format!(
+                    "3D floor textures unavailable / 3D 地表材質無法載入：{} ({error})",
+                    archive_path.display()
+                );
+                self.status_is_error = true;
+            }
+        }
+    }
+
     /// 以目前地圖的玩家主屋為目標；沒有主屋時使用已啟用的玩家起始鏡頭。
     pub(crate) fn player_main_house_target_opt(
         &self,
@@ -467,6 +534,7 @@ impl EditorApp {
             ambience: AmbienceUi::default(),
             modifier: ModifierUi::default(),
             viewport_3d: Viewport3d::new(),
+            floor_atlas_source: None,
             tech_doc: TechDocUi::default(),
             minimap: MinimapUi::default(),
             design_check: Default::default(),
@@ -12227,6 +12295,10 @@ impl EditorApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             if self.view_mode == ViewMode::View3D {
                 self.refresh_troop_objects(ctx);
+                if let Some(grid) = self.textures.take_view_sync() {
+                    self.viewport_3d.set_tile_textures(grid);
+                }
+                self.refresh_3d_floor_atlas();
                 if let Some(session) = &self.session {
                     let placement_objects = self.placement.objects();
                     let selected_obj = self.placement.selected_object();
@@ -12234,9 +12306,6 @@ impl EditorApp {
                     self.viewport_3d.terrain_pick_mode = self.ramp_selecting;
                     self.viewport_3d.show_grid = self.show_grid;
                     self.viewport_3d.show_objects = self.show_objects;
-                    if let Some(grid) = self.textures.take_view_sync() {
-                        self.viewport_3d.set_tile_textures(grid);
-                    }
                     self.viewport_3d.scene_pick = self.scene.scene_pick_active();
                     self.viewport_3d.scene_markers =
                         if self.scene.open { self.scene.markers() } else { Vec::new() };
