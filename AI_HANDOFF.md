@@ -1,3 +1,8 @@
+## 2026-10-26 GPT-6 Luna：3D 材質筆刷桌面操作驗收
+- 使用 `re_workspace/codex-wave-dest-target/debug/against-rome-editor.exe` 載入 TEMP ENDL_005。3D 視角可見地表材質貼圖與調色盤；選取「土路」後以畫布拖曳繪製，調色盤的鄰接篩選由隱藏 72 種變為 60 種，證明地圖材質狀態已變更。Undo／Redo 各回報「已套用統一復原紀錄」；重做時篩選回到 60 種，最後再次 Undo 回到 72 種。
+- 未執行 Safe Save。關閉編輯器後逐檔比較 TEMP ENDL_005 開啟前與結束後 SHA-256，所有檔案一致；安裝目錄唯讀，未啟動遊戲。這補上真實 GPU 視窗的材質筆刷＋跨 3D Undo/Redo 證據；筆刷效能、各種材質／印章與高 DPI 仍待驗收。
+- 驗證：`git diff --check` exit 0（僅現存 AGENTS.md／README.md CRLF 警告；本輪未修改或暫存兩檔）。
+
 ## 2026-10-26 Codex：實際桌面 AI 對話框驗收
 - 使用 `re_workspace/codex-wave-dest-target/debug/against-rome-editor.exe` 開啟 TEMP 自製副本 `%TEMP%\arm_gui_acceptance_20261026\Against Rome\MAPS\ENDL_005`。在真實視窗點 AI 企劃並生成，Terrain／Water／Materials 三角色皆成功（3/3），方案預覽可見；點面板套用後狀態顯示 67,221 高度樣本、381 collision pixels、3/3 材質筆刷、74 操作；工具列 Undo／Redo 均回報已套用統一復原紀錄。
 - 未按 Safe Save；關閉時明確選「捨棄未儲存的變更」，避免把驗收方案寫入 TEMP 地圖；僅讀安裝素材供副本載入，未啟動遊戲或修改安裝目錄。實際截圖 1280×830；AI 對話框在此畫面需捲動才能檢視完整預覽，實體 DPI／多螢幕縮放與 GPU 視覺仍待驗收。
