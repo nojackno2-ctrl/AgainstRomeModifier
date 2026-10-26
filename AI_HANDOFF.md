@@ -1,7 +1,7 @@
-## 2026-10-26 GPT-6 Luna：3D 通行遮罩 CPU 繪製驗收
-- 在 `viewport_3d.rs` 新增無視窗 egui 繪製測試：257 頂點／64 tile 地形，設定 `collision.bmp` 格 (130,130) 阻擋，驗證 `ShadingMode::Collision` 的 paint output 至少含一個紅色地表 polygon。`cargo test -p against-rome-editor-app --locked --offline --target-dir re_workspace/collision-shading-target collision_shading_emits_red_painted_terrain_for_blocked_cell` 通過（1 passed）。
-- 初次測試 fixture 誤設 (32,32) 未見紅色 polygon；依 viewport 的 tile→vertex→collision 尺度核對後改為 (130,130)，重跑通過。`cargo check/build -p against-rome-editor-app --locked --offline --target-dir re_workspace/collision-shading-target` 與 `git diff --check` 通過。`cargo fmt --all -- --check` 顯示大量 workspace 既有格式差異，未執行全 repo 格式化。
-- 取樣核對：每 tile 4 格通行資料，LOD=1 時 world tile 中心 (32.5,32.5) 對應 collision (130,130)。這是 CPU egui paint output 證據，尚未驗證 GPU framebuffer 像素，也未證明滑鼠 picker 與通行格的實際畫面對位。
+## 2026-10-26 GPT-6 Luna：3D 通行遮罩繪製與 LOD 修正
+- `ShadingMode::Collision` 原本每個 LOD 四邊形只取中心通行格；高 LOD 可能漏掉四邊形內的阻擋格。現改為掃描四邊形覆蓋的 collision 區間，任一格阻擋即將該四邊形染紅。
+- 無視窗 egui 渲染測試設定 257 頂點／64 tile 地形、LOD 4，只阻擋 (129,129)；中心取樣 (136,136) 為通行，覆蓋範圍掃描仍需產生紅色 polygon。聚焦測試通過 1 passed；app crate `cargo check`、`cargo build` 及 `git diff --check` 通過，均使用 `--locked --offline --target-dir re_workspace/collision-shading-target`。`cargo fmt --all -- --check` 顯示大量 workspace 格式差異，未執行全 repo 格式化。
+- 此為 CPU egui paint-output 證據，尚未驗證 GPU framebuffer 像素，也未證明滑鼠 picker 與通行格的實際畫面對位。
 
 ## 2026-10-26 Codex：遊戲黑畫面唯讀診斷（部分證據）
 - 依既有授權啟動安裝版 `Against_Rome.exe`（PID 15568，安裝目錄作為 cwd），標題正常、`Responding=True`。程序載入系統 `ddraw.dll`、NVIDIA `nvd3dum.dll`、遊戲 `ds_andll.dll` 與系統 `Quartz.dll`；安裝版 SHA-256 仍為 `6AC85239EA3B87A4357ED8CE09A1818E68C09FE3C00E8D98831F473577B719BF`。

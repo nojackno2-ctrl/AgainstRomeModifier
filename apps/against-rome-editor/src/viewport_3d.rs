@@ -1473,7 +1473,6 @@ impl Viewport3d {
     ) {
         let step = self.mesh_lod_step.clamp(1, 8);
         let dim = field.tile_width as usize;
-        let v_size = session.vertex_size;
 
         // Determine back-to-front iteration order based on camera position relative to target
         let cam_pos = self.camera.position();
@@ -1613,19 +1612,26 @@ impl Viewport3d {
                     ShadingMode::Relief => Self::relief_color(norm_h, light),
                     ShadingMode::Heightmap => Self::heightmap_color(norm_h, light),
                     ShadingMode::Collision => {
-                        let v_scale = (v_size - 1) as f32 / field.tile_width;
-                        let sample_vx = (cx * v_scale).round() as usize;
-                        let sample_vz = (cz * v_scale).round() as usize;
-                        let col_scale = session.collision_size as f32 / (v_size - 1) as f32;
-                        let col_x = ((sample_vx as f32) * col_scale).round() as usize;
-                        let col_y = ((sample_vz as f32) * col_scale).round() as usize;
-                        let blocked =
-                            if col_x < session.collision_size && col_y < session.collision_size {
-                                let idx = col_y * session.collision_size + col_x;
-                                session.collision().get(idx).copied().unwrap_or(0) > 0
-                            } else {
-                                false
-                            };
+                        let collision_size = session.collision_size;
+                        let collision_scale = collision_size as f32 / field.tile_width;
+                        let col_x0 = ((x0 * collision_scale).floor() as usize)
+                            .min(collision_size);
+                        let col_z0 = ((z0 * collision_scale).floor() as usize)
+                            .min(collision_size);
+                        let col_x1 = ((x1 * collision_scale).ceil() as usize)
+                            .min(collision_size);
+                        let col_z1 = ((z1 * collision_scale).ceil() as usize)
+                            .min(collision_size);
+                        let collision = session.collision();
+                        let blocked = (col_z0..col_z1).any(|col_z| {
+                            (col_x0..col_x1).any(|col_x| {
+                                collision
+                                    .get(col_z * collision_size + col_x)
+                                    .copied()
+                                    .unwrap_or(0)
+                                    > 0
+                            })
+                        });
                         if blocked {
                             Color32::from_rgb(
                                 (210.0 * light) as u8,
@@ -2569,9 +2575,9 @@ mod tests {
     #[test]
     fn collision_shading_emits_red_painted_terrain_for_blocked_cell() {
         let mut collision = vec![0; 256 * 256];
-        // The 64-tile viewport maps each tile to four collision cells; its center
-        // (32.5, 32.5) therefore samples collision cell (130, 130).
-        collision[130 * 256 + 130] = 255;
+        // At LOD 4, tile quad [32,36] spans collision cells [128,144).
+        // Cell (129,129) is away from the quad center, which would sample (136,136).
+        collision[129 * 256 + 129] = 255;
         let session = TerrainSession::new(
             257,
             vec![32; 257 * 257],
@@ -2582,7 +2588,7 @@ mod tests {
         );
         let mut vp = Viewport3d::new();
         vp.shading_mode = ShadingMode::Collision;
-        vp.mesh_lod_step = 1;
+        vp.mesh_lod_step = 4;
         vp.show_water = false;
 
         let ctx = egui::Context::default();

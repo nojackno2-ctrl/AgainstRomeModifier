@@ -5,7 +5,7 @@
 - 原生 DATA 群組副本現在可批次變更隊伍／方向；來源 family 不變，原生 root 及保留中的既有 binding 仍拒絕直接更改。Rust 專項：`apps/against-rome-editor/tests/spawn_placement.rs`（35 passed）、`native/against-rome-maps/tests/spawn_data_tests.rs`（12 passed）；全 workspace app 849 passed／6 ignored，`cargo check`／`cargo build --workspace --locked --offline` 均成功。此功能尚未經實際桌面操作驗收。細節見 `AI_HANDOFF.md` 2026-10-26 原生 DATA 群組副本編輯。
 - 實際桌面：TEMP 地圖已完成 2D 高度筆畫→Safe Save→關閉→重新開啟；另驗證水位與起始鏡頭的 undo／redo。結果與 hash 記錄見 `docs/map-editor-ingame-checklist.md`。
 - 遊戲啟動：2026-10-26 安裝版標題正常，但畫面仍黑。程序有回應、載入 `ddraw.dll`／NVIDIA `nvd3dum.dll`／`ds_andll.dll`／`Quartz.dll`；約 12 秒 CPU 增量 0.03 秒、PID 專屬 GPU 3D 三次取樣皆 0%。WPR 因追蹤權限失敗（`0xc5585011`），因此尚無堆疊證據。這不推翻 2026-10-23 既有遊戲內勝敗／波次／尋路證據，也不構成目前版本重驗通過；詳見最新 `AI_HANDOFF.md`。
-- 3D 通行遮罩已有實作：`ShadingMode::Collision` 依 `TerrainSession` 碰撞格將阻擋地表染紅；新增無視窗 egui paint-output 測試，確認 (130,130) 阻擋格會產生紅色地表 polygon（`collision_shading_emits_red_painted_terrain_for_blocked_cell`）。仍缺實際 GPU framebuffer 色彩及通行格／picker 座標對位證據。
+- 3D 通行遮罩的 LOD 著色會掃描每個地表四邊形覆蓋的 collision cells，避免粗 LOD 中心格取樣漏掉局部阻擋區；無視窗 egui 測試以 LOD 4、偏離 quad 中心的單一阻擋格驗證 paint output 紅色 polygon（`collision_shading_emits_red_painted_terrain_for_blocked_cell`）。仍缺實際 GPU framebuffer 色彩及通行格／picker 座標對位證據。
 - 待完成仍包括：可觀察遊戲啟動後重驗必要玩法、原版材質／地形／部隊／事件全流程及支援範圍；實體高 DPI／跨螢幕；3D 通行遮罩與 picker 的實際畫面對位；空白地圖開局。整體目標未完成。
 
 ## 2026-10-22 Rust 現況（取代下方 C# 時期細節）
