@@ -1,3 +1,9 @@
+## 2026-10-26 Codex：遊戲黑畫面唯讀診斷（部分證據）
+- 依既有授權啟動安裝版 `Against_Rome.exe`（PID 15568，安裝目錄作為 cwd），標題正常、`Responding=True`。程序載入系統 `ddraw.dll`、NVIDIA `nvd3dum.dll`、遊戲 `ds_andll.dll` 與系統 `Quartz.dll`；安裝版 SHA-256 仍為 `6AC85239EA3B87A4357ED8CE09A1818E68C09FE3C00E8D98831F473577B719BF`。
+- 取樣間隔約 12 秒：CPU 0.78→0.81 秒，執行緒 17→13；主執行緒處於 `Wait / UserRequest`。`Get-Counter '\GPU Engine(*)\Utilization Percentage'` 的 PID 15568 之 3D engine 三次取樣皆 0%。證據支持程序閒置且沒有可見 GPU 3D 工作，但無法辨認具體卡住的呼叫堆疊。
+- `wpr -start CPU -filemode` 因系統效能追蹤權限失敗（`0xc5585011`），`wpr -status` 確認未開始錄製；未安裝可用的 cdb／WinDbg／ProcDump。已結束本次啟動的程序，未修改安裝檔、設定或地圖。
+- 下一步需取得獲授權的 ETW／debugger stack capture，或在其他可觀察環境重測，才能區分 DirectDraw、DirectShow 與訊息迴圈。不要再以錯誤 cwd 作為假設。
+
 ## 2026-10-26 GPT-6 Luna：原生 DATA 群組副本編輯（已驗證）
 - 只開放複製副本變更隊伍／方向；原生來源 root 與既有保留綁定仍拒絕直接變更。`SpawnPlacementSession` 會為副本更新 `raw_rotation`；DATA 交易在 detached store 複製整個 family 後套用隊伍與方向，核對角度弧度 bit-exact，來源資料不變。
 - 唯讀逆向研究確認 `ObjectStore::set_family_team/set_family_rotation` 對所有 family 成員更新 `objects.dat` 隊伍與 `position.dat` 方向，既有 C# Oracle 覆蓋此底層契約。新增測試涵蓋原生副本、綁定副本、來源不變與根物件拒絕；指南已說明此行為。
