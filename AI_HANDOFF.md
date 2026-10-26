@@ -1,3 +1,6 @@
+## 2026-10-26 Codex：實際桌面 AI 對話框驗收
+- 使用 `re_workspace/codex-wave-dest-target/debug/against-rome-editor.exe` 開啟 TEMP 自製副本 `%TEMP%\arm_gui_acceptance_20261026\Against Rome\MAPS\ENDL_005`。在真實視窗點 AI 企劃並生成，Terrain／Water／Materials 三角色皆成功（3/3），方案預覽可見；點面板套用後狀態顯示 67,221 高度樣本、381 collision pixels、3/3 材質筆刷、74 操作；工具列 Undo／Redo 均回報已套用統一復原紀錄。
+- 未按 Safe Save；關閉時明確選「捨棄未儲存的變更」，避免把驗收方案寫入 TEMP 地圖；僅讀安裝素材供副本載入，未啟動遊戲或修改安裝目錄。實際截圖 1280×830；AI 對話框在此畫面需捲動才能檢視完整預覽，實體 DPI／多螢幕縮放與 GPU 視覺仍待驗收。
 ## 2026-10-26 Codex：修復無材質地圖的 Ollama schema 並重驗 live 流程
 - 新鮮 `ai_planner_live` 首輪重現 400：`JSON schema conversion failed`，原因是無 `boden.txt` 的地圖生成 `baseMaterial.enum: []`。修正 `AiMapPlan::json_schema`：材質目錄為空時移除 `baseMaterial` 與 feature `material` 欄位，避免非法空 enum；材質欄位仍只在有效材質目錄下提供。
 - 新增 plan schema 與實際 loopback wire request 回歸；`plan_tests` 8 passed、`ollama_wire_tests` 16 passed。重跑本機 Ollama `laguna-xs-2.1:latest` live gate 通過：預覽未改高度／Undo；套用 5186 高度樣本、8 操作；undo/redo、Safe Save、重載一致。證據：`cargo test -p against-rome-editor-app --test ai_planner_live --locked --offline --target-dir re_workspace/codex-ai-live-target -- --ignored --nocapture`。
