@@ -2,6 +2,7 @@
 
 ## 2026-10-26 最新 Rust 驗收補記
 
+- AI 工作室「連線並列出模型」改由背景 worker 執行，UI 逐幀輪詢；端點 URL 納入方案輸入指紋，切換端點後會丟棄舊模型清單回應並清除舊方案。mock 延遲傳輸及端點切換測試通過，AI 工作室 20 項測試通過；完整 workspace 單工作程序序列測試、check、build 通過。實際 Ollama 網路延遲／桌面操作仍需 live／GUI 驗收。
 - 新增物件／事件整合回歸：Safe Save 將新放置主屋轉為 DATA 預建物件，同時儲存以該物件 UUID 為目標的矩形區域勝利事件；重載後核對 DATA slot／UID、UUID、事件條件與勝利動作均一致，且 BCI 可解析。聚焦測試 1 passed、workspace check/build 通過、編輯器 app 852 passed／6 ignored。完整 workspace 測試僅 `ollama_wire_tests` 兩項固定連接埠測試在並行執行時互相干擾；該測試檔序列隔離重跑 16 passed。遊戲內觸發未驗證。詳見 `AI_HANDOFF.md` 2026-10-26 DATA 建築區域勝利事件整合重載。
 - 原生 DATA 群組副本可批次變更隊伍／方向；來源 family 不變，既有 root binding 仍拒絕直接更改。遇到零售圖既存的無效 lager 連結時，Safe Save 會原樣保留未變更 root，壞 family 副本不深拷貝，改用可信 singleton template 或 script fallback。新增 2 個回歸測試。完整 workspace app 851 passed／6 ignored、`against-rome-maps` 86 passed／3 ignored，workspace check／test／build 均通過。2026-10-26 真實 TEMP 桌面複製 DATA 農場並設 T1／45°，Safe Save 12 files 成功；關閉重開後副本值與原三個 DATA 物件皆保留。該副本使用 script fallback，未驗證遊戲內效果。詳見 `AI_HANDOFF.md` 2026-10-26 零售原生 DATA 舊連結容錯與回歸驗證。
 - 實際桌面：TEMP 地圖已完成 2D 高度筆畫→Safe Save→關閉→重新開啟；另驗證水位與起始鏡頭的 undo／redo。結果與 hash 記錄見 `docs/map-editor-ingame-checklist.md`。

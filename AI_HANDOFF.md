@@ -1,3 +1,7 @@
+## 2026-10-26 Codex：AI 工作室非阻塞模型探索（已驗證）
+- `連線並列出模型` 原本在 UI 執行緒同步呼叫 Ollama；現改以背景 worker 查詢，畫面逐幀輪詢進度並呈現失敗。Ollama URL 納入生成輸入指紋；使用者變更端點後，延遲的舊端點模型清單會被丟棄，進行中的舊端點生成方案也會失效。
+- 新增受閘門控制的 mock transport 測試，確認查詢可非阻塞返回且舊端點結果不覆蓋清單；另驗證端點切換會清除既有方案。AI 工作室 20 項測試通過；`cargo check --workspace --locked --offline`、`cargo test --workspace --locked --offline --no-fail-fast -j 1 -- --test-threads=1`、`cargo build --workspace --locked --offline` 皆通過，`git diff --check` 通過。workspace 測試單工作程序序列通過，避免 Ollama 固定連接埠測試互相干擾。
+
 ## 2026-10-26 Codex：DATA 建築區域勝利事件整合重載
 - 新增 `bound_building_region_victory_event_survives_safe_save_and_reload`：在空白自製 fixture 放置主屋，建立以主屋 UUID 為目標的矩形區域條件與勝利動作，同次 Safe Save 後重開地圖。
 - 驗證預建物件仍保有原 UUID、DATA slot／UID 指向相同物件且隊伍正確；事件內容一致、條件仍指向該 UUID，儲存的 `ak_level.bci` 可解析。聚焦測試 1 passed；`cargo check --workspace --locked --offline` 與 `cargo build --workspace --locked --offline` 均 exit 0。完整 workspace 測試中 app 852 passed／6 ignored；僅 `ollama_wire_tests` 的 2 個固定連接埠測試受並行測試互相干擾而失敗，該測試檔以 `--test-threads=1` 隔離重跑 16 passed／0 failed。遊戲內觸發未驗證。

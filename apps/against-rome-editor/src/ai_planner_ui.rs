@@ -32,6 +32,10 @@ enum WorkerMsg {
     Done(Result<MultiAiMapPlanResult, String>),
 }
 
+enum ModelRefreshMsg {
+    Done { url: String, result: Result<Vec<String>, String> },
+}
+
 struct GenerationJob {
     cancel: CancelToken,
     rx: Receiver<WorkerMsg>,
@@ -71,6 +75,7 @@ pub struct AiPlannerUi {
 
     // Background generation state
     job: Option<GenerationJob>,
+    model_refresh: Option<Receiver<ModelRefreshMsg>>,
     pub progress_done: usize,
     pub progress_total: usize,
     input_version: u64,
@@ -106,6 +111,7 @@ impl Default for AiPlannerUi {
             last_apply_result: None,
             applied_revision: 0,
             job: None,
+            model_refresh: None,
             progress_done: 0,
             progress_total: 0,
             input_version: 0,
@@ -270,35 +276,74 @@ impl AiPlannerUi {
     }
 
     pub fn refresh_models(&mut self) {
-        let planner = OllamaMapPlanner::new(Some(&self.ollama_url), self.custom_transport.clone());
-        match planner.list_models() {
-            Ok(models) => {
-                for m in &mut self.role_models {
-                    if m.trim().is_empty() {
-                        if let Some(first) = models.first() {
-                            *m = first.clone();
+        if self.model_refresh.is_some() { return; }
+        let url = self.ollama_url.clone();
+        let planner = OllamaMapPlanner::new(Some(&url), self.custom_transport.clone());
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || { let _ = tx.send(ModelRefreshMsg::Done { url, result: planner.list_models() }); });
+        self.model_refresh = Some(rx);
+        self.status_message = tl(self.english, "正在連線至 Ollama 並列出模型…", "Connecting to Ollama and listing models…").into();
+        self.status_is_error = false;
+    }
+
+    /// 收取背景模型探索結果；使用者切換端點後，捨棄舊端點的延遲回應。
+    pub fn poll_model_refresh(&mut self) -> bool {
+        let Some(rx) = &self.model_refresh else { return false };
+        match rx.try_recv() {
+            Ok(ModelRefreshMsg::Done { url, result }) => {
+                self.model_refresh = None;
+                if url != self.ollama_url {
+                    self.status_message = tl(self.english, "Ollama 端點已變更，請重新列出模型。", "Ollama endpoint changed; list models again to refresh.").into();
+                    self.status_is_error = false;
+                    return false;
+                }
+                match result {
+                    Ok(models) => {
+                        for model in &mut self.role_models {
+                            if model.trim().is_empty() {
+                                if let Some(first) = models.first() { *model = first.clone(); }
+                            }
                         }
+                        self.status_message = if models.is_empty() {
+                            tl(self.english, "找不到 Ollama 模型，請先安裝模型或手動輸入名稱。", "No Ollama models found. Install one or enter a known model name.").into()
+                        } else if self.english { format!("Discovered {} Ollama models.", models.len()) }
+                        else { format!("已找到 {} 個 Ollama 模型。", models.len()) };
+                        self.available_models = models;
+                        self.status_is_error = false;
+                    }
+                    Err(e) => {
+                        self.status_message = if self.english { format!("Failed to list Ollama models: {e}") }
+                            else { format!("列出 Ollama 模型失敗：{e}") };
+                        self.status_is_error = true;
                     }
                 }
-                self.status_message = if models.is_empty() {
-                    "No Ollama models found. Install one or enter a known model name.".to_string()
-                } else {
-                    format!("Discovered {} Ollama models.", models.len())
-                };
-                self.available_models = models;
-                self.status_is_error = false;
+                false
             }
-            Err(e) => {
-                self.status_message = format!("Failed to list Ollama models: {e}");
+            Err(TryRecvError::Empty) => true,
+            Err(TryRecvError::Disconnected) => {
+                self.model_refresh = None;
+                self.status_message = tl(self.english, "模型探索工作意外停止，請重試。", "Model discovery worker stopped unexpectedly; retry.").into();
                 self.status_is_error = true;
+                false
             }
         }
     }
 
+    /// 無視窗測試用的等待包裝；互動 UI 每幀輪詢，不會阻塞。
+    #[cfg(test)]
+    fn wait_model_refresh(&mut self, timeout: Duration) -> bool {
+        let deadline = Instant::now() + timeout;
+        while self.poll_model_refresh() {
+            if Instant::now() >= deadline { return false; }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        true
+    }
+
     fn compute_inputs_key(&self) -> String {
         format!(
-            "{:?}|{:?}|{}|{}|{}|{}",
-            self.role_models, self.role_checks, self.bounds_text, self.locks_text, self.edit_passability,
+            "{}|{:?}|{:?}|{}|{}|{}|{}",
+            self.ollama_url, self.role_models, self.role_checks, self.bounds_text, self.locks_text, self.edit_passability,
             self.prompt_description
         )
     }
@@ -677,11 +722,13 @@ impl AiPlannerUi {
             return;
         }
         self.poll_generation();
+        let model_refreshing = self.poll_model_refresh();
         self.sync_inputs();
         let busy = self.job.is_some();
         if busy {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
+        if model_refreshing { ctx.request_repaint_after(Duration::from_millis(100)); }
 
         let mut is_open = self.open;
         let title = tl(
@@ -726,7 +773,7 @@ impl AiPlannerUi {
                         ui.label(tl(self.english, "Ollama 端點 URL：", "Ollama Endpoint URL:"));
                         ui.horizontal(|ui| {
                             ui.text_edit_singleline(&mut self.ollama_url);
-                            if ui.button(tl(self.english, "連線並列出模型", "Connect & List Models")).clicked() {
+                            if ui.add_enabled(!model_refreshing, egui::Button::new(tl(self.english, "連線並列出模型", "Connect & List Models"))).clicked() {
                                 self.refresh_models();
                             }
                         });
@@ -991,11 +1038,38 @@ mod tests {
 
         ui.set_custom_transport(mock_transport);
         ui.refresh_models();
+        assert!(ui.wait_model_refresh(Duration::from_secs(2)));
         assert_eq!(ui.available_models, vec!["mock-model:latest".to_string()]);
 
         assert!(ui.generate_ai_plan(0.0).is_ok());
         assert!(ui.current_plan.is_some());
         assert!(ui.is_dirty());
+    }
+
+    #[test]
+    fn model_discovery_is_background_and_discards_results_for_old_endpoint() {
+        let gate = Arc::new(Gate { open: Mutex::new(false), cv: Condvar::new(), entered: AtomicUsize::new(0) });
+        let worker_gate = gate.clone();
+        let transport = Arc::new(MockHttpTransport::new(move |_method, _url, _body| {
+            worker_gate.entered.fetch_add(1, Ordering::SeqCst);
+            let mut open = worker_gate.open.lock().unwrap();
+            while !*open { open = worker_gate.cv.wait(open).unwrap(); }
+            Ok(HttpResponse::new(200, r#"{"models":[{"name":"old-endpoint-model"}]}"#))
+        }));
+        let mut ui = test_ui();
+        ui.set_custom_transport(transport);
+        let original_models = ui.available_models.clone();
+
+        ui.refresh_models();
+        assert!(!ui.is_generating(), "模型探索不應被算成地圖生成工作");
+        assert!(ui.poll_model_refresh(), "尚未收到結果時應保持背景工作狀態");
+        while gate.entered.load(Ordering::SeqCst) == 0 { std::thread::sleep(Duration::from_millis(1)); }
+        ui.ollama_url = "http://localhost:11435".into();
+        ui.sync_inputs();
+        release(&gate);
+        assert!(ui.wait_model_refresh(Duration::from_secs(2)));
+        assert_eq!(ui.available_models, original_models, "不可用舊端點結果覆蓋模型清單");
+        assert!(ui.status_message.contains("端點已變更"), "{}", ui.status_message);
     }
 
     #[test]
@@ -1248,6 +1322,12 @@ mod tests {
         ui.sync_inputs();
         assert!(ui.current_plan.is_none());
         assert!(ui.plan_summary.is_empty());
+
+        ui.generate_ai_plan(0.0).unwrap();
+        assert!(ui.current_plan.is_some());
+        ui.ollama_url.push_str("/new-endpoint");
+        ui.sync_inputs();
+        assert!(ui.current_plan.is_none(), "切換 Ollama 端點後必須使舊方案失效");
     }
 
     #[test]
