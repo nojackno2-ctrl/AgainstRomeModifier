@@ -818,7 +818,7 @@ impl AiPlannerUi {
                     } else {
                         Color32::from_rgb(120, 220, 120)
                     };
-                    ui.colored_label(color, &self.status_message);
+                    ui.colored_label(color, self.localized_status_message());
                 }
                 if busy || self.progress_total > 0 {
                     ui.add(
@@ -984,6 +984,14 @@ impl AiPlannerUi {
             } else if close_modal {
                 self.pending_discard = false;
             }
+        }
+    }
+
+    fn localized_status_message(&self) -> &str {
+        if self.status_message == "Ready." {
+            tl(self.english, "就緒。", "Ready.")
+        } else {
+            &self.status_message
         }
     }
 }
@@ -1500,5 +1508,23 @@ mod tests {
         assert_eq!(tl(true, "企劃預覽：", "Plan Preview:"), "Plan Preview:");
         ui.english = true;
         assert!(ui.english);
+    }
+
+    #[test]
+    fn test_ai_planner_ready_status_is_localized_in_rendered_ui() {
+        let mut ui = test_ui();
+        ui.open = true;
+        let chinese = crate::batch20_localization_tests::render(|ctx| {
+            ui.show(ctx, None, None, 0.0);
+        });
+        assert!(chinese.contains("就緒。"), "{chinese}");
+        assert!(!chinese.contains("Ready."), "{chinese}");
+
+        ui.english = true;
+        let english = crate::batch20_localization_tests::render(|ctx| {
+            ui.show(ctx, None, None, 0.0);
+        });
+        assert!(english.contains("Ready."), "{english}");
+        assert!(!english.contains("就緒。"), "{english}");
     }
 }
