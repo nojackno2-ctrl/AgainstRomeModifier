@@ -650,9 +650,6 @@ impl EditorApp {
         if !trimmed_briefing.is_empty() {
             spec = spec.with_briefing(trimmed_briefing);
         }
-        if self.skirmish_wizard.template_kind == SkirmishTemplateKind::EmptyScene {
-            spec = spec.with_starter_kit(0, 8192.0, 8192.0);
-        }
 
         spec.validate(&game_path)
             .map_err(|e| format!("Step 1 (Map creation) failed: {e}"))?;
@@ -690,32 +687,40 @@ impl EditorApp {
                 .map_err(|e| format!("Step 2 (Load map) failed: {e}"))?;
         }
 
+        if self.skirmish_wizard.template_kind == SkirmishTemplateKind::EmptyScene {
+            if !self.apply_starter_kit(0, 8192.0, 8192.0) {
+                return Err(format!("Step 3 (Starter kit) failed: {}", self.spawn_ui.status().0));
+            }
+        }
+
         // 2. Step 3: Bases & resources (Settlement generator)
-        self.environment.settlement_players = self.skirmish_wizard.players;
-        self.environment.settlement_tribe = self.skirmish_wizard.tribe;
-        self.environment.settlement_symmetry = self.skirmish_wizard.symmetry;
-        self.environment.settlement_seed = self.skirmish_wizard.seed;
-        self.environment.settlement_include_nature = self.skirmish_wizard.include_nature;
-        self.environment.settlement_spawn_radius = self.skirmish_wizard.spawn_radius;
+        if self.skirmish_wizard.template_kind == SkirmishTemplateKind::FlatTemplate {
+            self.environment.settlement_players = self.skirmish_wizard.players;
+            self.environment.settlement_tribe = self.skirmish_wizard.tribe;
+            self.environment.settlement_symmetry = self.skirmish_wizard.symmetry;
+            self.environment.settlement_seed = self.skirmish_wizard.seed;
+            self.environment.settlement_include_nature = self.skirmish_wizard.include_nature;
+            self.environment.settlement_spawn_radius = self.skirmish_wizard.spawn_radius;
 
-        let s = self.session.as_ref().ok_or_else(|| {
-            "Step 3 (Settlement generation) failed: terrain session unavailable".to_string()
-        })?;
+            let s = self.session.as_ref().ok_or_else(|| {
+                "Step 3 (Settlement generation) failed: terrain session unavailable".to_string()
+            })?;
 
-        self.environment
-            .generate_settlement(
-                s.vertex_size,
-                Some(s.heights()),
-                Some((s.collision_size, s.collision())),
-                self.water_surface,
-                self.height_step,
-            )
-            .map_err(|e| format!("Step 3 (Settlement generation) failed: {e}"))?;
+            self.environment
+                .generate_settlement(
+                    s.vertex_size,
+                    Some(s.heights()),
+                    Some((s.collision_size, s.collision())),
+                    self.water_surface,
+                    self.height_step,
+                )
+                .map_err(|e| format!("Step 3 (Settlement generation) failed: {e}"))?;
 
-        let settlement_count = self.apply_settlement()
-            .map_err(|e| format!("Step 3 (Settlement generation) failed: {e}"))?;
+            let settlement_count = self.apply_settlement()
+                .map_err(|e| format!("Step 3 (Settlement generation) failed: {e}"))?;
 
-        self.environment.plan_queued(crate::environment_ui::EnvApply::Settlement, settlement_count, "");
+            self.environment.plan_queued(crate::environment_ui::EnvApply::Settlement, settlement_count, "");
+        }
 
         // 3. Step 3: Attack waves (if toggled)
         if self.skirmish_wizard.add_attack_waves {

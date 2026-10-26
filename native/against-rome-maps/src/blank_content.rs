@@ -312,6 +312,24 @@ fn reset_objects_dat(path: &Path) -> Result<Vec<u8>, String> {
         return Err("objects.dat 版本或標頭不符。".into());
     }
     let count = read_i32(&data, 4)? as usize;
+    // 現行零售 objects 使用 79 位元組紀錄與 18 個平行欄位，保留舊版布局相容性。
+    let columns = crate::starter_kit::native::COLUMNS;
+    if data.len() == 16 + count * (79 + columns.iter().sum::<usize>()) {
+        data[16..].fill(0);
+        for slot in 0..count {
+            for offset in [67, 69, 71, 73, 77] {
+                let start = 16 + slot * 79 + offset;
+                data[start..start + 2].fill(255);
+            }
+            for (column, width) in columns.iter().enumerate() {
+                if *width == 2 {
+                    let start = 16 + count * 79 + count * columns[..column].iter().sum::<usize>() + slot * width;
+                    data[start..start + 2].fill(255);
+                }
+            }
+        }
+        return pack_data(data, &original);
+    }
     if data.len() != 8 + count * 56 {
         return Err("objects.dat 長度或槽位數不符。".into());
     }
@@ -369,6 +387,10 @@ fn reset_objdata_dat(path: &Path) -> Result<Vec<u8>, String> {
         return Err("objdata.dat 版本或標頭不符。".into());
     }
     let count = read_i32(&data, 4)? as usize;
+    if data.len() == 8 + count * crate::starter_kit::native::SEGMENTS.iter().sum::<usize>() {
+        data[8..].fill(0);
+        return pack_data(data, &original);
+    }
     if data.len() != 8 + count * 9 {
         return Err("objdata.dat 長度或槽位數不符。".into());
     }
@@ -443,22 +465,36 @@ fn reset_particle_dat(path: &Path) -> Result<Vec<u8>, String> {
     let mut data = decompress_pfil_if_needed(&original)?;
 
     const CAPACITY: usize = 1024;
-    const RECORD_SIZE: usize = 432;
-    const PAYLOAD_LEN: usize = 12 + CAPACITY * RECORD_SIZE + 4 * CAPACITY * 4;
-    if data.len() != PAYLOAD_LEN || read_i32(&data, 0)? != 1 || read_i32(&data, 4)? != CAPACITY as i32 {
+    if data.len() < 12 || read_i32(&data, 0)? != 1 || read_i32(&data, 4)? != CAPACITY as i32 {
         return Err("particle.dat 結構不符。".into());
     }
 
+    let h8 = read_i32(&data, 8)?;
+    let children = if data.len() == against_rome_data::particle::PAYLOAD_LEN && h8 == 64 {
+        against_rome_data::particle::ParticlePool::from_payload(&data).map_err(|e| e.to_string())?;
+        64
+    } else if (h8 == 4 || h8 == 12) && data.len() == 12 + CAPACITY * 432 + 4 * CAPACITY * 4 {
+        12
+    } else {
+        return Err(format!("particle.dat 結構或子項目數標頭 ({h8}) 不符。"));
+    };
+
+    let record_size = 12 + children * 35;
+    let payload_len = 12 + CAPACITY * record_size + 4 * CAPACITY * 4;
+    if data.len() != payload_len {
+        return Err(format!("particle.dat 長度 {} 與預期 {} 不符。", data.len(), payload_len));
+    }
+
     for slot in 0..CAPACITY {
-        let record = 12 + slot * RECORD_SIZE;
-        data[record..record + RECORD_SIZE].fill(0);
+        let record = 12 + slot * record_size;
+        data[record..record + record_size].fill(0);
         data[record + 6..record + 8].copy_from_slice(&(-1i16).to_le_bytes());
-        for child in 0..12 {
+        for child in 0..children {
             let child_offset = record + 12 + child * 35 + 33;
             data[child_offset..child_offset + 2].copy_from_slice(&(-1i16).to_le_bytes());
         }
         for column in 0..4 {
-            let col_offset = 12 + CAPACITY * RECORD_SIZE + column * CAPACITY * 4 + slot * 4;
+            let col_offset = 12 + CAPACITY * record_size + column * CAPACITY * 4 + slot * 4;
             let val = if column == 3 { 30i32 } else { 0i32 };
             data[col_offset..col_offset + 4].copy_from_slice(&val.to_le_bytes());
         }
@@ -498,6 +534,14 @@ fn reset_biglager_dat(path: &Path) -> Result<Vec<u8>, String> {
     let original = fs::read(path).map_err(|e| format!("讀取 biglager.dat 失敗: {e}"))?;
     let mut data = decompress_pfil_if_needed(&original)?;
 
+    // 零售版有 32 個營地，每個營地包含 800 個索引。
+    if data.len() == 51244 && read_i32(&data, 0)? == 1 && read_i32(&data, 4)? == 32 && read_i32(&data, 8)? == 800 {
+        for record in data[12..].chunks_exact_mut(1601) {
+            record[0] = 0;
+            record[1..].fill(255);
+        }
+        return pack_data(data, &original);
+    }
     const CAPACITY: usize = 800;
     const RECORD_SIZE: usize = 1601;
     const PAYLOAD_LEN: usize = 12 + CAPACITY * RECORD_SIZE;
@@ -593,5 +637,199 @@ fn pack_data(data: Vec<u8>, original: &[u8]) -> Result<Vec<u8>, String> {
         compress_pfil(&data, &original[..64])
     } else {
         Ok(data)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TempFile(PathBuf);
+    impl TempFile {
+        fn new(name: &str, bytes: &[u8]) -> Self {
+            let path = std::env::temp_dir().join(format!("arm_test_blank_{}_{}_{name}", std::process::id(), uuid::Uuid::new_v4()));
+            fs::write(&path, bytes).unwrap();
+            Self(path)
+        }
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+    impl Drop for TempFile {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.0);
+        }
+    }
+
+    #[test]
+    fn reset_particle_dat_supports_retail_layout() {
+        let mut raw = vec![0u8; against_rome_data::particle::PAYLOAD_LEN];
+        raw[0..4].copy_from_slice(&1i32.to_le_bytes());
+        raw[4..8].copy_from_slice(&1024i32.to_le_bytes());
+        raw[8..12].copy_from_slice(&64i32.to_le_bytes());
+        raw[12..].fill(0xAA);
+        let temp = TempFile::new("particle_retail.dat", &raw);
+
+        let reset = reset_particle_dat(temp.path()).unwrap();
+        assert_eq!(reset.len(), against_rome_data::particle::PAYLOAD_LEN);
+
+        let pool = against_rome_data::particle::ParticlePool::from_payload(&reset).unwrap();
+        assert_eq!(pool.active_slots().count(), 0);
+
+        let snap0 = pool.snapshot_any(0).unwrap();
+        assert_eq!(snap0.active_raw(), 0);
+        assert_eq!(snap0.owner(), -1);
+        assert_eq!(snap0.state_words(), [0, 0, 0, 30]);
+        for c in 0..64 {
+            let child = snap0.child(c).unwrap();
+            assert_eq!(child.light_link(), -1);
+            assert_eq!(child.active_raw(), 0);
+        }
+
+        let snap_last = pool.snapshot_any(1023).unwrap();
+        assert_eq!(snap_last.active_raw(), 0);
+        assert_eq!(snap_last.owner(), -1);
+        assert_eq!(snap_last.state_words(), [0, 0, 0, 30]);
+        for c in 0..64 {
+            let child = snap_last.child(c).unwrap();
+            assert_eq!(child.light_link(), -1);
+        }
+    }
+
+    #[test]
+    fn reset_particle_dat_supports_legacy_layout() {
+        for &legacy_h8 in &[4i32, 12i32] {
+            const LEGACY_LEN: usize = 458764;
+            let mut raw = vec![0u8; LEGACY_LEN];
+            raw[0..4].copy_from_slice(&1i32.to_le_bytes());
+            raw[4..8].copy_from_slice(&1024i32.to_le_bytes());
+            raw[8..12].copy_from_slice(&legacy_h8.to_le_bytes());
+            raw[12..].fill(0xBB);
+            let temp = TempFile::new("particle_legacy.dat", &raw);
+
+            let reset = reset_particle_dat(temp.path()).unwrap();
+            assert_eq!(reset.len(), LEGACY_LEN);
+            assert_eq!(read_i32(&reset, 0).unwrap(), 1);
+            assert_eq!(read_i32(&reset, 4).unwrap(), 1024);
+            assert_eq!(read_i32(&reset, 8).unwrap(), legacy_h8);
+
+            let slot0_owner = i16::from_le_bytes([reset[12 + 6], reset[12 + 7]]);
+            assert_eq!(slot0_owner, -1);
+            for c in 0..12 {
+                let offset = 12 + 12 + c * 35 + 33;
+                let link = i16::from_le_bytes([reset[offset], reset[offset + 1]]);
+                assert_eq!(link, -1);
+            }
+            let col3_slot0 = 12 + 1024 * 432 + 3 * 1024 * 4;
+            assert_eq!(read_i32(&reset, col3_slot0).unwrap(), 30);
+            let col0_slot0 = 12 + 1024 * 432 + 0 * 1024 * 4;
+            assert_eq!(read_i32(&reset, col0_slot0).unwrap(), 0);
+
+            let slot_last_owner = i16::from_le_bytes([reset[12 + 1023 * 432 + 6], reset[12 + 1023 * 432 + 7]]);
+            assert_eq!(slot_last_owner, -1);
+            for c in 0..12 {
+                let offset = 12 + 1023 * 432 + 12 + c * 35 + 33;
+                let link = i16::from_le_bytes([reset[offset], reset[offset + 1]]);
+                assert_eq!(link, -1);
+            }
+            let col3_last = 12 + 1024 * 432 + 3 * 1024 * 4 + 1023 * 4;
+            assert_eq!(read_i32(&reset, col3_last).unwrap(), 30);
+        }
+    }
+
+    #[test]
+    fn reset_particle_dat_rejects_invalid_headers_and_counts() {
+        let mut raw = vec![0u8; against_rome_data::particle::PAYLOAD_LEN];
+        raw[0..4].copy_from_slice(&2i32.to_le_bytes());
+        raw[4..8].copy_from_slice(&1024i32.to_le_bytes());
+        raw[8..12].copy_from_slice(&64i32.to_le_bytes());
+        let temp = TempFile::new("bad_ver.dat", &raw);
+        assert!(reset_particle_dat(temp.path()).is_err());
+
+        raw[0..4].copy_from_slice(&1i32.to_le_bytes());
+        raw[4..8].copy_from_slice(&512i32.to_le_bytes());
+        let temp = TempFile::new("bad_cap.dat", &raw);
+        assert!(reset_particle_dat(temp.path()).is_err());
+
+        raw[4..8].copy_from_slice(&1024i32.to_le_bytes());
+        raw[8..12].copy_from_slice(&30i32.to_le_bytes());
+        let temp = TempFile::new("bad_children.dat", &raw);
+        assert!(reset_particle_dat(temp.path()).is_err());
+
+        let temp = TempFile::new("truncated.dat", &raw[..100]);
+        assert!(reset_particle_dat(temp.path()).is_err());
+    }
+
+    #[test]
+    fn reset_light_dat_retail_pool() {
+        let mut raw = vec![0u8; against_rome_data::pool::PAYLOAD_LEN];
+        raw[0..4].copy_from_slice(&1i32.to_le_bytes());
+        raw[4..8].copy_from_slice(&1024i32.to_le_bytes());
+        raw[8..].fill(0x55);
+        let temp = TempFile::new("light_retail.dat", &raw);
+
+        let reset = reset_light_dat(temp.path()).unwrap();
+        assert_eq!(reset.len(), against_rome_data::pool::PAYLOAD_LEN);
+
+        let pool = against_rome_data::pool::LightPool::from_payload(&reset).unwrap();
+        let snap = pool.snapshot_any(0).unwrap();
+        assert_eq!(snap.active_raw(), 0);
+        assert_eq!(snap.owner(), -1);
+        assert_eq!(snap.parent(), -1);
+        assert_eq!(snap.definition(), -1);
+
+        let snap_last = pool.snapshot_any(1023).unwrap();
+        assert_eq!(snap_last.active_raw(), 0);
+        assert_eq!(snap_last.owner(), -1);
+        assert_eq!(snap_last.parent(), -1);
+        assert_eq!(snap_last.definition(), -1);
+    }
+
+    #[test]
+    fn reset_biglager_dat_both_retail_and_legacy() {
+        let mut raw_retail = vec![0u8; 51244];
+        raw_retail[0..4].copy_from_slice(&1i32.to_le_bytes());
+        raw_retail[4..8].copy_from_slice(&32i32.to_le_bytes());
+        raw_retail[8..12].copy_from_slice(&800i32.to_le_bytes());
+        raw_retail[12..].fill(0x77);
+        let temp = TempFile::new("biglager_retail.dat", &raw_retail);
+        let reset = reset_biglager_dat(temp.path()).unwrap();
+        assert_eq!(reset.len(), 51244);
+        for chunk in reset[12..].chunks_exact(1601) {
+            assert_eq!(chunk[0], 0);
+            assert!(chunk[1..].iter().all(|&b| b == 255));
+        }
+
+        const LEGACY_BIG: usize = 12 + 800 * 1601;
+        let mut raw_legacy = vec![0u8; LEGACY_BIG];
+        raw_legacy[0..4].copy_from_slice(&1i32.to_le_bytes());
+        raw_legacy[4..8].copy_from_slice(&800i32.to_le_bytes());
+        raw_legacy[8..].fill(0x88);
+        let temp = TempFile::new("biglager_legacy.dat", &raw_legacy);
+        let reset = reset_biglager_dat(temp.path()).unwrap();
+        assert_eq!(reset.len(), LEGACY_BIG);
+        for slot in 0..800 {
+            let offset = 12 + slot * 1601;
+            assert_eq!(reset[offset], 0);
+            assert!(reset[offset + 1..offset + 1 + 1600].iter().all(|&b| b == 255));
+        }
+    }
+
+    #[test]
+    fn reset_lager_dat_retail_pool() {
+        const LAGER_LEN: usize = 16 + 3200 * 45;
+        let mut raw = vec![0u8; LAGER_LEN];
+        raw[0..4].copy_from_slice(&1i32.to_le_bytes());
+        raw[4..8].copy_from_slice(&3200i32.to_le_bytes());
+        raw[8..12].copy_from_slice(&6i32.to_le_bytes());
+        raw[12..16].copy_from_slice(&10i32.to_le_bytes());
+        raw[16..].fill(0x33);
+        let temp = TempFile::new("lager_retail.dat", &raw);
+        let reset = reset_lager_dat(temp.path()).unwrap();
+        assert_eq!(reset.len(), LAGER_LEN);
+        let tail0 = 16 + 3200 * 43;
+        assert_eq!(i16::from_le_bytes([reset[tail0], reset[tail0 + 1]]), -1);
+        let tail_last = 16 + 3200 * 43 + 3199 * 2;
+        assert_eq!(i16::from_le_bytes([reset[tail_last], reset[tail_last + 1]]), -1);
     }
 }

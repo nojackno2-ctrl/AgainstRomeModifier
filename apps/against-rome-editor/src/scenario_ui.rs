@@ -289,7 +289,9 @@ fn binding_context(map:&Path,document:&ScenarioDocument)->Result<(Option<Vec<(i3
     }
     let store=against_rome_placement::ObjectStore::load(map).map_err(|e|format!("無法驗證來源 DATA：{e}"))?;
     let active:Vec<_>=store.objects().iter().map(|o|(o.slot as i32,o.uid)).collect();
-    scenario::verify_binding_snapshot(document,&active)?;
+    if !document.data_slots.is_empty() || !active.is_empty() {
+        scenario::verify_binding_snapshot(document,&active)?;
+    }
     for s in &watched {if fs::read(&s.path).map_err(|e|e.to_string())?!=s.bytes{return Err("來源 DATA 在載入期間改變；請重試。".into())}}
     Ok((Some(active),watched))
 }

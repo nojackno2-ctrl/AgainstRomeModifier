@@ -175,7 +175,7 @@ pub struct EditorApp {
     pub map_properties_open: bool,
     family_history_key: (usize, usize, usize),
     pub scenario: ScenarioUi,
-    spawn_ui: SpawnPlacementUi,
+    pub(crate) spawn_ui: SpawnPlacementUi,
     /// DATA landscape objects `(slot, x, z)` of the map (building clearance warning), per map.
     spawn_landscape: Option<(PathBuf, Vec<(i32, f32, f32)>)>,
     pub(crate) textures: TexturesUi,

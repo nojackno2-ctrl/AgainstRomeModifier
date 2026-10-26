@@ -1,3 +1,13 @@
+## 2026-10-26 Codex & Agy：任務 #38 端到端工作流程測試與資料池版型相容（已驗證）
+- 完成四組 TEMP 工作流程端到端測試（`apps/against-rome-editor/src/app/tests/designer_workflow_e2e.rs`）：
+  1. `experimental_blank_wizard_starter_save_reload_design_check`：空白場景精靈＋起始配置 → Safe Save → 重新載入 → Design Check 通過（0 error）；
+  2. `reuse_events_and_script_layout_across_maps_preserves_source`：跨地圖匯出／匯入 `.arm-events.json` 與 `.arm-spawns.json` 並套用隊伍重映射，來源地圖位元組完全不變；
+  3. `recovery_restart_restore_save_and_discard_preserve_disk_contract`：崩潰復原重啟，注入 TEMP editor-data 目錄，驗證 Restore 與 Discard 之磁碟合約；
+  4. `packaging_temp_map_zip_payload_hashes_and_safe_default_directory`：地圖 ZIP 模組打包，驗證所有檔案 SHA-256 雜湊與非遊戲地圖目錄之安全預設路徑。
+- 修正 real bug：`native/against-rome-maps/src/blank_content.rs` 的 `reset_particle_dat` 支援現行零售版（2,322,444 bytes，標頭 8 偏移為 64，記錄長度 2252，狀態欄位 16，`ParticlePool::from_payload` 驗證通過）與舊版（458,764 bytes，標頭 8 偏移為 4 或 12，記錄長度 432，狀態欄位 16）；並為零售與舊版布局、異常標頭／長度新增完整單元測試。同時核驗 `reset_light_dat`、`reset_lager_dat`、`reset_biglager_dat`、`reset_objects_dat`、`reset_objdata_dat` 等資料池重設邏輯與單元測試。
+- 修正精靈與編輯器整合：在 `apps/against-rome-editor/src/skirmish_wizard_ui.rs` 中，`EmptyScene` 跳過平坦範本之隨機聚落產生步驟，改以記憶體暫存起始配置，並修正 `apps/against-rome-editor/src/scenario_ui.rs` 避免新空白場景在初次 Safe Save 前誤觸 DATA 綁定預檢報錯。
+- 驗證：`cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/agy-target`（輸出至 `re_workspace/batch-38-finish-test.log`）：**287 個測試套件全數通過，2,686 passed／0 failed／25 ignored**，exit 0。未暫存、未提交，嚴格保留 `AGENTS.md`／`README.md` 既有變更，安裝目錄唯讀。
+
 ## 2026-10-26 Codex：任務 #37 設計流程端到端測試（已驗證）
 - 新增單一 designer_workflow_e2e：TEMP 合成平坦範本、雙人聚落、波次／目標、地形／材質、Spawn／DATA 建築、Design Check、就緒狀態、安全儲存、全新 EditorApp 重載、統一復原及復原快照清除。重用精靈 fixture，僅放寬測試模組可見性。
 - 已確認並修正：精靈 apply_settlement 後漏呼叫 EnvironmentUi::plan_queued，導致成功套用的聚落計畫仍阻擋 Safe Save；現在循既有面板路徑清除已套用計畫。聚落與新增建築的混合 DATA 保護保留；測試先安全儲存精靈成果，再進行後續編輯。
