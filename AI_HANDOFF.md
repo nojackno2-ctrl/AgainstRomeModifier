@@ -1,3 +1,7 @@
+## 2026-10-27 Codex：Maps 狀態列雙語化與目錄錯誤保留（完整驗證完成）
+- `MapsUi` 改在狀態列呈現層依語系翻譯地圖目錄、路徑、複製／刪除、設計驗證、診斷與預檢訊息；保留內部英文狀態與動態錯誤細節。若 Endless 與一般地圖目錄掃描皆失敗，合併保留兩邊錯誤，而非由後者覆蓋前者。新增實際 egui 雙語狀態列渲染測試，涵蓋雙錯誤細節。
+- `cargo test -p against-rome-editor-app --lib maps_ui::tests:: --locked --offline --target-dir re_workspace/codex-status-loc-target -- --test-threads=1 --nocapture`：18 passed／0 failed。`cargo check --workspace --locked --offline --target-dir re_workspace/codex-status-loc-target`、序列完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-status-loc-target -- --test-threads=1 --quiet`、`cargo build --workspace --locked --offline --target-dir re_workspace/codex-status-loc-target` 均 exit 0；editor app 866 passed／6 ignored，maps lib 86 passed／3 ignored，`maps_tests` 52 passed，`git diff --check` 通過。未做桌面／遊戲驗收；安裝資料未觸碰。
+
 ## 2026-10-27 Codex：AI 工作室初始狀態雙語顯示（聚焦渲染驗證完成）
 - 唯讀查看實際繁中 AI 工作室畫面時發現初始／重設狀態仍直接顯示 `Ready.`。現在只在 UI 顯示層依語系轉成「就緒。」或 `Ready.`；內部狀態值與生成流程不變。新增無視窗 egui 實際渲染案例，驗證繁中不出現英文狀態、英文不出現中文狀態。
 - 聚焦命令 `cargo test -p against-rome-editor-app --lib ai_planner_ui::tests::test_ai_planner_ready_status_is_localized_in_rendered_ui --locked --offline --target-dir re_workspace/codex-status-loc-target -- --nocapture`：1 passed／0 failed。完整 `cargo check --workspace --locked --offline`、序列 `cargo test --workspace --locked --offline --no-fail-fast -j 1 -- --test-threads=1 --quiet`、`cargo build --workspace --locked --offline` 均 exit 0；editor app 864 passed／6 ignored，maps lib 86 passed／3 ignored、`maps_tests` 52 passed；`git diff --check` 通過。實際桌面未重新建置／操作，遊戲資料未碰觸。

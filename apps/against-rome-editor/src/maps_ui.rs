@@ -283,6 +283,7 @@ impl MapsUi {
             return;
         }
 
+        let mut endless_error = None;
         match EndlessMapCatalog::new().list(path) {
             Ok(maps) => {
                 self.endless_maps = maps;
@@ -290,6 +291,7 @@ impl MapsUi {
                 self.status_is_error = false;
             }
             Err(e) => {
+                endless_error = Some(e.to_string());
                 self.status_message = format!("Failed to list endless maps: {e}");
                 self.status_is_error = true;
             }
@@ -300,10 +302,119 @@ impl MapsUi {
                 self.general_maps = maps;
             }
             Err(e) => {
-                self.status_message = format!("Failed to list general maps: {e}");
+                let general_error = e.to_string();
+                self.status_message = if let Some(endless_error) = endless_error {
+                    format!("Failed to list endless maps: {endless_error}; Failed to list general maps: {general_error}")
+                } else {
+                    format!("Failed to list general maps: {general_error}")
+                };
                 self.status_is_error = true;
             }
         }
+    }
+
+    fn localized_status_message(&self) -> String {
+        let message = self.status_message.as_str();
+        let fixed = match message {
+            "Ready." => Some(("就緒。", "Ready.")),
+            "No scenario loaded for diagnostics." => Some(("尚未載入劇本，無法執行診斷。", "No scenario loaded for diagnostics.")),
+            "Preflight verification passed." => Some(("存檔預檢通過。", "Preflight verification passed.")),
+            _ => None,
+        };
+        if let Some((chinese, english)) = fixed {
+            return tl(self.english, chinese, english).to_string();
+        }
+
+        if message.contains("; Failed to list general maps: ") {
+            return Self::localized_catalog_errors(message, self.english);
+        }
+
+        if let Some((success, catalog_errors)) = message.split_once(" Catalog refresh failed: ") {
+            let localized_success = self.localized_success_status(success);
+            return format!("{}{}", localized_success, tl(self.english, " 地圖目錄重新整理失敗：", " Catalog refresh failed: "))
+                + &Self::localized_catalog_errors(catalog_errors, self.english);
+        }
+
+        for (prefix, chinese_prefix) in [
+            ("Design Validator completed: ", "設計驗證完成："),
+            ("Diagnostics completed: ", "地圖診斷完成："),
+        ] {
+            if let Some(count) = message.strip_prefix(prefix).and_then(|rest| rest.strip_suffix(" issues found.")) {
+                return if self.english {
+                    message.to_string()
+                } else {
+                    format!("{chinese_prefix}{count} 項問題。")
+                };
+            }
+        }
+
+        let dynamic = [
+            ("Game path does not exist: ", "遊戲路徑不存在：", "Game path does not exist: "),
+            ("Selected game folder does not exist: ", "所選遊戲資料夾不存在：", "Selected game folder does not exist: "),
+            ("Failed to list endless maps: ", "列出無盡地圖失敗：", "Failed to list endless maps: "),
+            ("Failed to list general maps: ", "列出一般地圖失敗：", "Failed to list general maps: "),
+            ("Preflight blocked: ", "存檔預檢未通過：", "Preflight blocked: "),
+            ("Delete failed: ", "刪除失敗：", "Delete failed: "),
+            ("Copy failed: ", "複製失敗：", "Copy failed: "),
+            ("Clone failed: ", "複製地圖失敗：", "Clone failed: "),
+            ("Spec validation failed: ", "規格驗證失敗：", "Spec validation failed: "),
+            ("規格驗證失敗: ", "規格驗證失敗：", "Spec validation failed: "),
+            ("Flat template build failed: ", "平坦範本建置失敗：", "Flat template build failed: "),
+            ("平坦範本請求失敗: ", "平坦範本請求失敗：", "Flat template request failed: "),
+        ];
+        for (prefix, chinese_prefix, english_prefix) in dynamic {
+            if let Some(detail) = message.strip_prefix(prefix) {
+                return format!("{}{}", tl(self.english, chinese_prefix, english_prefix), detail);
+            }
+        }
+
+        if let Some(count) = message.strip_prefix("Discovered ").and_then(|rest| rest.strip_suffix(" endless maps.")) {
+            return format!("{}{}{}", tl(self.english, "已找到 ", "Discovered "), count, tl(self.english, " 個無盡地圖。", " endless maps."));
+        }
+        if let Some(count) = message.strip_prefix("Blank map ENDL_").and_then(|rest| rest.strip_suffix(" created and verified successfully!")) {
+            return format!("{}{}{}", tl(self.english, "空白地圖 ENDL_", "Blank map ENDL_"), count, tl(self.english, " 已建立並驗證完成！", " created and verified successfully!"));
+        }
+        if let Some(rest) = message.strip_prefix("Catalog refresh failed: ") {
+            return format!("{}{}", tl(self.english, "地圖目錄重新整理失敗：", "Catalog refresh failed: "), Self::localized_catalog_errors(rest, self.english));
+        }
+        let localized_success = self.localized_success_status(message);
+        if localized_success != message {
+            return localized_success;
+        }
+        Self::localized_catalog_errors(message, self.english)
+    }
+
+    fn localized_success_status(&self, message: &str) -> String {
+        if self.english {
+            return message.to_string();
+        }
+        if let Some(rest) = message.strip_prefix("Copied ") {
+            if let Some((source, rest)) = rest.split_once(" to custom map ") {
+                if let Some((target, name)) = rest.strip_suffix(").").and_then(|value| value.split_once(" (")) {
+                    return format!("已將 {source} 複製至自製地圖 {target}（{name}）。");
+                }
+            }
+        }
+        if let Some(rest) = message.strip_prefix("Cloned map to ") {
+            if let Some((target, name)) = rest.strip_suffix(')').and_then(|value| value.split_once(" (")) {
+                if let Some(target) = target.strip_suffix(" successfully!") {
+                    return format!("已成功複製地圖至 {target}（{name}）。");
+                }
+            }
+        }
+        if let Some(slot) = message.strip_prefix("Successfully deleted custom map ENDL_").and_then(|value| value.strip_suffix('.')) {
+            return format!("已成功刪除自製地圖 ENDL_{slot}。");
+        }
+        message.to_string()
+    }
+
+    fn localized_catalog_errors(message: &str, english: bool) -> String {
+        if english {
+            return message.to_string();
+        }
+        message
+            .replace("Failed to list endless maps: ", "列出無盡地圖失敗：")
+            .replace("; Failed to list general maps: ", "；列出一般地圖失敗：")
     }
 
     /// Opens the native folder picker and refreshes catalogs after a valid selection.
@@ -583,7 +694,7 @@ impl MapsUi {
                     } else {
                         Color32::from_rgb(120, 220, 120)
                     };
-                    ui.colored_label(color, &self.status_message);
+                    ui.colored_label(color, self.localized_status_message());
                     ui.separator();
                 }
 
@@ -1550,6 +1661,43 @@ refpos=100.0,0.0,100.0
                     forbidden
                 );
             }
+        }
+    }
+
+    #[test]
+    fn maps_status_banner_localizes_messages_and_preserves_error_details() {
+        let heights = vec![20u8; 33 * 33];
+        let cx = MapsContext {
+            scenario: None,
+            aliases: &[],
+            heights: Some(&heights),
+            height_size: 33,
+            collision: None,
+            height_step: 4.0,
+            water_level: 0.0,
+        };
+        let mut ui = MapsUi::default();
+        ui.open = true;
+        ui.current_tab = MapsTab::Catalog;
+        let cases = [
+            ("Ready.", "就緒。", "Ready."),
+            ("Discovered 4 endless maps.", "已找到 4 個無盡地圖。", "Discovered 4 endless maps."),
+            ("Design Validator completed: 3 issues found.", "設計驗證完成：3 項問題。", "Design Validator completed: 3 issues found."),
+            ("Diagnostics completed: 2 issues found.", "地圖診斷完成：2 項問題。", "Diagnostics completed: 2 issues found."),
+            ("Copied ENDL_001 to custom map ENDL_005 (New Map).", "已將 ENDL_001 複製至自製地圖 ENDL_005（New Map）。", "Copied ENDL_001 to custom map ENDL_005 (New Map)."),
+            ("Cloned map to ENDL_005 successfully! (New Map)", "已成功複製地圖至 ENDL_005（New Map）。", "Cloned map to ENDL_005 successfully! (New Map)"),
+            ("Successfully deleted custom map ENDL_005.", "已成功刪除自製地圖 ENDL_005。", "Successfully deleted custom map ENDL_005."),
+            ("Failed to list endless maps: permission denied; Failed to list general maps: malformed catalog", "列出無盡地圖失敗：permission denied；列出一般地圖失敗：malformed catalog", "Failed to list endless maps: permission denied; Failed to list general maps: malformed catalog"),
+            ("Preflight blocked: event 7 has invalid target", "存檔預檢未通過：event 7 has invalid target", "Preflight blocked: event 7 has invalid target"),
+        ];
+        for (status, chinese_expected, english_expected) in cases {
+            ui.status_message = status.to_string();
+            ui.english = false;
+            let chinese = crate::batch20_localization_tests::render(|ctx| ui.show(ctx, &cx, None));
+            assert!(chinese.contains(chinese_expected), "expected {chinese_expected:?} in {chinese}");
+            ui.english = true;
+            let english = crate::batch20_localization_tests::render(|ctx| ui.show(ctx, &cx, None));
+            assert!(english.contains(english_expected), "expected {english_expected:?} in {english}");
         }
     }
 }

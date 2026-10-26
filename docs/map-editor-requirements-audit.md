@@ -2,6 +2,7 @@
 
 ## 2026-10-27 最新 Rust 驗收補記
 
+- Maps 狀態列現在只在呈現層依介面語系翻譯地圖目錄、複製／刪除、驗證與診斷訊息，保留錯誤細節；兩種地圖目錄同時掃描失敗時會保留兩邊錯誤。實際 egui 雙語狀態列測試通過，聚焦 maps UI 18 passed；完整 workspace check／序列 test／build 均 exit 0，editor app 866 passed／6 ignored，maps lib 86 passed／3 ignored、`maps_tests` 52 passed。桌面與遊戲驗收未執行。詳見 `AI_HANDOFF.md` 2026-10-27 Maps 狀態列雙語化與目錄錯誤保留。
 - AI 工作室狀態訊息現於呈現層依介面語系翻譯固定狀態、模型掃描、進度、完成／套用統計及已知錯誤前綴；保留內部狀態、模型名稱／數值與未知錯誤細節。egui 雙語渲染回歸覆蓋狀態家族及錯誤細節；聚焦 23 passed。完整 workspace check／序列 test／build 均 exit 0；桌面與遊戲內驗收未執行。詳見 `AI_HANDOFF.md` 2026-10-27 AI 工作室狀態訊息雙語化。
 - 空白場景現在於 staging 發布前驗證完整 terrain output：六張 BMP 的格式與全部像素值、列 stride/padding，以及 `boden.txt` 的 4096 格材質；建置後 `verify_disk_artifacts` 共用相同 verifier。新增像素／材質污染與失敗 rollback／無 manifest 登錄案例，maps 聚焦 10 passed。workspace check／序列完整 test／build 均 exit 0，editor app 863 passed／6 ignored，maps lib 86 passed／3 ignored、`maps_tests` 52 passed；此 gate 不代表保留 DATA／SDL 可由遊戲載入。
 - `PlacementUi::batch_edit` 與單筆隊伍設定／批次欄位提交現在共用物件類別隊伍驗證，避免 Squad 從公開批次入口改至 team 8 等非法隊伍。拒絕同批角度變更時 store payload、dirty、undo/redo、history token／receipt 均不變；team 7 加旋轉可 undo/redo。聚焦 3 passed；workspace check、完整序列 test（editor app 863 passed／6 ignored）及 build 通過。詳見 `AI_HANDOFF.md` 2026-10-27 批次物件編輯隊伍類別驗證。
