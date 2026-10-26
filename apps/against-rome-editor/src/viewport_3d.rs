@@ -661,12 +661,12 @@ impl Viewport3d {
             None
         };
         let (pickable, scene_sprite) = if let Some(ref ns) = native_sprite {
-            let p = PickableSprite::new(
+            let p = PickableSprite::with_alpha_mask(
                 ns.width as u32,
                 ns.height as u32,
                 ns.anchor_x as f32,
                 ns.anchor_y as f32,
-                None,
+                ns.alpha_mask().clone(),
             );
 
             let uv = self
@@ -2390,7 +2390,9 @@ mod tests {
         let mut vp = Viewport3d::new();
 
         // Create in-memory test sprite (16x16 pixels)
-        let pixels = vec![0xFFFFFFFF; 256];
+        let mut pixels = vec![0xFFFFFFFF; 256];
+        pixels[0] = 0;
+        pixels[15] = 0;
         let sprite =
             Arc::new(NativeSprite::new(16, 16, pixels, 8, 16, "test_building.bmp").unwrap());
 
@@ -2411,6 +2413,13 @@ mod tests {
             "Sprite should be resolved from bounded catalog"
         );
         assert!(pickables[0].is_some(), "Pickable sprite should be created");
+        let pickable = pickables[0].as_ref().unwrap();
+        assert!(Arc::ptr_eq(
+            pickable.alpha_mask.as_ref().unwrap(),
+            sprite.alpha_mask()
+        ));
+        assert!(!pickable.is_opaque(0, 0), "transparent sprite corners pass through");
+        assert!(pickable.is_opaque(1, 0), "opaque sprite pixels remain pickable");
 
         let s = sprites[0].unwrap();
         assert_eq!(s.width, 16.0);

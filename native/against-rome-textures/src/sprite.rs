@@ -17,6 +17,7 @@ pub struct NativeSprite {
     pub width: i32,
     pub height: i32,
     pub argb_pixels: Vec<u32>,
+    alpha_mask: Arc<[u8]>,
     pub anchor_x: i32,
     pub anchor_y: i32,
     pub asset_name: String,
@@ -47,14 +48,25 @@ impl NativeSprite {
                 argb_pixels.len()
             )));
         }
+        let alpha_mask: Arc<[u8]> = argb_pixels
+            .iter()
+            .map(|pixel| u8::from((pixel >> 24) != 0))
+            .collect::<Vec<_>>()
+            .into();
         Ok(Self {
             width,
             height,
             argb_pixels,
+            alpha_mask,
             anchor_x,
             anchor_y,
             asset_name: asset_name.into(),
         })
+    }
+
+    /// Shared per-pixel opacity mask for hit testing without copying full ARGB pixels.
+    pub fn alpha_mask(&self) -> &Arc<[u8]> {
+        &self.alpha_mask
     }
 
     /// Crop transparent boundaries from an uncropped ARGB pixel buffer.
@@ -107,14 +119,15 @@ impl NativeSprite {
             }
         }
 
-        Some(Self {
-            width: cropped_w,
-            height: cropped_h,
-            argb_pixels: cropped,
-            anchor_x: anchor_x - min_x,
-            anchor_y: anchor_y - min_y,
-            asset_name: name.into(),
-        })
+        Self::new(
+            cropped_w,
+            cropped_h,
+            cropped,
+            anchor_x - min_x,
+            anchor_y - min_y,
+            name,
+        )
+        .ok()
     }
 }
 

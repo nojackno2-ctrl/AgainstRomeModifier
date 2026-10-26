@@ -49,7 +49,7 @@ fn pick_object_hits_opaque_pixel_and_ignores_transparent() {
     // Click near anchor should hit the sprite
     let hit = pick_object(
         &[obj],
-        &[Some(sprite)],
+        &[Some(sprite.clone())],
         |_, _| true,
         &heights,
         view,
@@ -116,7 +116,7 @@ fn pick_object_prefers_nearer_object_on_overlap() {
 
     let picked = pick_object(
         &[far_obj, near_obj],
-        &[Some(sprite), Some(sprite)],
+        &[Some(sprite.clone()), Some(sprite)],
         |_, _| true,
         &heights,
         view,

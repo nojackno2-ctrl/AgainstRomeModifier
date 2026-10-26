@@ -170,6 +170,7 @@ fn crop_trims_transparent_margins_and_adjusts_anchors() {
     assert_eq!(4 - 2, cropped.anchor_x);
     assert_eq!(4 - 2, cropped.anchor_y);
     assert_eq!(12, cropped.argb_pixels.len());
+    assert_eq!(vec![1u8; 12].as_slice(), cropped.alpha_mask().as_ref());
 
     // Completely transparent image returns None
     let empty = vec![0u32; 64];

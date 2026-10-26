@@ -3,15 +3,17 @@ use crate::{
     terrain::TerrainHeightField,
     Mat4, Vec2,
 };
+use std::sync::Arc;
 
 /// Sprite description used for pixel-accurate cursor picking.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct PickableSprite<'a> {
     pub width: u32,
     pub height: u32,
     pub anchor_x: f32,
     pub anchor_y: f32,
     pub argb_pixels: Option<&'a [u32]>,
+    pub alpha_mask: Option<Arc<[u8]>>,
 }
 
 impl<'a> PickableSprite<'a> {
@@ -28,18 +30,45 @@ impl<'a> PickableSprite<'a> {
             anchor_x,
             anchor_y,
             argb_pixels,
+            alpha_mask: None,
+        }
+    }
+
+    pub fn with_alpha_mask(
+        width: u32,
+        height: u32,
+        anchor_x: f32,
+        anchor_y: f32,
+        alpha_mask: Arc<[u8]>,
+    ) -> Self {
+        Self {
+            width,
+            height,
+            anchor_x,
+            anchor_y,
+            argb_pixels: None,
+            alpha_mask: Some(alpha_mask),
         }
     }
 
     /// Checks if the pixel at (px, py) is non-transparent (alpha > 0).
     /// If no pixel buffer is provided, defaults to opaque (always hits).
     pub fn is_opaque(&self, px: u32, py: u32) -> bool {
+        if px >= self.width || py >= self.height {
+            return false;
+        }
+        if let Some(mask) = &self.alpha_mask {
+            let idx = (py as usize)
+                .saturating_mul(self.width as usize)
+                .saturating_add(px as usize);
+            return mask.get(idx).is_some_and(|a| *a > 0);
+        }
         if let Some(pixels) = self.argb_pixels {
-            if px < self.width && py < self.height {
-                let idx = (py * self.width + px) as usize;
-                if idx < pixels.len() {
-                    return (pixels[idx] >> 24) != 0;
-                }
+            let idx = (py as usize)
+                .saturating_mul(self.width as usize)
+                .saturating_add(px as usize);
+            if idx < pixels.len() {
+                return (pixels[idx] >> 24) != 0;
             }
             false
         } else {
@@ -81,8 +110,8 @@ pub fn pick_object(
     let mut best_depth: f32 = f32::MAX;
 
     for (index, &object) in objects.iter().enumerate() {
-        let sprite = sprites.get(index).and_then(|s| *s);
-        let has_sprite = sprite.map(|s| drawn(index, &s)).unwrap_or(false);
+        let sprite = sprites.get(index).and_then(|s| s.clone());
+        let has_sprite = sprite.as_ref().map(|s| drawn(index, s)).unwrap_or(false);
 
         if !has_sprite && !marker_visible(index) {
             continue;
