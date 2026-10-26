@@ -12027,23 +12027,26 @@ impl EditorApp {
             });
             // 狀態列
             ui.horizontal(|ui| {
-                let color = if self.status_is_error {
-                    Color32::from_rgb(240, 80, 80)
-                } else {
-                    Color32::from_rgb(100, 200, 100)
-                };
-                ui.colored_label(color, &self.status_message);
-                if Self::is_3d_material_diagnostic(&self.status_message)
-                    && ui
-                        .button(tr(lang, "Copy 3D diagnostic", "複製 3D 診斷"))
-                        .on_hover_text(tr(
-                            lang,
-                            "Copy the current 3D material fallback reason.",
-                            "複製目前 3D 材質替代顯示的原因。",
-                        ))
-                        .clicked()
-                {
-                    ctx.copy_text(self.status_message.clone());
+                let is_3d_diagnostic = Self::is_3d_material_diagnostic(&self.status_message);
+                if !is_3d_diagnostic || self.view_mode == ViewMode::View3D {
+                    let color = if self.status_is_error {
+                        Color32::from_rgb(240, 80, 80)
+                    } else {
+                        Color32::from_rgb(100, 200, 100)
+                    };
+                    ui.colored_label(color, &self.status_message);
+                    if is_3d_diagnostic
+                        && ui
+                            .button(tr(lang, "Copy 3D diagnostic", "複製 3D 診斷"))
+                            .on_hover_text(tr(
+                                lang,
+                                "Copy the current 3D material fallback reason.",
+                                "複製目前 3D 材質替代顯示的原因。",
+                            ))
+                            .clicked()
+                    {
+                        ctx.copy_text(self.status_message.clone());
+                    }
                 }
 
                 ui.separator();

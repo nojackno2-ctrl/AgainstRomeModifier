@@ -103,6 +103,7 @@ fn three_d_material_fallback_diagnostic_can_be_copied_in_both_languages() {
     ] {
         let mut app = EditorApp::initial_state();
         app.set_app_language(language);
+        app.view_mode = ViewMode::View3D;
         app.status_message = diagnostic.into();
         let ctx = egui::Context::default();
         let settled = gui_frame(&mut app, &ctx, vec![]);
@@ -119,6 +120,23 @@ fn three_d_material_fallback_diagnostic_can_be_copied_in_both_languages() {
     let output = gui_frame(&mut app, &ctx, vec![]);
     assert!(gui_find(&output, "Copy 3D diagnostic").is_none());
     assert!(gui_find(&output, "複製 3D 診斷").is_none());
+}
+
+#[test]
+fn three_d_material_diagnostic_is_only_shown_in_3d_view() {
+    let mut app = EditorApp::initial_state();
+    app.set_app_language(AppLanguage::TraditionalChinese);
+    app.status_message = EditorApp::floor_atlas_fallback_message(false).into();
+    let ctx = egui::Context::default();
+
+    let output_2d = gui_frame(&mut app, &ctx, vec![]);
+    assert!(gui_find(&output_2d, app.status_message.as_str()).is_none());
+    assert!(gui_find(&output_2d, "複製 3D 診斷").is_none());
+
+    app.view_mode = ViewMode::View3D;
+    let output_3d = gui_frame(&mut app, &ctx, vec![]);
+    assert!(gui_find(&output_3d, app.status_message.as_str()).is_some());
+    assert!(gui_find(&output_3d, "複製 3D 診斷").is_some());
 }
 
 #[test]
