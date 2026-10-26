@@ -44,8 +44,8 @@ fn setup_synthetic_pools(data_dir: &Path, count: usize) {
     objdata_bytes[8 + 1] = 1;
     fs::write(data_dir.join("objdata.dat"), objdata_bytes).unwrap();
 
-    // 3. position.dat (8 + count * 20)
-    let pos_len = 8 + count * 20;
+    // 3. position.dat：8 位元組標頭與每槽 17 位元組。
+    let pos_len = 8 + count * 17;
     let mut pos_bytes = vec![0u8; pos_len];
     pos_bytes[0..4].copy_from_slice(&1i32.to_le_bytes());
     pos_bytes[4..8].copy_from_slice(&(count as i32).to_le_bytes());

@@ -312,9 +312,13 @@ fn reset_objects_dat(path: &Path) -> Result<Vec<u8>, String> {
         return Err("objects.dat 版本或標頭不符。".into());
     }
     let count = read_i32(&data, 4)? as usize;
+    if !(1..=33000).contains(&count) { return Err("objects.dat 槽位數不符。".into()); }
     // 現行零售 objects 使用 79 位元組紀錄與 18 個平行欄位，保留舊版布局相容性。
     let columns = crate::starter_kit::native::COLUMNS;
     if data.len() == 16 + count * (79 + columns.iter().sum::<usize>()) {
+        if read_i32(&data, 8)? != 30 || read_i32(&data, 12)? != 30 {
+            return Err("objects.dat 字串欄寬不符。".into());
+        }
         data[16..].fill(0);
         for slot in 0..count {
             for offset in [67, 69, 71, 73, 77] {
@@ -387,6 +391,7 @@ fn reset_objdata_dat(path: &Path) -> Result<Vec<u8>, String> {
         return Err("objdata.dat 版本或標頭不符。".into());
     }
     let count = read_i32(&data, 4)? as usize;
+    if !(1..=33000).contains(&count) { return Err("objdata.dat 槽位數不符。".into()); }
     if data.len() == 8 + count * crate::starter_kit::native::SEGMENTS.iter().sum::<usize>() {
         data[8..].fill(0);
         return pack_data(data, &original);
@@ -424,6 +429,10 @@ fn reset_position_dat(path: &Path) -> Result<Vec<u8>, String> {
         return Err("position.dat 版本或標頭不符。".into());
     }
 
+    let count = read_i32(&data, 4)? as usize;
+    if !(1..=33000).contains(&count) || data.len() != 8 + count * 17 {
+        return Err("position.dat 槽位／長度不符。".into());
+    }
     data[8..].fill(0);
     pack_data(data, &original)
 }
@@ -831,5 +840,40 @@ mod tests {
         assert_eq!(i16::from_le_bytes([reset[tail0], reset[tail0 + 1]]), -1);
         let tail_last = 16 + 3200 * 43 + 3199 * 2;
         assert_eq!(i16::from_le_bytes([reset[tail_last], reset[tail_last + 1]]), -1);
+    }
+    #[test]
+    fn reset_pools_reject_unknown_lengths_and_counts() {
+        let specs: &[(&str, usize, &[i32], fn(&Path) -> Result<Vec<u8>, String>)] = &[
+            ("position", 8 + 3 * 17, &[1, 3], reset_position_dat),
+            ("objects", 16 + 3 * 121, &[1, 3, 30, 30], reset_objects_dat),
+            ("objdata", 8 + 3 * 123, &[1, 3], reset_objdata_dat),
+            ("light", against_rome_data::pool::PAYLOAD_LEN, &[1, 1024], reset_light_dat),
+            ("particle", against_rome_data::particle::PAYLOAD_LEN, &[1, 1024, 64], reset_particle_dat),
+            ("lager", 144016, &[1, 3200, 6, 10], reset_lager_dat),
+            ("biglager", 51244, &[1, 32, 800], reset_biglager_dat),
+        ];
+        for &(name, len, header, reset) in specs {
+            let mut raw = vec![0; len];
+            for (i, v) in header.iter().enumerate() { raw[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes()); }
+            let temp = TempFile::new(name, &raw);
+            assert!(reset(temp.path()).is_ok(), "{name}");
+            for bytes in [raw[..len - 1].to_vec(), [raw.clone(), vec![0]].concat()] {
+                fs::write(temp.path(), bytes).unwrap();
+                assert!(reset(temp.path()).is_err(), "{name}");
+            }
+            raw[4..8].copy_from_slice(&(-1i32).to_le_bytes());
+            fs::write(temp.path(), raw).unwrap();
+            assert!(reset(temp.path()).is_err(), "{name}");
+        }
+    }
+
+    #[test]
+    fn reset_objects_rejects_unknown_name_width() {
+        let mut raw = vec![0; 16 + 121];
+        for (i, v) in [1i32, 1, 29, 30].iter().enumerate() {
+            raw[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        let temp = TempFile::new("objects", &raw);
+        assert!(reset_objects_dat(temp.path()).is_err());
     }
 }

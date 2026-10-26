@@ -1,3 +1,10 @@
+## 2026-10-26 Codex：批次 #39 審查（已驗證）
+- 審查 HEAD 810cdec：移除 binding_context 對空 DATA／空綁定的寬鬆例外；真正空白劇本仍可載入，既存預放劇本必須已有可信綁定。Safe Save 保留最終候選 DATA 的 verify_binding_snapshot，禁止未綁定預放物件存檔。
+- reset_position_dat 補上 17 bytes／槽的精確長度與槽數驗證；objects／objdata 拒絕非法槽數，零售 objects 必須維持字串欄寬 30/30。對照 data::particle／pool 常數與 docs/reverse-engineering/map-data-pools.md；新增未知長度、非法槽數及欄寬回歸。
+- EmptyScene 使用既有 apply_starter_kit；新增精靈起始配置 undo／redo、Safe Save／重載及既存 DATA 清空／遺失／損毀拒絕回歸。cargo check --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 已通過；首輪完整測試揭露兩處既有 position.dat fixture 使用錯誤的 20 bytes／槽（8 個測試失敗），已依原生契約改為 17；最終 cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target：287 組、2689 passed、0 failed、25 ignored，exit 0；install_resource_discovery 12 passed，提權環境專屬失敗 0。最終 cargo check／cargo build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 均 exit 0；git diff --check 通過。日誌 re_workspace/codex-batch-39-{check,test,build}.log。
+- 未修改／暫存 AGENTS.md、README.md；未提交；遊戲安裝目錄唯讀，未使用子代理。GUI／遊戲內驗收未執行。
+- 本次變更：AI_HANDOFF.md、apps/against-rome-editor/src/scenario_ui.rs、src/app/tests/designer_workflow_e2e.rs、tests/blank_map_and_ambience_e2e.rs、native/against-rome-maps/src/blank_content.rs、tests/maps_tests.rs；無新增未追蹤檔。
+
 ## 2026-10-26 Codex & Agy：任務 #38 端到端工作流程測試與資料池版型相容（已驗證）
 - 完成四組 TEMP 工作流程端到端測試（`apps/against-rome-editor/src/app/tests/designer_workflow_e2e.rs`）：
   1. `experimental_blank_wizard_starter_save_reload_design_check`：空白場景精靈＋起始配置 → Safe Save → 重新載入 → Design Check 通過（0 error）；

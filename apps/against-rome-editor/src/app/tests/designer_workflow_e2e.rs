@@ -162,6 +162,16 @@ fn wizard_map(root: &std::path::Path, slot: i32, blank: bool) -> EditorApp {
     w.include_nature = false;
     if blank { w.template_kind = crate::skirmish_wizard_ui::SkirmishTemplateKind::EmptyScene; }
     app.execute_skirmish_wizard().unwrap();
+    if blank {
+        let expected = app.scenario.document().clone();
+        assert!(expected.spawns.iter().any(|s| s.prebuilt));
+        assert!(app.scenario.stage_transaction_files(app.loaded_map_path.as_ref().unwrap()).is_err());
+        app.collect_pilot_receipts();
+        app.navigate_journal(false);
+        assert!(app.scenario.document().spawns.is_empty());
+        app.navigate_journal(true);
+        assert_eq!(app.scenario.document(), &expected);
+    }
     spawn_save_tests::save_ok(&mut app);
     app
 }
@@ -197,6 +207,11 @@ fn experimental_blank_wizard_starter_save_reload_design_check() {
     assert_eq!(doc.spawns.iter().filter(|s| s.alias == "GER_INF02").count(), 4);
     let objects = spawn_save_tests::data_objects(&map);
     assert!(!objects.is_empty());
+    let active: Vec<_> = objects.iter().map(|o| (o.slot as i32, o.uid)).collect();
+    against_rome_scenario::verify_binding_snapshot(&doc, &active).unwrap();
+    for spawn in doc.spawns.iter().filter(|s| s.prebuilt) {
+        assert!(doc.data_slots.iter().any(|b| b.spawn_id == spawn.id));
+    }
     let mut loaded = reopen(&root, &map);
     assert_eq!(loaded.scenario.document(), &doc);
     assert_eq!(spawn_save_tests::data_objects(&map).len(), objects.len());
@@ -333,6 +348,42 @@ fn packaging_temp_map_zip_payload_hashes_and_safe_default_directory() {
         assert!(manifest.files.iter().any(|e| e.relative_path == name), "{name}");
     }
     assert_eq!(map_bytes(&map), before);
+    drop(app);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn existing_prebuilt_map_rejects_empty_missing_or_corrupt_data() {
+    let root = workflow_fixture("binding_guard");
+    let app = wizard_map(&root, 5, true);
+    let map = app.loaded_map_path.clone().unwrap();
+    let saved = app.scenario.document().clone();
+    let mut unbound = saved.clone();
+    unbound.data_slots.clear();
+    let source = root.join("MAPS/ENDL_001");
+    // 保留既存預放劇本，僅將物件池替換成已驗證的空白資料。
+    let staging = root.join("MAPS/empty.tmp_arm");
+    std::fs::create_dir_all(&staging).unwrap();
+    fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for e in std::fs::read_dir(from).unwrap() {
+            let e = e.unwrap();
+            if e.path().is_dir() { copy_dir(&e.path(), &to.join(e.file_name())); }
+            else { std::fs::copy(e.path(), to.join(e.file_name())).unwrap(); }
+        }
+    }
+    copy_dir(&source, &staging);
+    against_rome_maps::BlankMapContent::reset_staging_directory(&staging).unwrap();
+    copy_dir(&staging.join("DATA"), &map.join("DATA"));
+    for doc in [&saved, &unbound] {
+        std::fs::write(map.join("arm_scenario.json"), serde_json::to_vec(doc).unwrap()).unwrap();
+        assert!(crate::scenario_ui::ScenarioUi::default().load_session(&map).is_err());
+    }
+    let objects = map.join("DATA/objects.dat");
+    std::fs::remove_file(&objects).unwrap();
+    assert!(crate::scenario_ui::ScenarioUi::default().load_session(&map).is_err());
+    std::fs::write(&objects, b"corrupt").unwrap();
+    assert!(crate::scenario_ui::ScenarioUi::default().load_session(&map).is_err());
     drop(app);
     std::fs::remove_dir_all(root).unwrap();
 }
