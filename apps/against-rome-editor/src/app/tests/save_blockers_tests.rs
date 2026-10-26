@@ -180,7 +180,12 @@ fn save_blockers_previous_rejections_table() {
     ];
     for (panel, edit, message) in cases {
         let (mut app, dir) = app_with_target("blockers_table");
+        app.evaluate_save_blockers_cached();
+        let count = app.save_blockers_recompute_count;
         edit(&mut app, &dir);
+        let live = app.evaluate_save_blockers_cached().to_vec();
+        assert_eq!(live, app.save_blockers());
+        assert_eq!(app.save_blockers_recompute_count, count + 1);
         let before = save_file_snapshot(&dir);
         assert!(
             app.save_blockers()
@@ -520,42 +525,35 @@ fn save_blockers_nature_data_conflict_opens_nature() {
 }
 
 #[test]
-fn save_blockers_caching_and_recompute_count() {
-    let (mut app, dir) = app_with_target("blockers_caching_test");
-    app.maps.mark_dirty();
-    app.save_blockers_open = true;
-    let ctx = egui::Context::default();
-    assert_eq!(app.save_blockers_recompute_count, 0);
-
-    let frame = |app: &mut EditorApp, ctx: &egui::Context| {
-        let _ = ctx.run(egui::RawInput::default(), |ctx| {
-            app.show_save_blockers(ctx);
-        });
-    };
-
-    // First frame computes and caches blockers
-    frame(&mut app, &ctx);
-    assert_eq!(app.save_blockers_recompute_count, 1);
-
-    // Successive frames reuse cache without re-encoding terrain or re-validating
-    frame(&mut app, &ctx);
-    frame(&mut app, &ctx);
-    assert_eq!(app.save_blockers_recompute_count, 1);
-
-    // Making another panel dirty invalidates cache key and triggers recompute
-    app.environment.mark_dirty();
-    frame(&mut app, &ctx);
-    assert_eq!(app.save_blockers_recompute_count, 2);
-
-    // Invalidation method also triggers recompute
-    app.invalidate_save_blockers_cache();
-    frame(&mut app, &ctx);
-    assert_eq!(app.save_blockers_recompute_count, 3);
-
-    // When save blockers is closed, show_save_blockers does nothing
+fn save_blockers_revalidate_dirty_contents_and_disk() {
+    let (mut app, dir) = app_with_target("blockers_live_inputs");
+    app.ambience.mark_dirty();
+    app.evaluate_save_blockers_cached();
+    let before = app.save_blockers_recompute_count;
+    app.ambience.profile.boden.waterlevel = f32::NAN;
+    let cached = app.evaluate_save_blockers_cached().to_vec();
+    assert_eq!(cached, app.save_blockers());
+    assert_eq!(app.save_blockers_recompute_count, before + 1);
+    std::fs::create_dir(dir.join("boden.bmp")).unwrap();
+    let blockers = app.evaluate_save_blockers_cached().to_vec();
+    assert!(blockers.iter().any(|b| b.kind == Kind::Target && b.english.contains("boden.bmp")));
+    assert_eq!(blockers, app.save_blockers());
+    assert_eq!(app.save_blockers_recompute_count, before + 2);
     app.save_blockers_open = false;
-    frame(&mut app, &ctx);
-    assert_eq!(app.save_blockers_recompute_count, 3);
-
+    app.show_save_blockers(&egui::Context::default());
+    assert_eq!(app.save_blockers_recompute_count, before + 2);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+#[test]
+fn safe_save_does_not_trust_cached_empty_blockers() {
+    let (mut app, dir) = app_with_target("blockers_no_cached_save");
+    app.cached_save_blockers = Some(Vec::new());
+    app.save_blockers_cache_key = Some(app.current_save_blockers_cache_key());
+    std::fs::create_dir(dir.join("boden.bmp")).unwrap();
+    app.save_now_from_blockers();
+    assert!(!dir.join("collision.bmp").exists());
+    assert!(!app.save_blockers().is_empty());
+    app.safe_save_current();
+    assert!(!dir.join("collision.bmp").exists());
     std::fs::remove_dir_all(dir).unwrap();
 }

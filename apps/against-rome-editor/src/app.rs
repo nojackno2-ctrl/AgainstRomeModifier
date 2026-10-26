@@ -101,13 +101,17 @@ struct ToolbarGraphSource {
 #[path = "../tests/toolbar_event_graph/mod.rs"]
 mod toolbar_event_graph_tests;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct NavigationCacheKey {
     pub map_path: Option<PathBuf>,
     pub placement_loaded: bool,
     pub placement_token: u64,
     pub placement_count: usize,
     pub footprint_game: Option<PathBuf>,
+    pub type_names: std::collections::BTreeMap<i32, String>,
+    pub placement_map: Option<PathBuf>,
+    pub objects: Vec<against_rome_placement::WorldObject>,
+    pub assets: Vec<(PathBuf, Option<(u64, std::time::SystemTime)>)>,
 }
 
 pub struct EditorApp {
@@ -11117,32 +11121,31 @@ angle=0.00
 
     #[test]
     fn navigation_objects_caching_and_recompute_count() {
-        let mut app = EditorApp::default();
-        let ctx = egui::Context::default();
+        let (mut app, root) = nature_app("navigation_cache_inputs");
+        app.update_navigation_objects_if_needed();
         assert_eq!(app.navigation_recompute_count, 0);
-
-        // Frame with navigation.open == false: does not recompute or load from disk
-        gui_frame(&mut app, &ctx, vec![]);
-        assert_eq!(app.navigation_recompute_count, 0);
-
-        // Open navigation: first frame recomputes once
         app.navigation.open = true;
-        gui_frame(&mut app, &ctx, vec![]);
+        app.update_navigation_objects_if_needed();
         assert_eq!(app.navigation_recompute_count, 1);
-
-        // Subsequent frame with no placement changes: reuses cache (count stays 1)
-        gui_frame(&mut app, &ctx, vec![]);
+        app.update_navigation_objects_if_needed();
         assert_eq!(app.navigation_recompute_count, 1);
-
-        // Invalidation triggers recompute on next frame
-        app.invalidate_navigation_cache();
-        gui_frame(&mut app, &ctx, vec![]);
+        app.placement.set_type_names([(1, "BauGerHaus".into())].into());
+        app.update_navigation_objects_if_needed();
         assert_eq!(app.navigation_recompute_count, 2);
-
-        // Closing navigation: no further recompute
+        assert_eq!(app.navigation_cache_key.as_ref().unwrap().type_names[&1], "BauGerHaus");
+        let asset = root.join("game/apt.dat");
+        std::fs::write(&asset, b"changed").unwrap();
+        app.update_navigation_objects_if_needed();
+        assert_eq!(app.navigation_recompute_count, 3);
+        app.update_navigation_objects_if_needed();
+        assert_eq!(app.navigation_recompute_count, 3);
+        app.loaded_map_path = Some(root.join("other-map"));
+        app.update_navigation_objects_if_needed();
+        assert_eq!(app.navigation_recompute_count, 4);
         app.navigation.open = false;
-        gui_frame(&mut app, &ctx, vec![]);
-        assert_eq!(app.navigation_recompute_count, 2);
+        app.update_navigation_objects_if_needed();
+        assert_eq!(app.navigation_recompute_count, 4);
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn global_shortcuts_do_not_escape_dialogs_or_event_graph() {
@@ -11509,22 +11512,46 @@ impl EditorApp {
     /// Synchronizes placement & APT building footprints with the navigation panel only when needed.
     pub(crate) fn update_navigation_objects_if_needed(&mut self) {
         if !self.navigation.open {
+            // 關閉面板不維護占地；清除路線，避免背景編輯留下過期覆蓋。
+            self.navigation.invalidate();
             return;
         }
         let footprint_game = self.troop_game_root().or_else(|| {
             let path = PathBuf::from(self.maps.game_path_input.trim());
             path.join("SYSTEM/clengine.ini").is_file().then_some(path)
         });
+        let mut assets = Vec::new();
+        if let Some(root) = &footprint_game {
+            let mut paths = vec![root.join("apt.dat"), root.join("SYSTEM/clengine.ini"), root.join("SYSTEM/cl_apt.ini")];
+            if let Ok(prefix) = against_rome_maps::native_objdef::NativeObjectDefinitions::default_prefix(root) {
+                for name in ["objdef", "typus"] {
+                    paths.push(prefix.join(format!("{name}.dau")));
+                    paths.extend((0..10).map(|i| prefix.join(format!("{name}.d{i:02}"))));
+                }
+            }
+            assets = paths.into_iter().map(|path| {
+                let stamp = std::fs::metadata(&path).ok().and_then(|m| m.modified().ok().map(|t| (m.len(), t)));
+                (path, stamp)
+            }).collect();
+        }
+        let objects = self.placement.objects();
         let current_key = NavigationCacheKey {
             map_path: self.loaded_map_path.clone(),
             placement_loaded: self.placement.is_loaded(),
             placement_token: self.placement.history_token(),
-            placement_count: self.placement.object_count(),
+            placement_count: objects.len(),
             footprint_game: footprint_game.clone(),
+            type_names: self.placement.type_names().iter().map(|(k, v)| (*k, v.clone())).collect(),
+            placement_map: self.placement.loaded_map().map(Path::to_path_buf),
+            objects,
+            assets,
         };
-        if self.navigation_cache_key.as_ref() != Some(&current_key) {
+        if !current_key.placement_loaded || self.navigation_cache_key.as_ref() != Some(&current_key) {
+            if self.navigation_cache_key.as_ref().is_none_or(|key| key.assets != current_key.assets) {
+                self.navigation.reload_apt();
+            }
             let route_objects = if self.placement.is_loaded() {
-                self.placement.objects()
+                current_key.objects.clone()
             } else {
                 self.loaded_map_path.as_ref().and_then(|path|
                     against_rome_placement::ObjectStore::load(path).ok()).map(|s| s.objects()).unwrap_or_default()

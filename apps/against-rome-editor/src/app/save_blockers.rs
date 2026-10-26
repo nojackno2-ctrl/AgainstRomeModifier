@@ -639,6 +639,8 @@ impl EditorApp {
     }
 
     pub fn evaluate_save_blockers_cached(&mut self) -> &[SaveBlocker] {
+        // 草稿內容、檔案與權限沒有共同修訂號；每次顯示皆重新驗證。
+        self.invalidate_save_blockers_cache();
         let key = self.current_save_blockers_cache_key();
         if self.cached_save_blockers.is_none() || self.save_blockers_cache_key.as_ref() != Some(&key) {
             let blockers = self.save_blockers();

@@ -1,3 +1,5 @@
+## 2026-10-26 Codex：批次 #28 快取審查與效能（已驗證）
+- 審查 b1cf474：阻擋清單含未版本化草稿與磁碟／權限依賴，改為每次顯示重新驗證；Safe Save 仍直接檢查。導航補類型名稱、載入來源、實際物件與資產戳記，關閉時清除舊路線；新增 Family 粒子定義列快取及重算測試。完整輸入清單見 docs/cache-review-batch-28.md。cargo check／build --workspace --locked --offline --target-dir re_workspace/codex-wave-dest-target 均 exit 0；cargo test 同參數加 --no-fail-fast：287 組，2655 passed／0 failed／25 ignored，exit 0（install_resource_discovery 12 passed，環境失敗 0），日誌 re_workspace/codex-batch-28-test.log。資產回歸測試曾誤用 root（應為 root/game），已修正並通過重驗。未 stage／commit；保留原有 AGENTS.md／README.md 變更；遊戲目錄唯讀。
 ## 2026-10-26 Agy：自主批次 #27 大地圖效能與重複計算快取（導航尋路、安全存檔阻擋清單與設計檢查報告）（已驗證）
 - 1. 通行導航與建築占地更新快取（apps/against-rome-editor/src/app.rs:11462-11495）：原每幀（即使導航面板關閉且物件未載入）均從磁碟載入 24 個 DATA 檔案並重複複製全地圖物件及重新計算 APT 占地；現改為僅在導航開啟時依 `NavigationCacheKey`（地圖路徑、物件歷史 token 與數量、遊戲目錄）按需計算並快取，面板關閉時零磁碟 I/O 與零計算，新增 `navigation_recompute_count` 無頭測試。
 - 2. 存檔阻擋清單全圖重複編碼快取（apps/against-rome-editor/src/app/save_blockers.rs:48-58、593-640）：原「尚無法儲存」對話框開啟時每幀均執行地形 BMP 編碼、浮雕重照、全 DATA 序列化、腳本 BCI 編譯及完整候選設計檢查；現建立 `SaveBlockersCacheKey` 依各子系統歷程 token 與 dirty flags 快取評估結果，對話框連續渲染時重複計算歸零，操作解決或歷程推進時自動失效，新增 `save_blockers_recompute_count` 無頭測試。

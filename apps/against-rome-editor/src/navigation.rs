@@ -133,6 +133,12 @@ impl NavigationUi {
             BuildingMode::Apt => diagnose_with_obstacles(session, water, seed, target, &self.apt_fallbacks, &self.apt_cells),
         }
     }
+    pub(crate) fn reload_apt(&mut self) {
+        self.resolver = self.game.as_deref()
+            .and_then(|root| crate::building_footprint::FootprintResolver::load(root).ok());
+        self.invalidate();
+    }
+
     pub(crate) fn update_apt(
         &mut self, game: Option<std::path::PathBuf>, objects: &[against_rome_placement::WorldObject],
         names: &std::collections::HashMap<i32, String>,
@@ -743,5 +749,20 @@ mod apt_tests {
         let s = session(); let bytes = s.collision().to_vec();
         assert!(nav.analyze(&s,0.0,[0,2],[4,2]).unwrap().path.is_none());
         assert_eq!(s.collision(),bytes);
+    }
+}
+
+#[cfg(test)]
+mod closed_panel_cache_tests {
+    use super::*;
+    #[test]
+    fn closed_panel_drops_route_without_recomputing_objects() {
+        let session = TerrainSession::create_blank(6, 32);
+        let mut app = crate::app::EditorApp::default();
+        app.navigation.report = Some(diagnose(&session, 0.0, [0, 0], [4, 4]).unwrap());
+        app.navigation.open = false;
+        app.update_navigation_objects_if_needed();
+        assert!(app.navigation.report.is_none());
+        assert_eq!(app.navigation_recompute_count, 0);
     }
 }

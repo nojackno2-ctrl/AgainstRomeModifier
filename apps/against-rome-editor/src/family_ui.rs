@@ -448,6 +448,8 @@ pub struct FamilyUi {
     preview: Option<Result<FamilyPreview, String>>,
     definitions: Option<Result<EffectiveDefinitions, String>>,
     definitions_dir: Option<PathBuf>,
+    definition_rows_cache: Option<(String, bool, Vec<DefinitionRow>)>,
+    pub definition_rows_recompute_count: usize,
     map_key: Option<PathBuf>,
 }
 
@@ -470,6 +472,8 @@ impl Default for FamilyUi {
             preview: None,
             definitions: None,
             definitions_dir: None,
+            definition_rows_cache: None,
+            definition_rows_recompute_count: 0,
             map_key: None,
         }
     }
@@ -567,7 +571,19 @@ impl FamilyUi {
         }
     }
 
+    fn cached_definition_rows(&mut self) -> &[DefinitionRow] {
+        let key = (self.filter.trim().to_ascii_lowercase(), self.include_inactive_definitions);
+        if self.definition_rows_cache.as_ref().is_none_or(|(filter, inactive, _)| (filter, *inactive) != (&key.0, key.1)) {
+            let rows = self.definitions.as_ref().and_then(|d| d.as_ref().ok())
+                .map(|defs| definition_rows(defs, &key.0, key.1)).unwrap_or_default();
+            self.definition_rows_cache = Some((key.0, key.1, rows));
+            self.definition_rows_recompute_count += 1;
+        }
+        self.definition_rows_cache.as_ref().map_or(&[], |(_, _, rows)| rows.as_slice())
+    }
+
     fn load_definitions(&mut self, game_dir: Option<&Path>) {
+        self.definition_rows_cache = None;
         let Some(dir) = game_dir else {
             self.definitions = Some(Err("Game directory is not set.".into()));
             return;
@@ -693,6 +709,7 @@ impl FamilyUi {
         if self.definitions_dir.as_deref() != ctx.game_dir && self.definitions.is_some() {
             ui.small(tr(en, "Game directory changed; reload to refresh.", "遊戲目錄已變更，請重新載入。"));
         }
+        self.cached_definition_rows();
         match &self.definitions {
             None => {
                 ui.label(tr(en, "Definitions are not loaded.", "尚未載入粒子定義。"));
@@ -700,8 +717,8 @@ impl FamilyUi {
             Some(Err(e)) => {
                 ui.colored_label(Color32::from_rgb(250, 120, 120), format!("{}: {e}", tr(en, "Particle definitions unavailable", "粒子定義無法使用")));
             }
-            Some(Ok(defs)) => {
-                let rows = definition_rows(defs, &self.filter, self.include_inactive_definitions);
+            Some(Ok(_)) => {
+                let rows = self.definition_rows_cache.as_ref().map_or(&[][..], |(_, _, rows)| rows.as_slice());
                 ui.label(format!("{} {}", rows.len(), tr(en, "rows", "列")));
                 egui::ScrollArea::both().id_source("family_defs").show(ui, |ui| {
                     egui::Grid::new("family_defs_grid").striped(true).show(ui, |ui| {
@@ -895,4 +912,29 @@ pub fn show_overlay(ui: &mut egui::Ui, points: &[OverlayPoint]) {
         }
     }
     response.on_hover_text("灰色＝物件、圓環＝光源半徑、橘色＝子粒子");
+}
+
+#[cfg(test)]
+mod definition_cache_tests {
+    use super::*;
+    #[test]
+    fn definition_rows_recompute_only_for_filter_toggle_or_reload() {
+        let mut ui = FamilyUi::default();
+        ui.definitions = Some(Ok(EffectiveDefinitions::initialized()));
+        ui.cached_definition_rows();
+        ui.cached_definition_rows();
+        assert_eq!(ui.definition_rows_recompute_count, 1);
+        ui.filter = "abc".into();
+        assert!(ui.cached_definition_rows().is_empty());
+        assert_eq!(ui.definition_rows_recompute_count, 2);
+        ui.include_inactive_definitions = true;
+        ui.cached_definition_rows();
+        assert_eq!(ui.definition_rows_recompute_count, 3);
+        ui.filter.clear();
+        assert!(!ui.cached_definition_rows().is_empty());
+        assert_eq!(ui.definition_rows_recompute_count, 4);
+        ui.load_definitions(None);
+        assert!(ui.cached_definition_rows().is_empty());
+        assert_eq!(ui.definition_rows_recompute_count, 5);
+    }
 }
