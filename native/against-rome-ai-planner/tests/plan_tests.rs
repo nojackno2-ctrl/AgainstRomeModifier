@@ -169,3 +169,16 @@ fn test_json_schema_serializes_feature_types_and_material_ids() {
     let mats_str: Vec<&str> = mats.iter().map(|v| v.as_str().unwrap()).collect();
     assert_eq!(MATERIAL_IDS, mats_str.as_slice());
 }
+
+#[test]
+fn json_schema_omits_material_fields_when_map_has_no_material_catalog() {
+    let schema = AiMapPlan::json_schema(&[]);
+    let properties = schema["properties"].as_object().unwrap();
+    assert!(!properties.contains_key("baseMaterial"));
+    let feature_properties = properties["features"]["items"]["properties"]
+        .as_object()
+        .unwrap();
+    assert!(!feature_properties.contains_key("material"));
+    let serialized = serde_json::to_string(&schema).unwrap();
+    assert!(!serialized.contains("\"enum\":[]"));
+}

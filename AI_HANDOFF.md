@@ -1,3 +1,7 @@
+## 2026-10-26 Codex：修復無材質地圖的 Ollama schema 並重驗 live 流程
+- 新鮮 `ai_planner_live` 首輪重現 400：`JSON schema conversion failed`，原因是無 `boden.txt` 的地圖生成 `baseMaterial.enum: []`。修正 `AiMapPlan::json_schema`：材質目錄為空時移除 `baseMaterial` 與 feature `material` 欄位，避免非法空 enum；材質欄位仍只在有效材質目錄下提供。
+- 新增 plan schema 與實際 loopback wire request 回歸；`plan_tests` 8 passed、`ollama_wire_tests` 16 passed。重跑本機 Ollama `laguna-xs-2.1:latest` live gate 通過：預覽未改高度／Undo；套用 5186 高度樣本、8 操作；undo/redo、Safe Save、重載一致。證據：`cargo test -p against-rome-editor-app --test ai_planner_live --locked --offline --target-dir re_workspace/codex-ai-live-target -- --ignored --nocapture`。
+- 需求稽核已更新：目前版真實推論只覆蓋 Terrain 角色；多角色／材質 live 與 AI 視窗實際畫面、DPI 仍未在本輪驗收。workspace 驗證通過：`cargo check --workspace --locked --offline`、`cargo test --workspace --locked --offline --no-fail-fast`、`cargo build --workspace --locked --offline`，共用 `re_workspace/codex-ai-live-target`；`git diff --check` 通過，無 MSVC 連結錯誤。
 ## 2026-10-26 Codex：接入並驗收 3D 地表紋理圖集
 - `Viewport3d` 已接上 app 載入流程：切入 3D 時載入地圖材質 session，依去重 tile 名稱從地圖祖先目錄的 `floortex.dat` 建立 atlas。快取以地圖、材質修訂與封存檔路徑為鍵，只在來源變動時重建；換圖／空白圖會清除舊 atlas。缺少素材或讀取錯誤維持 fallback。
 - 實際桌面驗收：將唯讀安裝封存檔複製到 TEMP 驗收遊戲根目錄（未改安裝目錄或地圖）；載入 TEMP ENDL_005 後，3D HUD 顯示「圖集：3 個圖塊」，切到「材質貼圖」可見砂地／草地 GPU 紋理。未執行筆刷或 Safe Save，地圖未改。首次無封存檔時確認 fallback；複製封存檔後重新載入，修正快取對同路徑換圖及 archive 路徑變更的失效處理。

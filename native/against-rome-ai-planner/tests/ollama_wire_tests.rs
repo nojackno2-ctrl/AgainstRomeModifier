@@ -110,6 +110,31 @@ fn generate_plan_posts_wire_request_and_decodes_chunked_reply() {
 }
 
 #[test]
+fn generate_plan_without_materials_omits_empty_schema_enums() {
+    let plan = r#"{"baseHeight":70,"features":[{"type":"hill","location":"north","radius":6,"amount":50}]}"#;
+    let body = serde_json::json!({ "message": { "content": plan } }).to_string();
+    let (base, h) = serve(
+        vec![format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(), body
+        )
+        .into_bytes()],
+        Duration::ZERO,
+    );
+    let planner = OllamaMapPlanner::new(Some(&base), None);
+    let (parsed, _) = planner
+        .generate_plan("m1", "a rocky hill", &[], 60.0)
+        .unwrap();
+    assert_eq!(Some(70), parsed.base_height);
+    let captured = h.join().unwrap();
+    let request: serde_json::Value = serde_json::from_slice(&captured.body).unwrap();
+    let schema = &request["format"];
+    assert!(schema["properties"]["baseMaterial"].is_null());
+    assert!(schema["properties"]["features"]["items"]["properties"]["material"].is_null());
+    assert!(!schema.to_string().contains("\"enum\":[]"));
+}
+
+#[test]
 fn content_length_response_returns_without_waiting_for_socket_close() {
     let body = r#"{"models":[]}"#;
     let resp = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);

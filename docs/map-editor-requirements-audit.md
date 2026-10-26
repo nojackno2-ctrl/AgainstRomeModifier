@@ -55,7 +55,7 @@
 | 空白地圖語意 | Flat Template／平坦範本地圖維持既有整平流程；獨立「空白場景（實驗）」清來源物件／事件、13份runtime池（含光源與特效）與原生成腳本，以新idle main與backup取代 | 真實TEMP建立／保存／重開／新放置及事件／移除後回復bootstrap已驗證；其餘原生DATA池與遊戲開局仍未驗證，詳見空白契約；未宣稱可玩 |
 | 3D 真貼圖、水面、光照、標記、筆刷與 fallback | `MapEditorOpenGlTests.cs` 真實 GPU 離屏擷取（RTX 4080／GL 3.3） | 高度/undo/材質/水面更新已有真實畫面證據；修正關閉表單時 GL 資源在 context 銷毀後才釋放、觸發重新初始化與 BeginInvoke 例外。資源失敗診斷、無 GPU fallback 與互動效能尚待驗收 |
 | UI 中英／尺寸／DPI | 96 DPI 證據；`MapEditorHighDpiTests.cs` 100/150/200% 模擬 | 編輯器視窗（AI 對話框除外）改 AutoScaleMode.Dpi 並修正截字；實體高 DPI 螢幕未驗證 |
-| AI 正式生成／預覽／套用 | 序列鎖、取消、部分失敗、套用與儲存；視覺預覽接UI，隔離/拒絕區域/統計/圖片釋放、角色進度合成測試 | 第4階段續做新UI視覺與真實生成→預覽→套用→儲存/reload；不能沿用舊live結果 |
+| AI 正式生成／預覽／套用 | 序列鎖、取消、部分失敗、套用與儲存；視覺預覽接UI，隔離/拒絕區域/統計/圖片釋放、角色進度合成測試；`tests/ai_planner_live.rs` | 2026-10-26 以實際 `laguna-xs-2.1:latest` 重跑無材質 TEMP 地圖：修復前 Ollama 400（空 `baseMaterial.enum`）；修復後一角色真實生成→預覽（未改高度／歷史）→套用→undo/redo→Safe Save→重載通過（5186 高度樣本／8 操作）。現有 live gate 只驗 Terrain 角色；三角色材質流程與新 AI 視窗實際螢幕／DPI 仍需現版驗收 |
 | 遊戲載入、存讀檔、原版品質 | 2026-10-22 舊輪未執行遊戲；10-26 已依授權啟動安裝版並檢查模組、CPU、執行緒及 GPU counters，畫面黑且 WPR 無權錄製 | 遊戲內 gate 未完成；依 `AGENTS.md` 僅能改動先備份的自製測試地圖，原版檔案唯讀；追蹤權限或可觀察環境仍待解決 |
 
 ## 下一批優先工作

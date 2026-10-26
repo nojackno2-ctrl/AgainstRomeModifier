@@ -247,7 +247,7 @@ impl AiMapPlan {
 
     /// JSON schema for Ollama structured format output
     pub fn json_schema(material_ids: &[&str]) -> serde_json::Value {
-        serde_json::json!({
+        let mut schema = serde_json::json!({
             "type": "object",
             "properties": {
                 "summary": { "type": "string" },
@@ -275,6 +275,23 @@ impl AiMapPlan {
                 }
             },
             "required": ["summary", "features"]
-        })
+        });
+        if material_ids.is_empty() {
+            if let Some(properties) = schema
+                .get_mut("properties")
+                .and_then(serde_json::Value::as_object_mut)
+            {
+                properties.remove("baseMaterial");
+                if let Some(feature_properties) = properties
+                    .get_mut("features")
+                    .and_then(|features| features.get_mut("items"))
+                    .and_then(|items| items.get_mut("properties"))
+                    .and_then(serde_json::Value::as_object_mut)
+                {
+                    feature_properties.remove("material");
+                }
+            }
+        }
+        schema
     }
 }
