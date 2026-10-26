@@ -59,3 +59,9 @@
 - 完整 TEMP 結構為 `%TEMP%\arm_gui_acceptance_20261026\Against Rome\MAPS\ENDL_005`，另外只讀複製 `SYSTEM/CLAK/cl_scint.ini`。CLI 設計檢查 0 errors／5 既有警告，日誌 `re_workspace/batch44-gui-preflight.log`。
 - 桌面 2D 高度筆畫→Safe Save→確認既有設計警告→成功（10 files／4 cache deletions）→關閉→重新啟動→「最近開啟」選擇同一地圖→載入成功且無未儲存標記。高度 `boden.bmp` SHA-256 從 `D230EDC917B38BDC3B7BEE7C04ECDBEFCD9D339A287DE65C6B7E90182BAFCC6D` 變為 `65736F89914970E4CFA4F1937A8410A5027AE8AAD362C03B7F37FD8C364B4F51`；vertex.bmp／collision.bmp 不變。
 - 本次只驗收上述桌面路徑；未涵蓋高 DPI、多螢幕、所有面板、零售材質／APT 顯示或遊戲開局。D 的「進入遊戲」仍未驗證，A／B／C 仍未完成。安裝地圖未修改。
+
+## 2026-10-26 Codex GPT-6 Luna 桌面驗收：水位與鏡頭復原／重做
+
+- 使用 `re_workspace/codex-wave-dest-target/debug/against-rome-editor.exe --map "%TEMP%\arm_gui_acceptance_20261026\Against Rome\MAPS\ENDL_005"` 開啟先前建立的 TEMP 自製地圖，確認新建置視窗正常載入。氛圍面板水面滑桿由 30 調至 42，顯示世界水位 168；按工具列復原回到 30／120，再重做回 42／168。操作未 Safe Save，未將預覽值寫入地圖。
+- 地圖屬性起始鏡頭勾選後，畫面顯示「鏡頭已變更」；按復原後核取方塊回到未勾選，重做顯示勾選，再復原回初始狀態。全程未按 Safe Save；驗收後關閉編輯器，沒有留下待儲存操作。
+- 遊戲啟動再測：以 `Start-Process -FilePath "C:\Program Files (x86)\Against Rome\Against_Rome.exe" -WorkingDirectory "C:\Program Files (x86)\Against Rome"` 啟動安裝版，視窗標題 `15.10.2003 Against Rome - Version 1.000` 正常出現，但初始及等待 10 秒後畫面仍全黑；Escape 無可見反應，Alt+F4 關閉成功。未進入選單或地圖，因此 A–D 仍未驗證；本次未修改安裝檔、系統設定或任何遊戲地圖。
