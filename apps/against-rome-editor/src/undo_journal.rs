@@ -10,6 +10,8 @@ pub enum SubsystemId {
     Scene,
     Other,
     Auxiliary,
+    WaterControl,
+    StartCamera,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -79,6 +81,13 @@ impl UndoJournal {
             epoch: self.epoch,
             children,
         })
+    }
+
+    /// 僅合併目前頂端的同一手勢，不能跨越其他工具或重做分支。
+    pub(crate) fn ends_with_step(&self, id: SubsystemId, token: u64) -> bool {
+        self.redo.is_empty() && self.undo.last().is_some_and(|entry|
+            entry.children.len() == 1 && entry.children[0].subsystem == id
+                && entry.children[0].after_token == token)
     }
 
     pub fn can_undo(&self) -> bool {
@@ -238,7 +247,6 @@ impl UndoJournal {
         self.epoch = self.epoch.wrapping_add(1);
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;

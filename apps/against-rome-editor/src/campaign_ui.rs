@@ -25,6 +25,7 @@ use eframe::egui::{self, Color32, Vec2};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
+#[derive(Clone, PartialEq)]
 struct StartCameraCandidate {
     map: PathBuf,
     camera: MapStartCamera,
@@ -2147,5 +2148,25 @@ mod batch36_tests {
         assert_eq!(panel.is_dirty(), dirty);
         assert!(panel.last_wave_result.is_none());
         assert!(panel.last_compiled_objective_events.is_empty());
+    }
+}
+
+/// 起始鏡頭的草稿與候選必須一併復原，避免安全儲存使用過期候選。
+#[derive(Clone, PartialEq)]
+pub(crate) struct CameraHistoryState {
+    camera: MapStartCamera,
+    dirty: bool,
+    candidate: Option<StartCameraCandidate>,
+}
+impl CampaignUi {
+    pub(crate) fn camera_history_state(&self) -> CameraHistoryState {
+        CameraHistoryState { camera: self.start_camera.clone(), dirty: self.camera_dirty, candidate: self.camera_candidate.clone() }
+    }
+    pub(crate) fn restore_camera_history(&mut self, state: CameraHistoryState) {
+        self.start_camera = state.camera;
+        self.camera_dirty = state.dirty;
+        self.camera_candidate = state.candidate;
+        self.camera_apply_requested = false;
+        self.camera_capture_requested = false;
     }
 }

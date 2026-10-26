@@ -52,3 +52,10 @@
 - 先前 `ARM area test` 綁定特定的玩家 `GER_INF01` 生成物，矩形 X=10208–10336、Z=9568–9696，事件預設延遲 10 秒；其他單位進入不構成通過條件。需確認指定小隊仍存活，並觀察進入前後。
 - 先前配置只新增 300 秒存活勝利，停用既有勝利事件；**未準備「主屋被摧毀即失敗」的獨立驗收案例**，B 的失敗分支仍須另外測試。
 - 波次移動仍須觀察實機：編譯器使用新建群組自身作為訊息 8 的 sender；原生參考腳本使用 level object，差異與未知邊界見 `docs/agent-reports/wave-orders-re.md`。群組原地不動時，需再辨別通行、戰鬥狀態與訊息條件，不能單憑靜止判定 sender 是根因。
+
+## 2026-10-26 Codex 桌面操作驗收：部分通過
+
+- 原生建置 `d320257`，computer-use 實際操作，僅使用 TEMP 地圖。可見 2D 畫布／小地圖、3D 地形；3D 拖曳筆畫後顯示未儲存，工具列復原後恢復乾淨，重做後再次顯示未儲存。缺少別名目錄時 Safe Save 拒絕並保留變更；關閉時顯示捨棄確認。
+- 完整 TEMP 結構為 `%TEMP%\arm_gui_acceptance_20261026\Against Rome\MAPS\ENDL_005`，另外只讀複製 `SYSTEM/CLAK/cl_scint.ini`。CLI 設計檢查 0 errors／5 既有警告，日誌 `re_workspace/batch44-gui-preflight.log`。
+- 桌面 2D 高度筆畫→Safe Save→確認既有設計警告→成功（10 files／4 cache deletions）→關閉→重新啟動→「最近開啟」選擇同一地圖→載入成功且無未儲存標記。高度 `boden.bmp` SHA-256 從 `D230EDC917B38BDC3B7BEE7C04ECDBEFCD9D339A287DE65C6B7E90182BAFCC6D` 變為 `65736F89914970E4CFA4F1937A8410A5027AE8AAD362C03B7F37FD8C364B4F51`；vertex.bmp／collision.bmp 不變。
+- 本次只驗收上述桌面路徑；未涵蓋高 DPI、多螢幕、所有面板、零售材質／APT 顯示或遊戲開局。D 的「進入遊戲」仍未驗證，A／B／C 仍未完成。安裝地圖未修改。

@@ -84,6 +84,11 @@ pub(in crate::app) fn fixture(tag: &str, live: &[(u16, Option<u16>)]) -> (Editor
     write_data(&root.join("MAPS/OFFICIAL_A"), 6, &[(232, None)], 50);
     let map = root.join("MAPS/ENDL_005");
     write_data(&map, 12, live, 100);
+    std::fs::write(
+        map.join(against_rome_maps::CustomMapManifest::MARKER_FILE_NAME),
+        "test fixture",
+    )
+    .unwrap();
     std::fs::create_dir_all(map.join("SCRIPT")).unwrap();
     std::fs::write(map.join("SCRIPT/ak_level.bci"), against_rome_scenario::BciImage::idle().serialize()).unwrap();
     let mut app = EditorApp::initial_state();

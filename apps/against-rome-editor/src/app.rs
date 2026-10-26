@@ -1,5 +1,6 @@
 //! Against Rome 原生 Rust 桌面地圖編輯器主介面 (egui/eframe)
 
+mod control_history;
 #[path = "app_recovery.rs"]
 mod app_recovery;
 pub mod save_blockers;
@@ -180,6 +181,7 @@ pub struct EditorApp {
     spawn_landscape: Option<(PathBuf, Vec<(i32, f32, f32)>)>,
     pub(crate) textures: TexturesUi,
     pub(crate) undo_journal: crate::undo_journal::UndoJournal,
+    control_history: control_history::ControlHistory,
     auxiliary_undo: Vec<(bool, Option<EmbossBaseline>)>,
     auxiliary_redo: Vec<(bool, Option<EmbossBaseline>)>,
     pub(crate) scene: SceneUi,
@@ -329,6 +331,7 @@ impl EditorApp {
     }
 
     pub fn center_start_camera_on_player_main_house(&mut self) -> bool {
+        if self.current_map_is_original() { return false; }
         if let Some((x, z)) = self.player_main_house_position() {
             self.campaign.start_camera.enabled = true;
             self.campaign.start_camera.x = x;
@@ -445,6 +448,7 @@ impl EditorApp {
             spawn_landscape: None,
             textures: TexturesUi::default(),
             undo_journal: Default::default(),
+            control_history: Default::default(),
             auxiliary_undo: Vec::new(),
             auxiliary_redo: Vec::new(),
             scene: SceneUi::default(),
@@ -1640,6 +1644,7 @@ impl EditorApp {
             ),
         );
         self.campaign.english = self.lang() == AppLanguage::English;
+        let camera_history = self.capture_camera_control();
         self.campaign.show(
             ctx,
             Some(self.scenario.document()),
@@ -1648,13 +1653,16 @@ impl EditorApp {
         self.apply_campaign_objective_request();
         self.apply_campaign_wave_merge();
         self.apply_campaign_camera_requests();
+        self.finish_control_edit(ctx, camera_history);
         let map_path = if self.map_path_input.trim().is_empty() {
             None
         } else {
             Some(std::path::Path::new(self.map_path_input.trim()))
         };
         self.ambience.app_language = self.loc.current_language();
+        let water_history = self.capture_water_control();
         self.ambience.show(ctx, map_path, water);
+        self.finish_control_edit(ctx, water_history);
         if let Some((wx, wz)) = self.ambience.take_focus_zone_request() {
             self.focus_world_coordinates(wx, wz);
             let msg = format!(
@@ -2714,7 +2722,7 @@ impl EditorApp {
 
     fn apply_campaign_camera_requests(&mut self) {
         let (apply, capture) = self.campaign.take_camera_requests();
-        if capture {
+        if capture && !self.current_map_is_original() {
             match self.current_view_start_camera() {
                 Ok(camera) => {
                     self.campaign.capture_camera(camera);
@@ -2759,6 +2767,7 @@ impl EditorApp {
     }
 
     fn apply_start_camera_candidate(&mut self) -> Result<(), String> {
+        if self.current_map_is_original() { return Err("原版地圖為唯讀，無法套用起始鏡頭。".into()); }
         let path = self
             .loaded_map_path
             .as_ref()
@@ -4342,7 +4351,10 @@ impl EditorApp {
     }
 
     fn current_map_is_original(&self) -> bool {
-        is_original_map_dir(Path::new(self.map_path_input.trim()))
+        self.loaded_map_path
+            .as_deref()
+            .map(is_original_map_dir)
+            .unwrap_or_else(|| is_original_map_dir(Path::new(self.map_path_input.trim())))
     }
 
     fn set_status(&mut self, message: String, is_error: bool) {
@@ -5072,6 +5084,7 @@ mod tests {
     mod batch14_tests;
     mod save_blockers_tests;
     mod unified_undo_tests;
+    mod control_history_e2e;
     mod objectives_apply_tests;
     mod scenario_canvas_tests;
     mod settlement_apply_tests;
@@ -5819,6 +5832,11 @@ mod tests {
         let root = temp_map_dir("camera_safe_save_root");
         let dir = root.join("MAPS").join("ENDL_006");
         std::fs::create_dir_all(dir.join("SCRIPT")).unwrap();
+        std::fs::write(
+            dir.join(against_rome_maps::CustomMapManifest::MARKER_FILE_NAME),
+            "test fixture",
+        )
+        .unwrap();
         std::fs::create_dir_all(root.join("SYSTEM/CLAK")).unwrap();
         std::fs::write(root.join("SYSTEM/CLAK/cl_scint.ini"), "[ObjDefName]\nGER_HAU00=BauGerHau00\n").unwrap();
         let original = against_rome_scenario::BciImage::idle().serialize();
@@ -12103,10 +12121,12 @@ impl EditorApp {
                         }
                     }
                     if self.active_tool == ActiveTool::Water {
+                        let water_history = self.capture_water_control();
                         ui.add(
                             egui::Slider::new(&mut self.water_surface, 0.0..=255.0)
                                 .text("Water surface (G units)"),
                         );
+                        self.finish_control_edit(ctx, water_history);
                         ui.add(egui::Slider::new(&mut self.water_bed, 0..=254).text("Bed height"));
                         ui.label(tr(lang, "Local excavation/blocking; set game water level separately.", "局部挖掘／阻擋；遊戲水位需另外設定。"));
                         ui.label(if lang == AppLanguage::English {
@@ -12844,6 +12864,7 @@ impl EditorApp {
             crate::undo_journal::SubsystemId::Scenario => self.scenario.history_token(),
             crate::undo_journal::SubsystemId::Nature => self.nature.session.history_token(),
             crate::undo_journal::SubsystemId::Scene => self.scene.history_token(),
+            crate::undo_journal::SubsystemId::WaterControl | crate::undo_journal::SubsystemId::StartCamera => self.control_history.token(id),
             crate::undo_journal::SubsystemId::Auxiliary => self.auxiliary_undo.len() as u64,
             _ => 0,
         })
@@ -13213,6 +13234,7 @@ impl EditorApp {
         // 排空尚未收集的通知，避免重設後於下一個 frame 復活。
         self.collect_pilot_receipts();
         self.undo_journal.new_epoch();
+        self.control_history = Default::default();
         self.auxiliary_undo.clear();
         self.auxiliary_redo.clear();
     }
@@ -13229,6 +13251,7 @@ impl EditorApp {
 
     /// 先結束手勢，再選擇統一紀錄或相容路由；委派失敗不得轉往其他子系統。
     fn finish_history_gestures(&mut self) {
+        self.control_history.end_gestures();
         if let Some(session) = self.session.as_mut() { session.commit_stroke(); }
         self.is_painting = false;
         self.stroke_path.clear();
@@ -13282,6 +13305,7 @@ impl crate::undo_journal::UndoTarget for EditorApp {
             Spawns => self.spawn_ui.history_token(),
             Scenario => self.scenario.history_token(),
             Scene => self.scene.history_token(),
+            WaterControl | StartCamera => self.control_history.token(id),
             Auxiliary => self.auxiliary_undo.len() as u64,
             Other => {
                 // 局部操作若改動任一側，不得讓 journal 跨過複合操作邊界。
@@ -13319,6 +13343,7 @@ impl crate::undo_journal::UndoTarget for EditorApp {
                 success
             },
             Scene => self.scene.undo(),
+            WaterControl | StartCamera => self.navigate_control(id, false),
             Auxiliary => self.navigate_auxiliary(false),
             Other => {
                 let success = self.settlement_history(false);
@@ -13349,6 +13374,7 @@ impl crate::undo_journal::UndoTarget for EditorApp {
                 success
             },
             Scene => self.scene.redo(),
+            WaterControl | StartCamera => self.navigate_control(id, true),
             Auxiliary => self.navigate_auxiliary(true),
             Other => {
                 let success = self.settlement_history(true);
@@ -13430,6 +13456,7 @@ impl EditorApp {
 
     /// Renders the small Map Properties window displaying title, briefing, and start camera settings.
     pub fn show_map_properties(&mut self, ctx: &egui::Context) {
+        let camera_history = self.capture_camera_control();
         if !self.map_properties_open {
             return;
         }
@@ -13559,6 +13586,7 @@ impl EditorApp {
                 });
             });
 
+        self.finish_control_edit(ctx, camera_history);
         self.map_properties_open = open;
     }
 }

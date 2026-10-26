@@ -1,3 +1,11 @@
+## 2026-10-26 Codex：批次 #44 與桌面驗收（進行中）
+- 起始 HEAD `d320257`，既有 AGENTS.md／README.md 修改保留。先前 Codex job `4a259d0f06d9` 寫入水位／開局鏡頭 undo/redo 與 5 項端到端測試，使用者要求換 GPT-6 Luna 時中止；聚焦 `cargo check` 與 5 測試當時已 pass。GPT-6 Luna 接手審查並負責全 workspace 驗證。
+- Agy 唯讀調查 job `bfec2451bc82` 發現遊戲工作目錄必須為安裝目錄；`Against_Rome.exe` 不會自行切換目錄，而 `sky.launch_app` 不能帶 `cwd`，可解釋本次全黑但尚未以正確啟動路徑實機確認。不要啟動 SafeDisc 外殼 `ar.exe`；已安裝目錄目前也沒有 DDraw wrapper。此發現只讀，未改系統相容性或安裝內容。
+- 桌面驗收（原生建置 `d320257`）：TEMP 既有測試副本載入成功、2D 小地圖／3D 地形可見；3D 拖曳筆畫出現 dirty，工具列統一復原後 dirty 消失，重做恢復 dirty。直接副本缺少別名目錄時 Safe Save 明確拒絕並保留變更；Alt+F4 顯示捨棄確認，已捨棄本次筆畫關閉。
+- 已建立完整 TEMP 結構 `%TEMP%\arm_gui_acceptance_20261026\Against Rome\MAPS\ENDL_005`，只讀複製原安裝 `SYSTEM/CLAK/cl_scint.ini`。CLI `--validate-map --lang zh` exit 0（0 errors／5 既有無目的地警告），日誌 `re_workspace/batch44-gui-preflight.log`。桌面 2D 筆畫→Safe Save→既有警告確認成功（10 files／4 cache deletions），dirty 清除，關閉無捨棄提示；boden.bmp SHA-256 `D230EDC9…`→`65736F89…`，vertex.bmp／collision.bmp 未變。全新程序由「最近開啟」重載成功且乾淨；具體證據與驗收邊界已寫入遊戲驗收清單。未改動安裝地圖。
+- GPT-6 Luna 接續批次 #44：完整測試首輪發現 2 項舊 fixture 缺少 `.arm_custom_map` 標記，導致新唯讀防護正確拒絕；已在 spawn-save fixture 與鏡頭 Safe Save fixture 補標記，並讓唯讀判斷以目前載入地圖路徑為準。兩項聚焦測試通過；`cargo test --workspace --locked --offline --no-fail-fast --target-dir re_workspace/codex-wave-dest-target` exit 0（287 組，2713 passed／0 failed／25 ignored）；`cargo check`、`cargo build` 同參數均 exit 0。紀錄：`re_workspace/batch44-luna-{check,test-rerun,build}.log`。
+- 目前批次 #44 的水位／鏡頭 undo/redo 與桌面／遊戲驗收清單尚未提交；AGENTS.md、README.md 是既有使用者修改，不納入提交。遊戲內波次／區域／勝敗仍未驗收，待以正確工作目錄啟動方式再測。
+
 ## 2026-10-26 Codex：效能修正已驗證；遊戲驗收未完成
 - 使用者已恢復「繼續完成地圖編輯器」；起始 HEAD `cecdbd5`。保留 AGENTS.md、README.md 與暫時實測模組的既有變更。
 - Codex #43 已完成：批次家族移動共用索引／候選資料池，ParticlePool 延遲 raw payload SHA-256（PFIL 保留原檔指紋）；新增位元組、歷程與 TEMP APT／操作計時回歸。大型 fixture 52.658→1.174 秒，DATA 建立／載入／移動 31.704 秒→116 ms。最終 Design Check 267 ms、Safe Save 338 ms、重載 35 ms、無頭首幀 9.74 ms、APT 冷／快取與尋路 28.8／23.4 ms。日誌 `re_workspace/batch43-final-timings.log`。
