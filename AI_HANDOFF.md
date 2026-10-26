@@ -2,6 +2,7 @@
 - `apps/against-rome-editor/src/app/tests/spawn_save_tests.rs` 抽出 root＋child＋direct Light 合成 family fixture，新增事件引用時拒刪複合家族、停用後整族刪除與重載案例；另新增 Particle emitter child 以 fixed-point backlink 控制 Light 的 EditorApp 平移／重載案例。刪除既存 family 時注入 `BeforeFinalCommit`，完整檔案快照不變、記憶體刪除保留可重試；重試後 objects／particle／light 清空，最終重載一致。
 - 聚焦 `cargo test -p against-rome-editor-app --lib --locked --offline --target-dir re_workspace/phase3-family-delete spawn_save_tests:: -- --test-threads=1 --nocapture`：16 passed／0 failed。workspace `cargo check`、序列完整 `cargo test --no-fail-fast -j 1 -- --test-threads=1 --quiet`（editor app 871 passed／6 ignored／0 failed）、`cargo build` 均 exit 0；`git diff --check` 通過。僅合成資料；沒有桌面／遊戲驗收或零售 DATA 寫入。
 - Agy 唯讀稽核指出 particle-linked Light 與複合 family 多池交易原先缺 App 層證據，已由上述測試補上。後續轉往 roadmap 第 5 階段真實 OpenGL／資源 fallback／DPI 驗收，再處理可觀察遊戲畫面前受阻的遊戲內驗收。
+- 桌面驗收暫待視窗選定：Computer Use 列出兩個同名 `Against Rome Map Editor — Rust` 視窗，皆屬同一 executable；未選取或操作任一視窗。已詢問使用者保留目標視窗或略過本次桌面操作。
 
 ## 2026-10-27 Codex：Safe Save 無效事件拒絕與重載後物件編輯（workspace 驗證完成）
 - 在 `apps/against-rome-editor/src/app/tests/spawn_save_tests.rs` 新增 app 層整合案例：無效事件隊伍、超界生成位置、缺失目標 UUID 均在 Safe Save 寫入前拒絕；地圖全檔快照不變、錯誤編輯仍保留，修復事件後重試成功。另新增跨全新 `EditorApp` 重載後複製／移動／改隊伍，再令建築 team 12→1 降級／升級；驗證原事件仍引用原 UUID、DATA slots/objects 清理與重建及最終重載一致。

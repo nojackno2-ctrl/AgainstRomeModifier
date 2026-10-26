@@ -63,7 +63,7 @@
 | 完整還原保留／刪除自製圖 | 新dialog→PatchEngine→CustomMapRestoreService；15項合成流程/STA/真正runner與engine測試 | 已實作預設保留、受控刪除、目錄/manifest回滾；僅完整還原跳過custom腳本/team基準，正常AI仍涵蓋custom；原版成功還原與新dialog視覺仍待驗收 |
 | AI 修補涵蓋新 ENDL 圖 | `EndlessAiAdditionalMapTests` 真正 P1 七槽位 Detect／Apply／Save／fresh reload／還原 | 已修正式數字槽位搜尋；排除非數字、暫存、刪除中與巢狀複本；SDL 僅搜尋地圖根目錄 |
 | 地形、材質、通行、歷史／儲存交易 | 驗收矩陣列出的 session、真正表單及 AI 跨模式測試 | 合成路徑已驗證；原版輸出仍有遊戲內 gate |
-| 自然物件／人物／部隊／建築與事件 | 單兵與nature fail/retry、身份、VM／dialog；四部族建築0–8/部隊0–7與事件的共同儲存矩陣；新增重載後複製／移動／改隊伍與DATA降級升級，無效事件 Safe Save 零寫入／修復重試 | 合成資料跨重載與寫入保護已驗；下一步補多部件建築 family 的 EditorApp 整合；不推定多人同步、零售範本或遊戲內行為已驗 |
+| 自然物件／人物／部隊／建築與事件 | 單兵與 nature fail/retry、身份、VM／dialog；四部族建築 0–8／部隊 0–7 與事件的共同儲存矩陣；重載後複製／移動／改隊伍、DATA 降級升級；無效事件 Safe Save 零寫入／修復重試；root＋child＋direct／particle-linked Light family 平移、刪除守衛與多池回滾 | 合成資料跨重載與寫入保護已驗；其他原生 family 變體、多人同步、零售範本與遊戲內行為仍未驗 |
 | 空白地圖語意 | Flat Template／平坦範本地圖維持既有整平流程；獨立「空白場景（實驗）」清來源物件／事件、13份runtime池（含光源與特效）與原生成腳本，以新idle main與backup取代 | 真實TEMP建立／保存／重開／新放置及事件／移除後回復bootstrap已驗證；其餘原生DATA池與遊戲開局仍未驗證，詳見空白契約；未宣稱可玩 |
 | 3D 真貼圖、水面、光照、標記、筆刷與 fallback | `MapEditorOpenGlTests.cs` 真實 GPU 離屏擷取（RTX 4080／GL 3.3） | 高度/undo/材質/水面更新已有真實畫面證據；2026-10-26 真實桌面 TEMP ENDL_005 3D 材質貼圖模式選「土路」並拖曳筆刷，材質鄰接篩選由隱藏 72 種變為 60 種；工具列 Undo／Redo 均顯示已套用統一復原紀錄，篩選隨之回復／重現，最後 Undo 回原狀。缺少 `floortex.dat` 的 fallback 及中英診斷複製按鈕已由 TEMP 桌面操作驗證；切換 UI 語言後訊息同步更新，兩語剪貼簿文字逐字正確；TEMP 55 檔未變。新增 headless egui 回歸並完成新建置桌面切換驗證：3D 顯示 fallback 診斷與複製按鈕，2D 隱藏；無 GPU fallback、筆刷效能及高 DPI 尚待驗收 |
 | UI 中英／尺寸／DPI | 96 DPI 證據；`MapEditorHighDpiTests.cs` 100/150/200% 模擬 | 編輯器視窗（AI 對話框除外）改 AutoScaleMode.Dpi 並修正截字；實體高 DPI 螢幕未驗證 |
