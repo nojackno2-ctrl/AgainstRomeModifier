@@ -1,3 +1,7 @@
+## 2026-10-26 Codex：AI 方案接入地圖視覺預覽（已驗證）
+- AI 工作室原本只呈現文字摘要；現在呼叫 `AiMapPlanPreviewBuilder` 顯示目前地圖上的預覽圖及高度／碰撞／材質操作統計，並提供材質變更、阻擋、遭拒特徵與保護區圖例。新增唯讀 `TerrainSession::core()` 供共用預覽建構器讀取編輯器工作階段。
+- 快取鍵納入 JSON 方案、地形高度、碰撞、材質 ID、水位及地圖尺寸；同一狀態重用 GPU texture，變更任一來源後重建。AI 工作室測試 21 passed；`cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-ai-visual-preview-target -- --test-threads=1`、`cargo check --workspace --locked --offline --target-dir re_workspace/codex-ai-visual-preview-target`、`cargo build --workspace --locked --offline --target-dir re_workspace/codex-ai-visual-preview-target` 及 `git diff --check` 均通過。無視窗 egui 回歸確認預覽不寫入地圖／改變歷程，來源編輯會更新快取；真實桌面視覺與高 DPI 操作仍待驗收。
+
 ## 2026-10-26 Codex：AI 工作室非阻塞模型探索（已驗證）
 - `連線並列出模型` 原本在 UI 執行緒同步呼叫 Ollama；現改以背景 worker 查詢，畫面逐幀輪詢進度並呈現失敗。Ollama URL 納入生成輸入指紋；使用者變更端點後，延遲的舊端點模型清單會被丟棄，進行中的舊端點生成方案也會失效。
 - 新增受閘門控制的 mock transport 測試，確認查詢可非阻塞返回且舊端點結果不覆蓋清單；另驗證端點切換會清除既有方案。AI 工作室 20 項測試通過；`cargo check --workspace --locked --offline`、`cargo test --workspace --locked --offline --no-fail-fast -j 1 -- --test-threads=1`、`cargo build --workspace --locked --offline` 皆通過，`git diff --check` 通過。workspace 測試單工作程序序列通過，避免 Ollama 固定連接埠測試互相干擾。

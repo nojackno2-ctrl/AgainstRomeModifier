@@ -9,6 +9,7 @@ use crate::terrain::TerrainSession;
 use against_rome_ai_planner::multi_planner::GenerateRolePlanFn;
 use against_rome_ai_planner::{
     AiEditorOperator, AiMapApplyResult, AiMapDesignRole, AiMapEditScope, AiMapPlan,
+    AiMapPlanPreviewBuilder,
     AiMapRoleProgress, AiMapRoleStatus, AiMaterialOption, CancelToken, HttpTransport,
     MultiAiMapPlanResult, MultiAiMapPlanner, MultiAiMapRoleRequest, OllamaMapPlanner,
 };
@@ -17,6 +18,13 @@ use eframe::egui::{self, Color32, Vec2};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use std::hash::{Hash, Hasher};
+
+struct VisualPreviewCache {
+    key: u64,
+    texture: egui::TextureHandle,
+    changes: AiMapApplyResult,
+}
 
 /// Role order matches C# `AiMapDesignRole` / the three model boxes of the dialog.
 pub const ROLES: [AiMapDesignRole; 3] = [
@@ -69,6 +77,7 @@ pub struct AiPlannerUi {
     // Generated plan & preview
     pub current_plan: Option<AiMapPlan>,
     pub plan_summary: String,
+    visual_preview: Option<VisualPreviewCache>,
     pub last_apply_result: Option<AiMapApplyResult>,
     /// Incremented by every successful Apply, so the host can refresh dependent views.
     pub applied_revision: u64,
@@ -108,6 +117,7 @@ impl Default for AiPlannerUi {
             material_options: Vec::new(),
             current_plan: None,
             plan_summary: String::new(),
+            visual_preview: None,
             last_apply_result: None,
             applied_revision: 0,
             job: None,
@@ -162,6 +172,7 @@ impl AiPlannerUi {
         self.dirty = false;
         self.current_plan = None;
         self.plan_summary.clear();
+        self.visual_preview = None;
         self.last_apply_result = None;
         self.pending_discard = false;
         self.progress_done = 0;
@@ -348,6 +359,54 @@ impl AiPlannerUi {
         )
     }
 
+    fn visual_preview_key(
+        plan: &AiMapPlan,
+        session: &TerrainSession,
+        blend: Option<&TerrainBlendEditSession>,
+        water_level: f32,
+    ) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        serde_json::to_vec(plan).unwrap_or_default().hash(&mut hasher);
+        session.heights().hash(&mut hasher);
+        session.collision().hash(&mut hasher);
+        blend.map(|b| b.current_textures()).hash(&mut hasher);
+        session.vertex_size.hash(&mut hasher);
+        session.collision_size.hash(&mut hasher);
+        water_level.to_bits().hash(&mut hasher);
+        hasher.finish()
+    }
+
+    fn update_visual_preview(
+        &mut self,
+        ctx: &egui::Context,
+        session: Option<&TerrainSession>,
+        blend: Option<&TerrainBlendEditSession>,
+        water_level: f32,
+    ) {
+        let (Some(plan), Some(session)) = (self.current_plan.as_ref(), session) else {
+            self.visual_preview = None;
+            return;
+        };
+        let key = Self::visual_preview_key(plan, session, blend, water_level);
+        if self.visual_preview.as_ref().is_some_and(|preview| preview.key == key) {
+            return;
+        }
+        let preview = AiMapPlanPreviewBuilder::build(
+            plan,
+            session.core(),
+            blend,
+            Self::tile_dimension(session.vertex_size),
+            water_level,
+            None,
+        );
+        let image = egui::ColorImage::from_rgba_unmultiplied(
+            [preview.image.width, preview.image.height],
+            &preview.image.pixels,
+        );
+        let texture = ctx.load_texture("ai_plan_visual_preview", image, egui::TextureOptions::NEAREST);
+        self.visual_preview = Some(VisualPreviewCache { key, texture, changes: preview.changes });
+    }
+
     /// Detects edits to roles/models/area/locks/passability/description. Like C# `InvalidatePlan`,
     /// an input change makes any existing (or in-flight) plan stale.
     pub fn sync_inputs(&mut self) {
@@ -360,6 +419,7 @@ impl AiPlannerUi {
         if self.current_plan.is_some() {
             self.current_plan = None;
             self.plan_summary.clear();
+            self.visual_preview = None;
             self.status_message =
                 "Roles, area, locks or description changed; the old plan is invalid. Generate again.".to_string();
             self.status_is_error = false;
@@ -394,6 +454,7 @@ impl AiPlannerUi {
         self.sync_inputs();
         self.current_plan = None;
         self.plan_summary.clear();
+        self.visual_preview = None;
         let fail = |this: &mut Self, msg: String| {
             this.status_message = format!("Generation failed to start: {msg}");
             this.status_is_error = true;
@@ -707,6 +768,7 @@ impl AiPlannerUi {
         // terrain/material sessions, which carry their own dirty state and undo, so the
         // planner itself holds nothing unsaved and must not block Safe Save.
         self.current_plan = None;
+        self.visual_preview = None;
         self.dirty = false;
         Ok(result)
     }
@@ -724,7 +786,9 @@ impl AiPlannerUi {
         self.poll_generation();
         let model_refreshing = self.poll_model_refresh();
         self.sync_inputs();
+        self.update_visual_preview(ctx, session.as_deref(), blend.as_deref(), water_level);
         let busy = self.job.is_some();
+        let has_session = session.is_some();
         if busy {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
@@ -843,6 +907,22 @@ impl AiPlannerUi {
                     } else {
                         format!("地形特徵：{}（基礎高度：{:?}，基礎材質：{:?}）", plan.features.len(), plan.base_height, plan.base_material)
                     });
+                    if let Some(preview) = &self.visual_preview {
+                        ui.horizontal_top(|ui| {
+                            let side = ui.available_height().min(220.0).max(120.0);
+                            ui.image((preview.texture.id(), Vec2::splat(side)));
+                            ui.vertical(|ui| {
+                                ui.label(tl(self.english,
+                                    "地圖預覽：綠／藍為地形／水域，橙為材質變更，紅為阻擋，紫為遭拒特徵，灰為保護區。",
+                                    "Map preview: green/blue terrain/water, orange material changes, red blocked cells, purple rejected features, grey protected areas."));
+                                ui.label(format!("{} {}", tl(self.english, "預計高度取樣點：", "Height samples:"), preview.changes.height_samples_changed));
+                                ui.label(format!("{} {}", tl(self.english, "預計阻擋像素：", "Collision pixels:"), preview.changes.collision_pixels_changed));
+                                ui.label(format!("{} {}", tl(self.english, "材質筆刷：", "Material strokes:"), preview.changes.material_strokes));
+                            });
+                        });
+                    } else if !has_session {
+                        ui.label(tl(self.english, "載入地圖地形後即可產生視覺預覽。", "Load map terrain to build the visual preview."));
+                    }
                     if !self.plan_summary.is_empty() {
                         egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
                             ui.monospace(&self.plan_summary);
@@ -1070,6 +1150,45 @@ mod tests {
         assert!(ui.wait_model_refresh(Duration::from_secs(2)));
         assert_eq!(ui.available_models, original_models, "不可用舊端點結果覆蓋模型清單");
         assert!(ui.status_message.contains("端點已變更"), "{}", ui.status_message);
+    }
+
+    #[test]
+    fn visual_plan_preview_renders_without_mutating_map_or_history_and_refreshes_on_edit() {
+        let mut ui = test_ui();
+        ui.open = true;
+        ui.current_plan = Some(AiMapPlan {
+            base_height: Some(45),
+            ..Default::default()
+        });
+        let mut session = TerrainSession::create_blank(33, 32);
+        let original_heights = session.heights().to_vec();
+        let original_collision = session.collision().to_vec();
+        let ctx = egui::Context::default();
+
+        let _ = ctx.run(Default::default(), |ctx| ui.show(ctx, Some(&mut session), None, 0.0));
+        let first = ui.visual_preview.as_ref().expect("rendered visual preview");
+        assert!(first.changes.height_samples_changed > 0);
+        let first_key = first.key;
+        let first_texture = first.texture.id();
+        assert_eq!(session.heights(), original_heights);
+        assert_eq!(session.collision(), original_collision);
+        assert!(!session.is_dirty());
+        assert!(!session.can_undo());
+
+        let _ = ctx.run(Default::default(), |ctx| ui.show(ctx, Some(&mut session), None, 0.0));
+        let cached = ui.visual_preview.as_ref().unwrap();
+        assert_eq!(cached.key, first_key);
+        assert_eq!(cached.texture.id(), first_texture, "unchanged source should reuse its texture");
+
+        let before = session.heights()[0];
+        session.apply_height_changes(&[crate::terrain::SampleChange { index: 0, before, after: before + 1 }]);
+        assert!(session.commit_stroke());
+        let edited_heights = session.heights().to_vec();
+        let undo_available = session.can_undo();
+        let _ = ctx.run(Default::default(), |ctx| ui.show(ctx, Some(&mut session), None, 0.0));
+        assert_ne!(ui.visual_preview.as_ref().unwrap().key, first_key);
+        assert_eq!(session.heights(), edited_heights);
+        assert_eq!(session.can_undo(), undo_available, "preview must preserve the user's history");
     }
 
     #[test]

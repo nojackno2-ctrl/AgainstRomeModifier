@@ -53,4 +53,4 @@
 
 ## AI 預覽草稿整合狀態
 
-整理順序前新增的 `TerrainBlendEditSession.Fork()` 與 `AiMapPlanPreview.cs` 已在第 4 階段接上 host/dialog。合成測試驗證預覽隔離、拒絕區域與正式套用統計、圖片釋放及角色進度。新的版面、中英文／DPI 與真實生成→預覽→套用完整流程仍需驗收，不能沿用較早的 96 DPI 或 live 證據。
+`TerrainBlendEditSession.Fork()` 與 `AiMapPlanPreviewBuilder` 已由 AI 工作室 UI 呼叫，現在會依目前地圖狀態顯示視覺預覽、預計變更統計與遭拒區域圖例。快取以方案、地形／碰撞／材質來源及水位為鍵；無視窗 UI 回歸確認預覽不改地圖或 undo 歷程，底圖編輯後會重建。原生建構器的隔離測試另驗證材質來源不變。真實視窗版面、高 DPI／多螢幕及本次實際生成→預覽→套用→復原→Safe Save→重載仍待驗收。

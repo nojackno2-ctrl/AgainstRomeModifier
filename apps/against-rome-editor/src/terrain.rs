@@ -116,6 +116,10 @@ impl TerrainSession {
         )
     }
     /// Direct access to the core session for domain operators (AI planner). Callers must commit strokes themselves.
+    pub fn core(&self) -> &CoreSession {
+        &self.core
+    }
+
     pub fn core_mut(&mut self) -> &mut CoreSession {
         &mut self.core
     }
