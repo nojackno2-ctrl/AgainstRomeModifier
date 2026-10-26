@@ -6,10 +6,12 @@
 - 驗證後由父端將測試與交接提交並推送：`4a3b7bb test(地圖編輯器): 覆蓋四部族隊伍與事件往返 [by Codex]`。原先子代理任務完成時尚未 commit/push；既有 AGENTS.md／README.md 修改仍未提交。
 - 邊界：非德系僅驗證合成 catalog 缺模板時的 fallback，不代表已驗證四族原生 DATA 範本；squad 僅起始 Spawn，未新增事件動態援軍案例。事件是序列化／編譯 fixture（存活會立即勝利），未做真實 GUI／遊戲內部族建物、部隊生成、存活死亡／勝敗觸發、遊戲存讀檔或多人同步驗收；整體地圖編輯器及 Phase 3 全部完成條件仍不可宣稱完成。
 
-## 2026-10-26 Codex：3D 材質缺檔 fallback 診斷（已驗證；桌面待驗）
+## 2026-10-26 Codex：3D 材質缺檔 fallback 桌面驗收（已驗證；遊戲內待驗）
 - Phase 5 稽核發現 `floortex.dat` 不存在時 3D Textured 模式會靜默改繪 relief，HUD 不顯示狀態。本次以當前 GPT-6 繼續；指定 GPT-6 Luna 的 CLI 代理回報仍執行 GPT-6，依限制停止，未執行工作。此對話模型未切換。
-- `EditorApp::refresh_3d_floor_atlas` 現於缺少圖集檔時顯示繁中／英文 relief fallback 狀態；3D Textured HUD 同步標示材質檔不可用與 relief 替代。新增雙語訊息測試。
-- `cargo check --workspace --locked --offline --target-dir re_workspace/codex-phase5-fallback-target`、`cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-phase5-fallback-target -- --test-threads=1 --quiet`、`cargo build --workspace --locked --offline --target-dir re_workspace/codex-phase5-fallback-target` 均完成；editor app 856 passed／6 ignored。新測試獨立重跑 1 passed／0 failed；既有 unused warnings。未做缺資源桌面畫面驗收，遊戲 fallback 效果未驗。
+- `EditorApp::refresh_3d_floor_atlas` 現於缺少圖集檔時顯示繁中／英文 relief fallback 狀態；3D Textured HUD 同步標示材質檔不可用與 relief 替代。新增雙語訊息測試。當時桌面缺檔畫面尚未驗收，後由下方 TEMP 桌面測試補足。
+- `cargo check --workspace --locked --offline --target-dir re_workspace/codex-phase5-fallback-target`、`cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-phase5-fallback-target -- --test-threads=1 --quiet`、`cargo build --workspace --locked --offline --target-dir re_workspace/codex-phase5-fallback-target` 均完成；editor app 856 passed／6 ignored。新測試獨立重跑 1 passed／0 failed；既有 unused warnings。遊戲 fallback 效果仍未驗。
+
+- 以新建置 `re_workspace/codex-phase5-fallback-target/debug/against-rome-editor.exe` 開啟 TEMP 複本 `C:\Users\nojac\AppData\Local\Temp\arm_floor_fallback_gui_61ab03c4e2ce430091f08f0c6178ec24\ENDL_005`（安裝版 `MAPS\ENDL_005` 只讀來源，55 檔）。桌面切換至 3D 視角與「材質貼圖」著色；可見狀態列「找不到 3D 地表材質檔 floortex.dat；目前以地形起伏色彩替代顯示。」地表呈起伏色彩替代畫面，物件數 0。TEMP 與安裝來源逐檔 SHA-256 比對 55/55 相同，未 Safe Save、未改地圖；驗證只證明編輯器缺檔時 UI／替代繪製路徑，未證明遊戲內材質或 fallback。此視窗與 TEMP 副本留待後續檢查。
 
 ## 2026-10-26 Codex：水深功能真實桌面驗收（已完成；遊戲內未驗）
 - 首次以單獨 `--map` 開啟的 TEMP 副本因缺遊戲別名目錄而被 Safe Save 擋下，保留在 TEMP 記憶體中。改以 TEMP 遊戲根目錄（`MAPS\ENDL_005` 複本、`SYSTEM`／`ToEng` 連至安裝資料的 junction）及 `--game <TEMP> --map ENDL_005` 重新驗收，未將安裝版地圖作為儲存目標。
