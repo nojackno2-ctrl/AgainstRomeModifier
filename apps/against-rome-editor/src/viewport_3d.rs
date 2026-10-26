@@ -2567,6 +2567,59 @@ mod tests {
     }
 
     #[test]
+    fn collision_shading_emits_red_painted_terrain_for_blocked_cell() {
+        let mut collision = vec![0; 256 * 256];
+        // The 64-tile viewport maps each tile to four collision cells; its center
+        // (32.5, 32.5) therefore samples collision cell (130, 130).
+        collision[130 * 256 + 130] = 255;
+        let session = TerrainSession::new(
+            257,
+            vec![32; 257 * 257],
+            256,
+            collision,
+            None,
+            None,
+        );
+        let mut vp = Viewport3d::new();
+        vp.shading_mode = ShadingMode::Collision;
+        vp.mesh_lod_step = 1;
+        vp.show_water = false;
+
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(800.0, 600.0))),
+            ..Default::default()
+        };
+        let output = ctx.run(input, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let _ = vp.show(ui, ctx, &session, 4.0, 50.0, 2.0, &[], None);
+            });
+        });
+
+        fn count_red_polygons(shape: &egui::Shape) -> usize {
+            match shape {
+                egui::Shape::Path(path)
+                    if path.fill.r() > path.fill.g().saturating_mul(2)
+                        && path.fill.r() > path.fill.b().saturating_mul(2) =>
+                {
+                    1
+                }
+                egui::Shape::Vec(shapes) => shapes.iter().map(count_red_polygons).sum(),
+                _ => 0,
+            }
+        }
+        let red_terrain_polygons: usize = output
+            .shapes
+            .iter()
+            .map(|clipped| count_red_polygons(&clipped.shape))
+            .sum();
+        assert!(
+            red_terrain_polygons > 0,
+            "blocked collision data should produce red terrain polygons in egui's paint output"
+        );
+    }
+
+    #[test]
     fn test_discrete_terrain_pick_point_click_vs_drag() {
         let session = TerrainSession::create_blank(257, 32);
         let mut vp = Viewport3d::new();
