@@ -1,3 +1,7 @@
+## 2026-10-26 Codex：DATA 建築區域勝利事件整合重載
+- 新增 `bound_building_region_victory_event_survives_safe_save_and_reload`：在空白自製 fixture 放置主屋，建立以主屋 UUID 為目標的矩形區域條件與勝利動作，同次 Safe Save 後重開地圖。
+- 驗證預建物件仍保有原 UUID、DATA slot／UID 指向相同物件且隊伍正確；事件內容一致、條件仍指向該 UUID，儲存的 `ak_level.bci` 可解析。聚焦測試 1 passed；`cargo check --workspace --locked --offline` 與 `cargo build --workspace --locked --offline` 均 exit 0。完整 workspace 測試中 app 852 passed／6 ignored；僅 `ollama_wire_tests` 的 2 個固定連接埠測試受並行測試互相干擾而失敗，該測試檔以 `--test-threads=1` 隔離重跑 16 passed／0 failed。遊戲內觸發未驗證。
+
 ## 2026-10-26 Codex：零售原生 DATA 舊連結容錯與回歸驗證
 - GUI Safe Save 在未修改的零售 `[DATA]` 建物連結 `inactive lager camp` 上遭拒；以 TEMP 與安裝版 `ENDL_005` 11 個 DATA pool SHA-256 比對一致，確認異常來自零售來源資料。
 - `native_rotation` 原先要求整個 family 有效，阻擋保留未變更 root；現改為獨立驗證 root UID／position slot 並讀取旋轉。Safe Save 交易允許未移動、改隊伍或旋轉的壞連結 root 原樣保留；壞 family 複製不深拷貝，改走可信 singleton template 或 script fallback。

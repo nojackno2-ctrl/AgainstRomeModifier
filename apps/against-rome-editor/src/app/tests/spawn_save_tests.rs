@@ -154,6 +154,52 @@ fn new_building_is_saved_as_a_prebuilt_data_object_with_binding() {
 }
 
 #[test]
+fn bound_building_region_victory_event_survives_safe_save_and_reload() {
+    let (mut app, root, map) = fixture("bound_region_victory", &[]);
+    place_house(&mut app, (30, 30), 0);
+    let target_id = app.scenario.document().spawns[0].id;
+    app.scenario.add_events(&[against_rome_scenario::Event {
+        name: "主屋區域勝利".into(),
+        delay_seconds: 0,
+        conditions: vec![against_rome_scenario::Condition {
+            kind: 2,
+            target_id,
+            min_x: 7000,
+            min_z: 7000,
+            max_x: 9000,
+            max_z: 9000,
+        }],
+        actions: vec![against_rome_scenario::Action { kind: 3, ..Default::default() }],
+        ..Default::default()
+    }]).unwrap();
+
+    save_ok(&mut app);
+    let expected_events = app.scenario.document().events.clone();
+    let expected_spawn = app.scenario.document().spawns.iter().find(|s| s.id == target_id).unwrap().clone();
+    assert!(expected_spawn.prebuilt, "Safe Save converts the placed house to a DATA object");
+    let mut loaded = EditorApp::initial_state();
+    loaded.set_loaded_map(map.clone(), TerrainSession::create_blank(5, 32)).unwrap();
+    loaded.scenario.load_session(&map).unwrap();
+    loaded.placement.load_session(&map).unwrap();
+
+    let doc = loaded.scenario.document();
+    assert_eq!(doc.events, expected_events);
+    let spawn = doc.spawns.iter().find(|s| s.id == target_id).unwrap();
+    assert_eq!(spawn, &expected_spawn);
+    let binding = doc.data_slots.iter().find(|b| b.spawn_id == target_id).expect("region target stays bound to its DATA slot");
+    let object = data_objects(&map).into_iter().find(|o| o.slot as i32 == binding.slot).unwrap();
+    assert_eq!(object.uid, binding.uid);
+    assert_eq!(object.team, 0);
+    assert!(doc.events.iter().any(|e| e.conditions.iter().any(|c| c.kind == 2 && c.target_id == target_id)
+        && e.actions.iter().any(|a| a.kind == 3)));
+    let bci = std::fs::read(map.join("SCRIPT/ak_level.bci")).unwrap();
+    against_rome_scenario::BciImage::parse(&bci).unwrap();
+
+    drop((app, loaded));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn failed_commit_after_data_staging_writes_nothing_and_keeps_the_edit() {
     use against_rome_maps::TransactionFailurePoint as Fail;
     for point in [Fail::AfterPath("DATA/objects.dat".into()), Fail::BeforeFinalCommit] {
