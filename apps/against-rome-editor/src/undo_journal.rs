@@ -12,6 +12,7 @@ pub enum SubsystemId {
     Auxiliary,
     WaterControl,
     StartCamera,
+    BriefingText,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

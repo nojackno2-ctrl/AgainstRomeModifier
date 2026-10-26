@@ -219,3 +219,43 @@ fn batch44_failed_save_preserves_control_history_and_water_preserves_other_dirty
     assert!(app.ambience.is_dirty());
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn briefing_text_uses_global_undo_redo_and_original_maps_reject_edits() {
+    let (mut app, dir, ctx) = setup();
+    app.map_properties_open = true;
+    let baseline = app.capture_briefing_control();
+    app.ambience.briefing_title = "New mission".into();
+    app.ambience.briefing_subtitle = "Act II".into();
+    app.ambience.briefing_body = "Defend the pass.".into();
+    app.ambience.briefing_team_names[0] = "Romans".into();
+    app.ambience.dirty = true;
+    app.finish_control_edit(&ctx, baseline);
+    assert_eq!(app.undo_journal.total_undo_entries(), 1);
+    assert!(app.has_unsaved_changes());
+    app.navigate_journal(false);
+    assert!(app.ambience.briefing_title.is_empty());
+    assert!(app.ambience.briefing_subtitle.is_empty());
+    assert!(app.ambience.briefing_body.is_empty());
+    assert!(app.ambience.briefing_team_names[0].is_empty());
+    assert!(!app.has_unsaved_changes(), "復原到存檔狀態應清除 ambience dirty");
+    assert!(app.undo_journal.can_redo());
+    app.navigate_journal(true);
+    assert!(!app.status_is_error, "重做狀態：{}", app.status_message);
+    assert_eq!(app.ambience.briefing_title, "New mission");
+    assert_eq!(app.ambience.briefing_team_names[0], "Romans");
+
+    let official = dir.join("MAPS/OFFICIAL");
+    std::fs::create_dir_all(official.join("SCRIPT")).unwrap();
+    std::fs::write(official.join("SCRIPT/ak_level.bci"), against_rome_scenario::BciImage::idle().serialize()).unwrap();
+    app.install_loaded_map(official, TerrainSession::create_blank(5, 32)).unwrap();
+    app.map_properties_open = true;
+    let readonly_state = app.capture_briefing_control();
+    app.ambience.briefing_title = "Must be rejected".into();
+    app.ambience.dirty = true;
+    app.finish_control_edit(&ctx, readonly_state);
+    assert!(app.ambience.briefing_title.is_empty());
+    assert!(!app.ambience.dirty);
+    assert!(!app.undo_journal.can_undo());
+    std::fs::remove_dir_all(dir).unwrap();
+}

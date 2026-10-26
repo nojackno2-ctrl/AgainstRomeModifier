@@ -1,3 +1,7 @@
+## 2026-10-26 Codex：Briefing 文字接入全域復原（已驗證）
+- 修正地圖屬性與氛圍本地化面板的 briefing 標題、副標題、說明與隊伍名稱可繞過全域 Undo/Redo 的缺口；新增 `BriefingText` 子系統歷程，保存文字與 ambience dirty 狀態，連續文字編輯可合併為一步。兩個面板在原版地圖上停用文字欄位，歷程入口也拒絕原版地圖文字變更。
+- 新增 `briefing_text_uses_global_undo_redo_and_original_maps_reject_edits`，涵蓋四類文字復原、重做、dirty 還原與原版唯讀拒絕。首次 workspace 測試抓到只變更氛圍 dirty 也誤記成文字歷程，已限縮為實際 briefing 欄位變化；控制歷程聚焦測試 6 passed。`cargo check --workspace --locked --offline`、`cargo build --workspace --locked --offline` 及 workspace 測試（含單執行緒 app library 855 passed／6 ignored；其他 target 全通過）均成功。`cargo fmt --all --check` 因 repo 多處既有格式差異失敗，未執行全倉庫格式改寫。尚未做真實桌面文字編輯或 Safe Save 後重載驗收。
+
 ## 2026-10-26 Codex：AI 方案接入地圖視覺預覽（已驗證）
 - AI 工作室原本只呈現文字摘要；現在呼叫 `AiMapPlanPreviewBuilder` 顯示目前地圖上的預覽圖及高度／碰撞／材質操作統計，並提供材質變更、阻擋、遭拒特徵與保護區圖例。新增唯讀 `TerrainSession::core()` 供共用預覽建構器讀取編輯器工作階段。
 - 快取鍵納入 JSON 方案、地形高度、碰撞、材質 ID、水位及地圖尺寸；同一狀態重用 GPU texture，變更任一來源後重建。AI 工作室測試 21 passed；`cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-ai-visual-preview-target -- --test-threads=1`、`cargo check --workspace --locked --offline --target-dir re_workspace/codex-ai-visual-preview-target`、`cargo build --workspace --locked --offline --target-dir re_workspace/codex-ai-visual-preview-target` 及 `git diff --check` 均通過。無視窗 egui 回歸確認預覽不寫入地圖／改變歷程，來源編輯會更新快取；真實桌面視覺與高 DPI 操作仍待驗收。

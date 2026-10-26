@@ -753,7 +753,7 @@ impl AmbienceUi {
         }
     }
 
-    pub fn show(&mut self, ctx: &egui::Context, map_path: Option<&Path>, water_surface: f32) {
+    pub fn show(&mut self, ctx: &egui::Context, map_path: Option<&Path>, water_surface: f32, read_only: bool) {
         if !self.open {
             return;
         }
@@ -826,7 +826,7 @@ impl AmbienceUi {
                             self.render_atmosphere_tab(ui, water_surface, map_path)
                         }
                         AmbienceTab::Soundscape => self.render_soundscape_tab(ui, map_path),
-                        AmbienceTab::Localization => self.render_localization_tab(ui),
+                        AmbienceTab::Localization => self.render_localization_tab(ui, read_only),
                         AmbienceTab::AppLanguage => self.render_app_language_tab(ui),
                     });
 
@@ -1392,7 +1392,7 @@ impl AmbienceUi {
         }
     }
 
-    fn render_localization_tab(&mut self, ui: &mut egui::Ui) {
+    fn render_localization_tab(&mut self, ui: &mut egui::Ui, read_only: bool) {
         ui.heading(tr(self.app_language, "Map Briefing Localization (任務簡報多語言)", "任務簡報多語言"));
         ui.label(
             "編輯地圖任務標題、副標題、說明文字與隊伍名稱（原生 TEXT/US/briefing.put，CP1251）。",
@@ -1405,13 +1405,13 @@ impl AmbienceUi {
         ));
 
         ui.label(tr(self.app_language, "Briefing Title:", "簡報標題："));
-        if ui.text_edit_singleline(&mut self.briefing_title).changed() {
+        if ui.add_enabled(!read_only, egui::TextEdit::singleline(&mut self.briefing_title)).changed() {
             self.dirty = true;
         }
 
         ui.label(tr(self.app_language, "Briefing Subtitle:", "簡報副標題："));
         if ui
-            .text_edit_singleline(&mut self.briefing_subtitle)
+            .add_enabled(!read_only, egui::TextEdit::singleline(&mut self.briefing_subtitle))
             .changed()
         {
             self.dirty = true;
@@ -1419,7 +1419,7 @@ impl AmbienceUi {
 
         ui.label(tr(self.app_language, "Briefing Description / Objectives:", "任務簡報與目標說明："));
         if ui
-            .add(egui::TextEdit::multiline(&mut self.briefing_body).desired_rows(6))
+            .add_enabled(!read_only, egui::TextEdit::multiline(&mut self.briefing_body).desired_rows(6))
             .changed()
         {
             self.dirty = true;
@@ -1429,7 +1429,7 @@ impl AmbienceUi {
             for (index, name) in self.briefing_team_names.iter_mut().enumerate() {
                 ui.horizontal(|ui| {
                     ui.label(format!("{} {index}:", tr(self.app_language, "Team", "隊伍")));
-                    if ui.text_edit_singleline(name).changed() {
+                    if ui.add_enabled(!read_only, egui::TextEdit::singleline(name)).changed() {
                         self.dirty = true;
                     }
                 });
@@ -2014,7 +2014,7 @@ mod batch20_tests {
                     egui::CentralPanel::default().show(ctx, |ui| match tab {
                         AmbienceTab::Atmosphere => panel.render_atmosphere_tab(ui, 0.0, None),
                         AmbienceTab::Soundscape => panel.render_soundscape_tab(ui, None),
-                        AmbienceTab::Localization => panel.render_localization_tab(ui),
+                        AmbienceTab::Localization => panel.render_localization_tab(ui, false),
                         AmbienceTab::AppLanguage => panel.render_app_language_tab(ui),
                     });
                 });

@@ -1733,8 +1733,10 @@ impl EditorApp {
         };
         self.ambience.app_language = self.loc.current_language();
         let water_history = self.capture_water_control();
-        self.ambience.show(ctx, map_path, water);
+        let briefing_history = self.capture_briefing_control();
+        self.ambience.show(ctx, map_path, water, self.current_map_is_original());
         self.finish_control_edit(ctx, water_history);
+        self.finish_control_edit(ctx, briefing_history);
         if let Some((wx, wz)) = self.ambience.take_focus_zone_request() {
             self.focus_world_coordinates(wx, wz);
             let msg = format!(
@@ -12984,7 +12986,9 @@ impl EditorApp {
             crate::undo_journal::SubsystemId::Scenario => self.scenario.history_token(),
             crate::undo_journal::SubsystemId::Nature => self.nature.session.history_token(),
             crate::undo_journal::SubsystemId::Scene => self.scene.history_token(),
-            crate::undo_journal::SubsystemId::WaterControl | crate::undo_journal::SubsystemId::StartCamera => self.control_history.token(id),
+            crate::undo_journal::SubsystemId::WaterControl
+            | crate::undo_journal::SubsystemId::StartCamera
+            | crate::undo_journal::SubsystemId::BriefingText => self.control_history.token(id),
             crate::undo_journal::SubsystemId::Auxiliary => self.auxiliary_undo.len() as u64,
             _ => 0,
         })
@@ -13425,7 +13429,7 @@ impl crate::undo_journal::UndoTarget for EditorApp {
             Spawns => self.spawn_ui.history_token(),
             Scenario => self.scenario.history_token(),
             Scene => self.scene.history_token(),
-            WaterControl | StartCamera => self.control_history.token(id),
+            WaterControl | StartCamera | BriefingText => self.control_history.token(id),
             Auxiliary => self.auxiliary_undo.len() as u64,
             Other => {
                 // 局部操作若改動任一側，不得讓 journal 跨過複合操作邊界。
@@ -13463,7 +13467,7 @@ impl crate::undo_journal::UndoTarget for EditorApp {
                 success
             },
             Scene => self.scene.undo(),
-            WaterControl | StartCamera => self.navigate_control(id, false),
+            WaterControl | StartCamera | BriefingText => self.navigate_control(id, false),
             Auxiliary => self.navigate_auxiliary(false),
             Other => {
                 let success = self.settlement_history(false);
@@ -13494,7 +13498,7 @@ impl crate::undo_journal::UndoTarget for EditorApp {
                 success
             },
             Scene => self.scene.redo(),
-            WaterControl | StartCamera => self.navigate_control(id, true),
+            WaterControl | StartCamera | BriefingText => self.navigate_control(id, true),
             Auxiliary => self.navigate_auxiliary(true),
             Other => {
                 let success = self.settlement_history(true);
@@ -13577,6 +13581,7 @@ impl EditorApp {
     /// Renders the small Map Properties window displaying title, briefing, and start camera settings.
     pub fn show_map_properties(&mut self, ctx: &egui::Context) {
         let camera_history = self.capture_camera_control();
+        let briefing_history = self.capture_briefing_control();
         if !self.map_properties_open {
             return;
         }
@@ -13600,19 +13605,36 @@ impl EditorApp {
                     ));
                     ui.add_space(4.0);
 
+                    let read_only = self.current_map_is_original();
                     ui.label(tr(lang, "Map Title:", "地圖標題:"));
-                    if ui.text_edit_singleline(&mut self.ambience.briefing_title).changed() {
+                    if ui
+                        .add_enabled(
+                            !read_only,
+                            egui::TextEdit::singleline(&mut self.ambience.briefing_title),
+                        )
+                        .changed()
+                    {
                         self.ambience.dirty = true;
                     }
 
                     ui.label(tr(lang, "Briefing Subtitle:", "任務副標題:"));
-                    if ui.text_edit_singleline(&mut self.ambience.briefing_subtitle).changed() {
+                    if ui
+                        .add_enabled(
+                            !read_only,
+                            egui::TextEdit::singleline(&mut self.ambience.briefing_subtitle),
+                        )
+                        .changed()
+                    {
                         self.ambience.dirty = true;
                     }
 
                     ui.label(tr(lang, "Briefing Description / Objectives:", "任務簡報說明 / 目標:"));
                     if ui
-                        .add(egui::TextEdit::multiline(&mut self.ambience.briefing_body).desired_rows(5))
+                        .add_enabled(
+                            !read_only,
+                            egui::TextEdit::multiline(&mut self.ambience.briefing_body)
+                                .desired_rows(5),
+                        )
                         .changed()
                     {
                         self.ambience.dirty = true;
@@ -13707,6 +13729,7 @@ impl EditorApp {
             });
 
         self.finish_control_edit(ctx, camera_history);
+        self.finish_control_edit(ctx, briefing_history);
         self.map_properties_open = open;
     }
 }
