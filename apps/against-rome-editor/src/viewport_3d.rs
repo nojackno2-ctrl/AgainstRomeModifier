@@ -179,6 +179,7 @@ pub struct Viewport3d {
     // Floor texture atlas and tile mapping
     pub floor_atlas: Option<Arc<FloorTextureAtlas>>,
     pub floor_atlas_texture: Option<egui::TextureHandle>,
+    floor_atlas_gl_capability: FloorAtlasGlCapability,
     pub tile_textures: Option<Vec<String>>,
 
     /// Select ramp endpoints instead of applying continuous brush dabs.
@@ -204,6 +205,23 @@ pub struct Viewport3d {
     pub is_dragging_terrain: bool,
     pub last_rect: Option<Rect>,
     pub english: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FloorAtlasGlCapability {
+    /// Used by headless egui tests that have no renderer to upload into.
+    Headless,
+    /// A desktop renderer exists but its texture limit could not be queried.
+    Unknown,
+    MaxTextureSize(usize),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FloorAtlasTextureCompatibility {
+    Headless,
+    Unknown,
+    Supported,
+    ExceedsLimit { max_texture_size: usize },
 }
 
 impl std::fmt::Debug for Viewport3d {
@@ -286,6 +304,7 @@ impl Viewport3d {
             type_names: HashMap::new(),
             floor_atlas: None,
             floor_atlas_texture: None,
+            floor_atlas_gl_capability: FloorAtlasGlCapability::Headless,
             tile_textures: None,
             is_panning: false,
             is_rotating: false,
@@ -302,6 +321,39 @@ impl Viewport3d {
     pub fn set_floor_atlas(&mut self, atlas: Option<Arc<FloorTextureAtlas>>) {
         self.floor_atlas = atlas;
         self.floor_atlas_texture = None;
+    }
+
+    pub(crate) fn set_floor_atlas_gl_capability(&mut self, capability: FloorAtlasGlCapability) {
+        self.floor_atlas_gl_capability = match capability {
+            FloorAtlasGlCapability::MaxTextureSize(size) if size > 0 => capability,
+            FloorAtlasGlCapability::MaxTextureSize(_) => FloorAtlasGlCapability::Unknown,
+            _ => capability,
+        };
+        if self.floor_atlas.as_ref().is_some_and(|atlas| {
+            !matches!(
+                Self::atlas_texture_compatibility(atlas.size(), self.floor_atlas_gl_capability),
+                FloorAtlasTextureCompatibility::Headless | FloorAtlasTextureCompatibility::Supported
+            )
+        }) {
+            self.floor_atlas_texture = None;
+        }
+    }
+
+    pub(crate) fn atlas_texture_compatibility(
+        atlas_size: usize,
+        capability: FloorAtlasGlCapability,
+    ) -> FloorAtlasTextureCompatibility {
+        match capability {
+            FloorAtlasGlCapability::Headless => FloorAtlasTextureCompatibility::Headless,
+            FloorAtlasGlCapability::Unknown => FloorAtlasTextureCompatibility::Unknown,
+            FloorAtlasGlCapability::MaxTextureSize(0) => FloorAtlasTextureCompatibility::Unknown,
+            FloorAtlasGlCapability::MaxTextureSize(max_texture_size)
+                if atlas_size > max_texture_size =>
+            {
+                FloorAtlasTextureCompatibility::ExceedsLimit { max_texture_size }
+            }
+            FloorAtlasGlCapability::MaxTextureSize(_) => FloorAtlasTextureCompatibility::Supported,
+        }
     }
 
     /// Sets or updates the per-tile texture name grid.
@@ -339,6 +391,13 @@ impl Viewport3d {
     /// Synchronizes the CPU `FloorTextureAtlas` ARGB pixels into an egui `TextureHandle`.
     pub fn sync_floor_atlas_texture(&mut self, ctx: &egui::Context) {
         if let Some(ref atlas) = self.floor_atlas {
+            if !matches!(
+                Self::atlas_texture_compatibility(atlas.size(), self.floor_atlas_gl_capability),
+                FloorAtlasTextureCompatibility::Headless | FloorAtlasTextureCompatibility::Supported
+            ) {
+                self.floor_atlas_texture = None;
+                return;
+            }
             let width = atlas.size();
             let height = atlas.size();
             let mut pixels = Vec::with_capacity(width * height);
@@ -2558,6 +2617,41 @@ mod tests {
     }
 
     #[test]
+    fn atlas_size_limit_decision_only_rejects_known_oversized_atlases() {
+        assert_eq!(
+            Viewport3d::atlas_texture_compatibility(
+                4096,
+                FloorAtlasGlCapability::MaxTextureSize(2048),
+            ),
+            FloorAtlasTextureCompatibility::ExceedsLimit {
+                max_texture_size: 2048,
+            }
+        );
+        assert_eq!(
+            Viewport3d::atlas_texture_compatibility(
+                2048,
+                FloorAtlasGlCapability::MaxTextureSize(2048),
+            ),
+            FloorAtlasTextureCompatibility::Supported
+        );
+        assert_eq!(
+            Viewport3d::atlas_texture_compatibility(4096, FloorAtlasGlCapability::Unknown),
+            FloorAtlasTextureCompatibility::Unknown
+        );
+        assert_eq!(
+            Viewport3d::atlas_texture_compatibility(
+                4096,
+                FloorAtlasGlCapability::MaxTextureSize(0),
+            ),
+            FloorAtlasTextureCompatibility::Unknown
+        );
+        assert_eq!(
+            Viewport3d::atlas_texture_compatibility(4096, FloorAtlasGlCapability::Headless),
+            FloorAtlasTextureCompatibility::Headless
+        );
+    }
+
+    #[test]
     fn test_floor_atlas_texture_synchronization() {
         let mut vp = Viewport3d::new();
         let atlas = FloorTextureAtlas::create_with_decoder(vec!["4BA___51"], |_| None).unwrap();
@@ -2565,6 +2659,11 @@ mod tests {
         assert!(vp.floor_atlas_texture.is_none());
 
         let ctx = egui::Context::default();
+        vp.set_floor_atlas_gl_capability(FloorAtlasGlCapability::MaxTextureSize(1024));
+        vp.sync_floor_atlas_texture(&ctx);
+        assert!(vp.floor_atlas_texture.is_none());
+
+        vp.set_floor_atlas_gl_capability(FloorAtlasGlCapability::MaxTextureSize(2048));
         vp.sync_floor_atlas_texture(&ctx);
         assert!(vp.floor_atlas_texture.is_some());
 

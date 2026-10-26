@@ -192,6 +192,94 @@ fn partial_floor_atlas_diagnostic_names_fallback_tiles_and_copies_in_both_langua
 }
 
 #[test]
+fn oversized_floor_atlas_uses_cpu_fallback_and_reports_gl_limit() {
+    let layer = against_rome_textures::terrain_layer::TerrainLayer {
+        width: 128,
+        height: 128,
+        argb: vec![0xFF12_3456; 128 * 128],
+        green: vec![0; 128 * 128],
+    };
+    let atlas = || {
+        against_rome_textures::FloorTextureAtlas::create_with_decoder(
+            &["available_tile"],
+            |_| Some(layer.clone()),
+        )
+        .unwrap()
+    };
+    for (language, expected_message, copy_button) in [
+        (
+            AppLanguage::English,
+            "3D floor atlas is 2048×2048, above this device's GL_MAX_TEXTURE_SIZE limit of 1024; using CPU fallback colors.",
+            "Copy 3D diagnostic",
+        ),
+        (
+            AppLanguage::TraditionalChinese,
+            "3D 地表圖集大小為 2048×2048，超出此裝置的 GL_MAX_TEXTURE_SIZE 上限 1024；目前改用 CPU 替代色呈現。",
+            "複製 3D 診斷",
+        ),
+    ] {
+        let mut app = EditorApp::initial_state();
+        app.view_mode = ViewMode::View3D;
+        app.set_app_language(language);
+        app.set_floor_atlas_gl_capability(FloorAtlasGlCapability::MaxTextureSize(1024));
+        app.install_3d_floor_atlas(atlas());
+        assert_eq!(app.status_message, expected_message);
+        assert!(app.status_is_error);
+        assert!(app.viewport_3d.floor_atlas.is_some());
+
+        let ctx = egui::Context::default();
+        app.viewport_3d.sync_floor_atlas_texture(&ctx);
+        assert!(app.viewport_3d.floor_atlas_texture.is_none());
+        app.view_mode = ViewMode::Blended;
+        let output = gui_frame(&mut app, &ctx, vec![]);
+        assert!(gui_find(&output, expected_message).is_none());
+        assert!(gui_find(&output, copy_button).is_none());
+        app.view_mode = ViewMode::View3D;
+        let output = gui_frame(&mut app, &ctx, vec![]);
+        let button = gui_find(&output, copy_button).expect("oversize 3D diagnostic copy button");
+        gui_frame(&mut app, &ctx, gui_pointer(button.center(), true));
+        let output = gui_frame(&mut app, &ctx, gui_pointer(button.center(), false));
+        assert_eq!(output.platform_output.copied_text, expected_message);
+
+        let other_language = if language == AppLanguage::English {
+            AppLanguage::TraditionalChinese
+        } else {
+            AppLanguage::English
+        };
+        app.set_app_language(other_language);
+        assert!(app.status_message.contains("2048×2048"));
+        assert!(app.status_message.contains("1024"));
+        assert_ne!(app.status_message, expected_message);
+    }
+
+    let mut compatible_app = EditorApp::initial_state();
+    compatible_app.view_mode = ViewMode::View3D;
+    compatible_app
+        .set_floor_atlas_gl_capability(FloorAtlasGlCapability::MaxTextureSize(2048));
+    compatible_app.install_3d_floor_atlas(atlas());
+    assert!(!EditorApp::is_3d_material_diagnostic(&compatible_app.status_message));
+    assert!(!compatible_app.status_is_error);
+    let ctx = egui::Context::default();
+    compatible_app
+        .viewport_3d
+        .sync_floor_atlas_texture(&ctx);
+    assert!(compatible_app.viewport_3d.floor_atlas_texture.is_some());
+
+    let mut unknown_app = EditorApp::initial_state();
+    unknown_app.view_mode = ViewMode::View3D;
+    unknown_app.set_app_language(AppLanguage::English);
+    unknown_app.set_floor_atlas_gl_capability(FloorAtlasGlCapability::Unknown);
+    unknown_app.install_3d_floor_atlas(atlas());
+    assert_eq!(
+        unknown_app.status_message,
+        "3D floor atlas is 2048×2048, but the OpenGL texture limit is unknown; using CPU fallback colors."
+    );
+    let ctx = egui::Context::default();
+    unknown_app.viewport_3d.sync_floor_atlas_texture(&ctx);
+    assert!(unknown_app.viewport_3d.floor_atlas_texture.is_none());
+}
+
+#[test]
 fn three_d_material_diagnostic_is_only_shown_in_3d_view() {
     let mut app = EditorApp::initial_state();
     app.set_app_language(AppLanguage::TraditionalChinese);

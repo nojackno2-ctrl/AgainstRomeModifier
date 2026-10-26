@@ -29,7 +29,8 @@ use crate::tech_doc_ui::TechDocUi;
 use crate::terrain::{BrushPath, CollisionBrushOp, HeightBrushOp, TerrainSession};
 use crate::textures_ui::TexturesUi;
 use crate::viewport_3d::{
-    expand_troops_for_3d, load_formation_definition, TroopCatalog, Viewport3d, ViewportAction,
+    expand_troops_for_3d, load_formation_definition, FloorAtlasGlCapability,
+    FloorAtlasTextureCompatibility, TroopCatalog, Viewport3d, ViewportAction,
 };
 use against_rome_ai_planner::formation::FormationLayoutDefinition;
 use crate::{
@@ -208,6 +209,8 @@ pub struct EditorApp {
     floor_atlas_source: Option<FloorAtlasSource>,
     /// Exact status written by the last failed floor-atlas load, so recovery can clear only it.
     floor_atlas_error_status: Option<String>,
+    /// GL_MAX_TEXTURE_SIZE captured once from the active eframe Glow context.
+    floor_atlas_gl_capability: FloorAtlasGlCapability,
     pub tech_doc: TechDocUi,
     pub minimap: MinimapUi,
     pub(crate) design_check: crate::design_check_ui::DesignCheckUi,
@@ -287,9 +290,62 @@ impl EditorApp {
         }
     }
 
+    fn floor_atlas_size_limit_message(atlas_size: usize, limit: usize, english: bool) -> String {
+        if english {
+            format!(
+                "3D floor atlas is {atlas_size}×{atlas_size}, above this device's GL_MAX_TEXTURE_SIZE limit of {limit}; using CPU fallback colors."
+            )
+        } else {
+            format!(
+                "3D 地表圖集大小為 {atlas_size}×{atlas_size}，超出此裝置的 GL_MAX_TEXTURE_SIZE 上限 {limit}；目前改用 CPU 替代色呈現。"
+            )
+        }
+    }
+
+    fn floor_atlas_capability_unknown_message(atlas_size: usize, english: bool) -> String {
+        if english {
+            format!(
+                "3D floor atlas is {atlas_size}×{atlas_size}, but the OpenGL texture limit is unknown; using CPU fallback colors."
+            )
+        } else {
+            format!(
+                "無法取得 OpenGL 紋理上限，無法確認 {atlas_size}×{atlas_size} 的 3D 地表圖集是否可用；目前改用 CPU 替代色呈現。"
+            )
+        }
+    }
+
+    fn set_floor_atlas_gl_capability(&mut self, capability: FloorAtlasGlCapability) {
+        self.floor_atlas_gl_capability = capability;
+        self.viewport_3d
+            .set_floor_atlas_gl_capability(capability);
+    }
+
     fn install_3d_floor_atlas(&mut self, atlas: against_rome_textures::FloorTextureAtlas) {
         let unavailable_names = atlas.unavailable_names().to_vec();
+        let atlas_size = atlas.size();
         self.viewport_3d.set_floor_atlas(Some(std::sync::Arc::new(atlas)));
+        match Viewport3d::atlas_texture_compatibility(atlas_size, self.floor_atlas_gl_capability) {
+            FloorAtlasTextureCompatibility::ExceedsLimit { max_texture_size } => {
+                self.status_message = Self::floor_atlas_size_limit_message(
+                    atlas_size,
+                    max_texture_size,
+                    self.lang() == AppLanguage::English,
+                );
+                self.status_is_error = true;
+                self.floor_atlas_error_status = Some(self.status_message.clone());
+                return;
+            }
+            FloorAtlasTextureCompatibility::Unknown => {
+                self.status_message = Self::floor_atlas_capability_unknown_message(
+                    atlas_size,
+                    self.lang() == AppLanguage::English,
+                );
+                self.status_is_error = true;
+                self.floor_atlas_error_status = Some(self.status_message.clone());
+                return;
+            }
+            FloorAtlasTextureCompatibility::Headless | FloorAtlasTextureCompatibility::Supported => {}
+        }
         if !unavailable_names.is_empty() {
             self.status_message = Self::floor_atlas_partial_fallback_message(
                 &unavailable_names,
@@ -506,6 +562,17 @@ impl EditorApp {
 
 
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        use eframe::glow::HasContext as _;
+
+        let gl_capability = cc.gl.as_ref().map_or(FloorAtlasGlCapability::Unknown, |gl| {
+            // eframe invokes the Glow app creator with its current GL context.
+            let value = unsafe { gl.get_parameter_i32(eframe::glow::MAX_TEXTURE_SIZE) };
+            usize::try_from(value)
+                .ok()
+                .filter(|size| *size > 0)
+                .map(FloorAtlasGlCapability::MaxTextureSize)
+                .unwrap_or(FloorAtlasGlCapability::Unknown)
+        });
         // Load the user's installed CJK font, without redistributing font files.
         #[cfg(windows)]
         if let Some(windows) = std::env::var_os("WINDIR") {
@@ -527,9 +594,8 @@ impl EditorApp {
                 }
             }
         }
-        #[cfg(not(windows))]
-        let _ = cc;
         let mut app = Self::initial_state();
+        app.set_floor_atlas_gl_capability(gl_capability);
         app.modifier = ModifierUi::persisted(crate::modifier_ui::default_state_dir());
         if let Some(dir) = crate::storage::editor_data_dir() {
             match crate::recent_maps::RecentMaps::load(dir.join("recent-maps.json")) {
@@ -629,6 +695,7 @@ impl EditorApp {
             viewport_3d: Viewport3d::new(),
             floor_atlas_source: None,
             floor_atlas_error_status: None,
+            floor_atlas_gl_capability: FloorAtlasGlCapability::Headless,
             tech_doc: TechDocUi::default(),
             minimap: MinimapUi::default(),
             design_check: Default::default(),
@@ -4460,14 +4527,40 @@ impl EditorApp {
             )
             .into();
         } else if self.floor_atlas_error_status.as_deref() == Some(self.status_message.as_str()) {
-            if let Some(atlas) = self.viewport_3d.floor_atlas.as_ref() {
-                if !atlas.unavailable_names().is_empty() {
-                    self.status_message = Self::floor_atlas_partial_fallback_message(
-                        atlas.unavailable_names(),
-                        language == AppLanguage::English,
-                    );
-                    self.floor_atlas_error_status = Some(self.status_message.clone());
+            let updated_diagnostic = self.viewport_3d.floor_atlas.as_ref().and_then(|atlas| {
+                match Viewport3d::atlas_texture_compatibility(
+                    atlas.size(),
+                    self.floor_atlas_gl_capability,
+                ) {
+                    FloorAtlasTextureCompatibility::ExceedsLimit { max_texture_size } => Some(
+                        Self::floor_atlas_size_limit_message(
+                            atlas.size(),
+                            max_texture_size,
+                            language == AppLanguage::English,
+                        ),
+                    ),
+                    FloorAtlasTextureCompatibility::Unknown => Some(
+                        Self::floor_atlas_capability_unknown_message(
+                            atlas.size(),
+                            language == AppLanguage::English,
+                        ),
+                    ),
+                    FloorAtlasTextureCompatibility::Headless
+                    | FloorAtlasTextureCompatibility::Supported
+                        if !atlas.unavailable_names().is_empty() =>
+                    {
+                        Some(Self::floor_atlas_partial_fallback_message(
+                            atlas.unavailable_names(),
+                            language == AppLanguage::English,
+                        ))
+                    }
+                    FloorAtlasTextureCompatibility::Headless
+                    | FloorAtlasTextureCompatibility::Supported => None,
                 }
+            });
+            if let Some(diagnostic) = updated_diagnostic {
+                self.status_message = diagnostic;
+                self.floor_atlas_error_status = Some(self.status_message.clone());
             }
         }
     }
@@ -11796,8 +11889,11 @@ impl EditorApp {
         message.starts_with("3D floor texture archive")
             || message.starts_with("3D floor textures unavailable")
             || message.starts_with("3D floor atlas loaded with fallback colors")
+            || message.starts_with("3D floor atlas is ")
             || message.starts_with("3D 地表材質無法載入")
             || message.starts_with("3D 地表圖集已載入，但以下材質使用替代色")
+            || message.starts_with("3D 地表圖集大小為 ")
+            || message.starts_with("無法取得 OpenGL 紋理上限，無法確認 ")
             || message.starts_with("找不到 3D 地表材質檔 floortex.dat")
     }
 
