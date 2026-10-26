@@ -1,8 +1,8 @@
 # 地圖編輯器需求與證據核對
 
-## 2026-10-26 最新 Rust 驗收補記
+## 2026-10-27 最新 Rust 驗收補記
 
-- Phase 5 fallback 診斷與真實缺檔桌面路徑已驗證：在 TEMP ENDL_005 副本（無 `floortex.dat`）以新建置切至 3D，狀態列顯示 relief fallback；「複製 3D 診斷」按鈕在缺檔狀態可見，實際點擊後 Windows 剪貼簿與完整繁中訊息一致。TEMP 與安裝來源 55 檔 SHA-256 全相同，未 Safe Save。headless egui 測試涵蓋雙語文字及一般狀態不顯示按鈕；workspace check／test／build 通過（editor app 858 passed／6 ignored）。鍵盤平移／縮放與 2D→3D 返回後 fallback 仍可見且未產生 dirty；遊戲內效果仍未驗。詳見 `AI_HANDOFF.md` 2026-10-26 桌面驗收紀錄。
+- Phase 5 fallback 診斷與真實缺檔桌面路徑已驗證：在 TEMP ENDL_005 副本（無 `floortex.dat`）以新建置切至 3D，狀態列顯示 relief fallback；「複製 3D 診斷」按鈕於中英介面皆可用，實際點擊後 Windows 剪貼簿與各語系完整訊息逐字相同。桌面驗收也發現並修正切換語言後 fallback 訊息仍顯示舊語系；錯誤診斷細節保留原文。TEMP 與安裝來源 55 檔 SHA-256 全相同，未 Safe Save。headless egui 測試涵蓋雙語、語言往返及錯誤訊息原文；workspace check／test／build 通過（editor app 859 passed／6 ignored）。鍵盤平移／縮放與 2D→3D 返回後 fallback 仍可見且未產生 dirty；遊戲內效果仍未驗。詳見 `AI_HANDOFF.md` 2026-10-27 桌面驗收紀錄。
 - AI 工作室已接入 `AiMapPlanPreviewBuilder`，方案審查新增目前地形／水域視覺圖、變更統計及材質／阻擋／拒絕／保護區圖例；方案與底圖來源未變時重用 texture，來源變更後重建。無視窗 UI 測試通過：預覽未改高度、碰撞、dirty 或 undo，底圖修改後快取更新。2026-10-26 實際桌面以 Ollama `laguna-xs-2.1:latest` 完成 3 角色企劃、含湖泊／河流水深的預覽、套用、Safe Save、關閉重開；詳見 `AI_HANDOFF.md` 最新紀錄。真實桌面完整互動已驗，高 DPI／多螢幕仍待驗收。
 - AI 工作室「連線並列出模型」改由背景 worker 執行，UI 逐幀輪詢；端點 URL 納入方案輸入指紋，切換端點後會丟棄舊模型清單回應並清除舊方案。mock 延遲傳輸及端點切換測試通過；接入視覺預覽後 AI 工作室 21 項測試通過；完整 workspace 序列測試、check、build 通過。實際 Ollama 網路延遲／桌面操作仍需 live／GUI 驗收。
 - 新增物件／事件整合回歸：Safe Save 將新放置主屋轉為 DATA 預建物件，同時儲存以該物件 UUID 為目標的矩形區域勝利事件；重載後核對 DATA slot／UID、UUID、事件條件與勝利動作均一致，且 BCI 可解析。聚焦測試 1 passed、workspace check/build 通過、編輯器 app 852 passed／6 ignored。完整 workspace 測試僅 `ollama_wire_tests` 兩項固定連接埠測試在並行執行時互相干擾；該測試檔序列隔離重跑 16 passed。遊戲內觸發未驗證。詳見 `AI_HANDOFF.md` 2026-10-26 DATA 建築區域勝利事件整合重載。
@@ -57,7 +57,7 @@
 | 地形、材質、通行、歷史／儲存交易 | 驗收矩陣列出的 session、真正表單及 AI 跨模式測試 | 合成路徑已驗證；原版輸出仍有遊戲內 gate |
 | 自然物件／人物／部隊／建築與事件 | 單兵與nature fail/retry、身份、VM／dialog；四部族建築0–8/部隊0–7與事件的STA共同儲存矩陣；缺建築範本中英提示/目標/retry/重開/範本恢復 | 合成資料整合與工地提示已補；接著完成AI預覽；不推定多人同步或真實範本已驗證 |
 | 空白地圖語意 | Flat Template／平坦範本地圖維持既有整平流程；獨立「空白場景（實驗）」清來源物件／事件、13份runtime池（含光源與特效）與原生成腳本，以新idle main與backup取代 | 真實TEMP建立／保存／重開／新放置及事件／移除後回復bootstrap已驗證；其餘原生DATA池與遊戲開局仍未驗證，詳見空白契約；未宣稱可玩 |
-| 3D 真貼圖、水面、光照、標記、筆刷與 fallback | `MapEditorOpenGlTests.cs` 真實 GPU 離屏擷取（RTX 4080／GL 3.3） | 高度/undo/材質/水面更新已有真實畫面證據；2026-10-26 真實桌面 TEMP ENDL_005 3D 材質貼圖模式選「土路」並拖曳筆刷，材質鄰接篩選由隱藏 72 種變為 60 種；工具列 Undo／Redo 均顯示已套用統一復原紀錄，篩選隨之回復／重現，最後 Undo 回原狀。關閉視窗後地圖每檔 SHA-256 與開啟前一致，未 Safe Save。缺少 `floortex.dat` 的狀態診斷與 relief 替代已由 TEMP 桌面驗證；缺檔／載入錯誤時複製診斷按鈕與完整剪貼簿文字由 headless egui 測試驗證，未桌面點擊。無 GPU fallback、筆刷效能及高 DPI 尚待驗收 |
+| 3D 真貼圖、水面、光照、標記、筆刷與 fallback | `MapEditorOpenGlTests.cs` 真實 GPU 離屏擷取（RTX 4080／GL 3.3） | 高度/undo/材質/水面更新已有真實畫面證據；2026-10-26 真實桌面 TEMP ENDL_005 3D 材質貼圖模式選「土路」並拖曳筆刷，材質鄰接篩選由隱藏 72 種變為 60 種；工具列 Undo／Redo 均顯示已套用統一復原紀錄，篩選隨之回復／重現，最後 Undo 回原狀。關閉視窗後地圖每檔 SHA-256 與開啟前一致，未 Safe Save。缺少 `floortex.dat` 的 fallback 及中英診斷複製按鈕已由 TEMP 桌面操作驗證；切換 UI 語言後訊息同步更新，兩語剪貼簿文字逐字正確；TEMP 55 檔未變。無 GPU fallback、筆刷效能及高 DPI 尚待驗收 |
 | UI 中英／尺寸／DPI | 96 DPI 證據；`MapEditorHighDpiTests.cs` 100/150/200% 模擬 | 編輯器視窗（AI 對話框除外）改 AutoScaleMode.Dpi 並修正截字；實體高 DPI 螢幕未驗證 |
 | AI 正式生成／預覽／套用 | 序列鎖、取消、部分失敗、套用與儲存；視覺預覽接UI，隔離／拒絕區域／統計／圖片釋放、角色進度合成測試；`tests/ai_planner_live.rs` | 2026-10-26 現版以實際 `laguna-xs-2.1:latest` 完成單角色與三角色 live gate；另於桌面完成三角色生成→含水域預覽→套用→undo/redo 操作→Safe Save→關閉重開。三角色方案實際含 1 湖 amount 12、2 河 amount 16／16；套用 35,025 高度取樣、5,245 碰撞像素、1 材質筆刷、62 操作，Safe Save 一交易寫入 6 檔並由 TEMP 遊戲根目錄重載成功。首次 `--map` 無別名目錄的測試未能 Safe Save，後以 `--game <TEMP> --map ENDL_005` 修正。角色範圍外特徵會被忽略；遊戲內水面表現、實體 DPI／多螢幕與 GPU 畫面仍待驗收 |
 | 遊戲載入、存讀檔、原版品質 | 2026-10-22 舊輪未執行遊戲；10-26 已依授權啟動安裝版並檢查模組、CPU、執行緒及 GPU counters，畫面黑且 WPR 無權錄製 | 遊戲內 gate 未完成；依 `AGENTS.md` 僅能改動先備份的自製測試地圖，原版檔案唯讀；追蹤權限或可觀察環境仍待解決 |

@@ -120,3 +120,28 @@ fn three_d_material_fallback_diagnostic_can_be_copied_in_both_languages() {
     assert!(gui_find(&output, "Copy 3D diagnostic").is_none());
     assert!(gui_find(&output, "複製 3D 診斷").is_none());
 }
+
+#[test]
+fn three_d_material_fallback_status_tracks_language_switches() {
+    let mut app = EditorApp::initial_state();
+    app.status_message = EditorApp::floor_atlas_fallback_message(false).into();
+
+    app.set_app_language(AppLanguage::English);
+    assert_eq!(
+        app.status_message,
+        EditorApp::floor_atlas_fallback_message(true)
+    );
+
+    app.set_app_language(AppLanguage::TraditionalChinese);
+    assert_eq!(
+        app.status_message,
+        EditorApp::floor_atlas_fallback_message(false)
+    );
+
+    app.status_message = "3D floor textures unavailable / 3D 地表材質無法載入: invalid archive".into();
+    app.set_app_language(AppLanguage::English);
+    assert_eq!(
+        app.status_message,
+        "3D floor textures unavailable / 3D 地表材質無法載入: invalid archive"
+    );
+}

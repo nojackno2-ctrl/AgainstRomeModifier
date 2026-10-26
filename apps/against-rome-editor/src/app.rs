@@ -4371,6 +4371,14 @@ impl EditorApp {
     pub fn set_app_language(&mut self, language: AppLanguage) {
         self.loc.set_language(language);
         self.ambience.app_language = language;
+        if self.status_message == Self::floor_atlas_fallback_message(true)
+            || self.status_message == Self::floor_atlas_fallback_message(false)
+        {
+            self.status_message = Self::floor_atlas_fallback_message(
+                language == AppLanguage::English,
+            )
+            .into();
+        }
     }
 
     /// 設定讀取失敗只回報狀態，保留檔案並繼續啟動。
