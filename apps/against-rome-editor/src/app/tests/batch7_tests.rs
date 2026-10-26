@@ -86,3 +86,37 @@ fn view_controls_and_copy_loaded_folder_are_bilingual_and_headless() {
         assert!(!app.session.as_ref().unwrap().is_dirty());
     }
 }
+
+#[test]
+fn three_d_material_fallback_diagnostic_can_be_copied_in_both_languages() {
+    for (language, diagnostic, button) in [
+        (
+            AppLanguage::English,
+            "3D floor texture archive floortex.dat not found; showing relief fallback.",
+            "Copy 3D diagnostic",
+        ),
+        (
+            AppLanguage::TraditionalChinese,
+            "找不到 3D 地表材質檔 floortex.dat；目前以地形起伏色彩替代顯示。",
+            "複製 3D 診斷",
+        ),
+    ] {
+        let mut app = EditorApp::initial_state();
+        app.set_app_language(language);
+        app.status_message = diagnostic.into();
+        let ctx = egui::Context::default();
+        let settled = gui_frame(&mut app, &ctx, vec![]);
+        let button_rect = gui_find(&settled, button).expect("3D diagnostic copy button");
+        gui_frame(&mut app, &ctx, gui_pointer(button_rect.center(), true));
+        let output = gui_frame(&mut app, &ctx, gui_pointer(button_rect.center(), false));
+        assert_eq!(output.platform_output.copied_text, diagnostic);
+        assert!(!app.status_is_error);
+    }
+
+    let mut app = EditorApp::initial_state();
+    app.status_message = "Unified undo history applied.".into();
+    let ctx = egui::Context::default();
+    let output = gui_frame(&mut app, &ctx, vec![]);
+    assert!(gui_find(&output, "Copy 3D diagnostic").is_none());
+    assert!(gui_find(&output, "複製 3D 診斷").is_none());
+}

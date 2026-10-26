@@ -11693,6 +11693,13 @@ impl EditorApp {
         self.loaded_map_path.as_ref().map(|p| p.display().to_string())
     }
 
+    fn is_3d_material_diagnostic(message: &str) -> bool {
+        message.starts_with("3D floor texture archive")
+            || message.starts_with("3D floor textures unavailable")
+            || message.starts_with("3D 地表材質無法載入")
+            || message.starts_with("找不到 3D 地表材質檔 floortex.dat")
+    }
+
     /// 對話框及事件圖開啟期間不讓全域快捷鍵穿透至地圖。
     fn shortcuts_blocked(&self) -> bool {
         self.pending_action.is_some() || self.pending_save_warnings.is_some() || self.environment.has_modal()
@@ -12018,6 +12025,18 @@ impl EditorApp {
                     Color32::from_rgb(100, 200, 100)
                 };
                 ui.colored_label(color, &self.status_message);
+                if Self::is_3d_material_diagnostic(&self.status_message)
+                    && ui
+                        .button(tr(lang, "Copy 3D diagnostic", "複製 3D 診斷"))
+                        .on_hover_text(tr(
+                            lang,
+                            "Copy the current 3D material fallback reason.",
+                            "複製目前 3D 材質替代顯示的原因。",
+                        ))
+                        .clicked()
+                {
+                    ctx.copy_text(self.status_message.clone());
+                }
 
                 ui.separator();
                 ui.label(self.active_tool_status_text(lang));
