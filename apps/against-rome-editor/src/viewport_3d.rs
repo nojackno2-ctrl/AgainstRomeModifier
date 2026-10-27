@@ -1683,7 +1683,6 @@ impl Viewport3d {
         objects: &[WorldObject],
         selected_object: Option<(usize, u32)>,
     ) {
-        let hud_pos = Pos2::new(rect.min.x + 8.0, rect.max.y - 42.0);
         let sel_str = if let Some(sel) = selected_object {
             if self.english {
                 format!(" | Selected: Slot {}, UID {}", sel.0, sel.1)
@@ -1738,13 +1737,17 @@ impl Viewport3d {
             atlas_str,
             notice
         );
-        painter.text(
-            hud_pos,
-            egui::Align2::LEFT_BOTTOM,
+        let max_width = (rect.width() - 16.0).max(60.0);
+        let color = Color32::from_rgba_unmultiplied(220, 220, 220, 180);
+        let galley = painter.layout(
             text,
             egui::FontId::monospace(10.5),
-            Color32::from_rgba_unmultiplied(220, 220, 220, 180),
+            color,
+            max_width,
         );
+        let hud_y = (rect.max.y - 8.0 - galley.size().y).max(rect.min.y + 4.0);
+        let hud_pos = Pos2::new(rect.min.x + 8.0, hud_y);
+        painter.galley(hud_pos, galley, color);
     }
 
     /// Renders the shaded terrain mesh quads in back-to-front order.

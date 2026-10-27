@@ -10,6 +10,11 @@
 ## 2026-10-27 Codex / GPT-6 Luna：Phase 5 最小視窗與 DPI 唯讀盤點
 - 啟動尺寸為 1280×800、最小尺寸 800×600 邏輯點；未找到可確認的 DPI／多螢幕程式缺陷或原生視窗回歸，現有合成排版測試未涵蓋原生縮放。150%／200% 下最小視窗約需 1200×900／1600×1200 實體像素，屬工作區適配風險而非已重現裁切。保留尺寸設定；下一步於 100%／150%／200%、最小視窗、不同 DPI 螢幕移動及小於預設尺寸工作區進行桌面驗收。
 
+## 2026-10-27 Codex：最小視窗 3D HUD 折行修正
+- 以 egui headless `800×600`、中英語系及 3D／Blended 模式重現 HUD 文字超出窄視口、被 clip rect 截斷的風險。`viewport_3d.rs::render_hud` 現以 viewport 可用寬度排版折行，並依 galley 高度貼齊底部；回歸測試檢查視口內四邊界、實際裁剪矩形與完整說明字串。
+- 聚焦測試 `minimum_window_size_hud_and_controls_remain_unclipped` 通過；`cargo check --workspace --locked --offline --target-dir re_workspace/codex-min-window-hud` 通過；完整序列 workspace 測試通過（editor app 890 passed／6 ignored；其餘 workspace targets 無失敗）；`cargo build --workspace --locked --offline --target-dir re_workspace/codex-min-window-hud` 通過，未見 MSVC 連結錯誤；`git diff --check` 通過。
+- 僅證明合成 800×600 布局與 egui clip bounds；尚未在原生最小視窗、高 DPI／多螢幕或不同 GPU 驅動做桌面驗收。地圖編輯器整體目標仍未完成；保留既有 `AGENTS.md`／`README.md` 未提交變更。
+
 ## 2026-10-27 Codex：3D 空地點擊清除物件選取
 - 一般 3D 模式點擊空白地形時，`PickTerrain` 現會同時清除 placement 選取；射線未命中地形的天空點擊送出 `SelectObject(None)`。Ramp 取點保留既有物件選取；場景移動模式、Alt 相機、物件命中與地形筆刷路徑不變。新增真實多影格 egui/App regression，覆蓋物件點選→Ramp 取點保留選取→空地點擊清除且保留取點座標→天空點擊清除。
 - 曾誤把 Ramp 測試按下事件當作放開結果，以及同影格游標移動造成 CommitStroke；分開事件影格並改驗 press action 後，`test_viewport_3d_click_empty_terrain_and_sky_clears_object_selection_regression` 通過。`cargo check --workspace --locked --offline --target-dir re_workspace/codex-object-drag`、完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-object-drag -- --test-threads=1 --quiet`（editor app 889 passed／6 ignored；workspace 通過）、`cargo build --workspace --locked --offline --target-dir re_workspace/codex-object-drag` 及 `git diff --check` 通過。`cargo fmt --all -- --check` 未通過，顯示大量既有 workspace 格式差異；未執行全域格式化。未做本次變更的桌面／遊戲驗收；整體目標未完成。

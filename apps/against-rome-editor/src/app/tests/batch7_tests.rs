@@ -500,3 +500,109 @@ fn repaired_floortex_archive_at_same_path_retries_atlas_load() {
 
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn minimum_window_size_hud_and_controls_remain_unclipped() {
+    for (lang, mode) in [
+        (AppLanguage::English, ViewMode::View3D),
+        (AppLanguage::TraditionalChinese, ViewMode::View3D),
+        (AppLanguage::English, ViewMode::Blended),
+        (AppLanguage::TraditionalChinese, ViewMode::Blended),
+    ] {
+        let mut app = EditorApp::initial_state();
+        app.set_app_language(lang);
+        app.view_mode = mode;
+        app.session = Some(TerrainSession::create_blank(257, 32));
+        app.viewport_3d.hover_object = Some((15, 20300));
+        app.viewport_3d.hover_tile = Some((128, 128));
+
+        let ctx = egui::Context::default();
+        let size = Vec2::new(800.0, 600.0);
+        let output = gui_frame_at_size(&mut app, &ctx, size, vec![]);
+
+        if mode == ViewMode::View3D {
+            let vp_rect = app
+                .viewport_3d
+                .last_rect
+                .expect("3D viewport rect must exist");
+            assert!(vp_rect.min.x >= 0.0 && vp_rect.max.x <= size.x);
+            assert!(vp_rect.min.y >= 0.0 && vp_rect.max.y <= size.y);
+            assert!(
+                vp_rect.width() >= 200.0,
+                "viewport width must be usable: {vp_rect:?}"
+            );
+            assert!(
+                vp_rect.height() >= 100.0,
+                "viewport height must be usable: {vp_rect:?}"
+            );
+
+            // Verify HUD text is fully contained within the 3D viewport canvas bounds
+            let hud_prefix = if lang == AppLanguage::English {
+                "Controls: Right-drag: Orbit"
+            } else {
+                "操作指南：右鍵拖曳：旋轉視角"
+            };
+            let hud_shape = output
+                .shapes
+                .iter()
+                .find_map(|s| match &s.shape {
+                    egui::epaint::Shape::Text(t) if t.galley.text().starts_with(hud_prefix) => {
+                        Some((
+                            Rect::from_min_size(t.pos, t.galley.size()),
+                            s.clip_rect,
+                            t.galley.text(),
+                        ))
+                    }
+                    _ => None,
+                })
+                .expect("HUD overlay text must be rendered");
+
+            let (hud_rect, clip_rect, hud_text) = hud_shape;
+            assert!(
+                hud_rect.min.x >= vp_rect.min.x + 7.5,
+                "HUD min x out of bounds: {hud_rect:?} vs {vp_rect:?}"
+            );
+            assert!(
+                hud_rect.max.x <= vp_rect.max.x,
+                "HUD text must not overflow 3D viewport or clip rect: {hud_rect:?} vs {vp_rect:?} clip={clip_rect:?}"
+            );
+            assert!(
+                hud_rect.max.y <= vp_rect.max.y,
+                "HUD text must fit vertically within viewport: {hud_rect:?} vs {vp_rect:?}"
+            );
+            assert!(
+                hud_rect.min.y >= vp_rect.min.y,
+                "HUD text must not overflow the top of the viewport: {hud_rect:?} vs {vp_rect:?}"
+            );
+            assert!(
+                clip_rect.contains_rect(hud_rect),
+                "HUD text must fit within its actual painter clip: {hud_rect:?} vs {clip_rect:?}"
+            );
+            // Verify full content is preserved in the wrapped galley
+            let paint_label = if lang == AppLanguage::English {
+                "Click: Paint / Pick Object"
+            } else {
+                "左鍵點選：繪製／選取物件"
+            };
+            let viewport_label = if lang == AppLanguage::English {
+                "3D Terrain Viewport:"
+            } else {
+                "3D 地形視角："
+            };
+            assert!(hud_text.contains(paint_label));
+            assert!(hud_text.contains(viewport_label));
+        }
+
+        // Verify top-level status bar and tool text do not overflow horizontal bounds
+        for s in &output.shapes {
+            if let egui::epaint::Shape::Text(t) = &s.shape {
+                let r = Rect::from_min_size(t.pos, t.galley.size());
+                assert!(
+                    r.max.x <= size.x + 1.0,
+                    "Text shape {r:?} exceeds window width {size:?}: {:?}",
+                    t.galley.text()
+                );
+            }
+        }
+    }
+}
