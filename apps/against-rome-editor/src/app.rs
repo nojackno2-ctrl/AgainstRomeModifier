@@ -2995,7 +2995,7 @@ impl EditorApp {
         if self.nature.driver.is_active() {
             return Err("Settlement: finish the current Nature stroke first".into());
         }
-        if let Err(catalog_error) = self.ensure_nature_data_with_placement(true) {
+        if let Err(catalog_error) = self.ensure_nature_data() {
             let terrain = self.session.as_ref().ok_or("Settlement: load terrain first")?;
             let unresolved = self.environment.settlement_plan(
                 &[], terrain.vertex_size, Some(terrain.heights()),
@@ -3596,6 +3596,8 @@ const NATURE_WORLD_SIZE: f32 = 16384.0;
 struct NatureMapData {
     map: PathBuf,
     level: Vec<PlacedNatureObject>,
+    /// Nature 開始編輯時的 DATA 候選，用來辨識後續對同一 family 的衝突修改。
+    placement_snapshot: against_rome_placement::ObjectStore,
     /// slot -> (uid, type id): proves at save time that a removed slot is still the same object.
     identity: HashMap<i32, (u32, u16)>,
     positions: HashMap<i32, (f32, f32)>,
@@ -3724,13 +3726,6 @@ impl EditorApp {
     /// (Re)builds the catalog and level-object snapshot from the loaded DATA session. While
     /// Nature edits are pending the snapshot is frozen so slot identities stay provable.
     fn ensure_nature_data(&mut self) -> Result<(), String> {
-        self.ensure_nature_data_with_placement(false)
-    }
-
-    fn ensure_nature_data_with_placement(&mut self, allow_placement: bool) -> Result<(), String> {
-        if self.placement.is_dirty() && !allow_placement {
-            return Err("the Objects (DATA) session has unsaved edits; save or discard them before using the Nature brush".into());
-        }
         let map = self.placement.loaded_map().map(Path::to_path_buf).ok_or(
             "catalog/object data unavailable: load the map's DATA in the Objects panel first",
         )?;
@@ -3767,6 +3762,7 @@ impl EditorApp {
         let mut data = NatureMapData {
             map,
             level: Vec::new(),
+            placement_snapshot: self.placement.comparison_snapshot()?,
             identity: HashMap::new(),
             positions: HashMap::new(),
             catalog: Vec::new(),
@@ -3974,11 +3970,8 @@ impl EditorApp {
     }
 
     /// Replay Nature onto a detached current Placement store and serialize DATA once.
-    /// Independent conflicting workflows retain their existing fail-closed behavior.
+    /// 對同一候選合併物件與自然地景；刪除前須確認 family 未被後續修改。
     fn stage_nature_files(&self, target_map: &Path) -> Result<Vec<(PathBuf, Vec<u8>)>, String> {
-        if self.placement.is_dirty() && self.settlement_undo.is_empty() && self.settlement_redo.is_empty() {
-            return Err("Nature: the Objects (DATA) session has unsaved edits; save or discard them before saving Nature changes".into());
-        }
         let store = self.replay_nature_candidate(target_map, &self.nature.session, self.placement.detached_store()?)?;
         self.placement.stage_candidate_store(target_map, store)
     }
@@ -4014,10 +4007,8 @@ impl EditorApp {
             .filter(|d| same_path(&d.map, target_map))
             .ok_or("Nature: catalog/object data unavailable; cannot verify pending edits")?;
 
-        let disk = against_rome_placement::ObjectStore::load(target_map)
-            .map_err(|e| format!("Nature: cannot load DATA objects: {e}"))?;
-        let current_disk: HashMap<i32, (u32, u16)> = disk.objects().iter()
-            .map(|o| (o.slot as i32, (o.uid, o.type_id))).collect();
+        self.placement.verify_disk_baseline(target_map)
+            .map_err(|e| format!("Nature: {e}"))?;
         let current: HashMap<i32, (u32, u16)> = store
             .objects()
             .iter()
@@ -4028,12 +4019,35 @@ impl EditorApp {
             let expected = data.identity.get(slot).ok_or_else(|| {
                 format!("Nature: removed slot {slot} is not a known landscape object")
             })?;
-            if current.get(slot) != Some(expected) || current_disk.get(slot) != Some(expected) {
+            if current.get(slot) != Some(expected) {
                 return Err(format!(
-                    "Nature: slot {slot} changed on disk since it was selected; reload the map and redo the removal"
+                    "Nature: slot {slot} changed since it was selected; redo the removal"
                 ));
             }
+            if !data.placement_snapshot.family_matches(&store, *slot as usize, expected.0)
+                .map_err(|e| format!("Nature: cannot verify family at slot {slot}: {e}"))?
+            {
+                return Err(format!("Nature: family at slot {slot} changed after it was selected; resolve the Objects edit before removing it"));
+            }
             families.push((*slot as usize, expected.0));
+        }
+        // 種植複製的是筆刷開始時的第一個同類 family；後續變更不得靜默改變模板。
+        let snapshot_objects = data.placement_snapshot.objects();
+        let candidate_objects = store.objects();
+        let types: BTreeSet<_> = session.additions().iter().map(|a| a.type_id).collect();
+        for type_id in types {
+            let find_template = |objects: &[against_rome_placement::WorldObject]| {
+                objects.iter().find(|o| i32::from(o.type_id) == type_id
+                    && o.parent.is_none() && o.position.iter().all(|v| v.is_finite()))
+                    .map(|o| (o.slot, o.uid))
+            };
+            let original = find_template(&snapshot_objects).ok_or_else(|| format!("Nature: no original template for type {type_id}"))?;
+            if find_template(&candidate_objects) != Some(original)
+                || !data.placement_snapshot.family_matches(&store, original.0, original.1)
+                    .map_err(|e| format!("Nature: cannot verify template for type {type_id}: {e}"))?
+            {
+                return Err(format!("Nature: template for type {type_id} changed after planting; resolve the Objects edit first"));
+            }
         }
         // Add before removing so templates survive even when a whole type is erased.
         let requests: Vec<PlacementRequest> = session
@@ -11736,7 +11750,7 @@ angle=0.00
         assert!(!app.nature_is_dirty());
         assert!(app.status_is_error && app.status_message.contains("pick a landscape type"));
 
-        // Unsaved DATA edits make the snapshot stale, so the brush refuses.
+        // Nature 在已有 Objects 修改時擷取目前候選，不需要先儲存。
         let (mut app, root3) = nature_app("nature_placement_dirty");
         app.placement.open = true;
         app.placement.select_object(Some((0, 1)));
@@ -11744,12 +11758,13 @@ angle=0.00
         pending_panel_click(&mut app, &ctx, 0, "Snap to tile");
         assert!(app.placement.is_dirty());
         app.nature_set_enabled(true);
-        assert!(!app.nature_paint_tile(3, 3).changed() && !app.nature_is_dirty());
-        assert!(
-            app.status_message.contains("unsaved edits"),
-            "{}",
-            app.status_message
-        );
+        assert!(!app.status_is_error, "{}", app.status_message);
+        app.nature_select_type(i32::from(NATURE_TREE));
+        nature_stroke(&mut app, &[(10, 10)]);
+        assert!(app.nature_is_dirty() && app.placement.is_dirty());
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(!app.nature_is_dirty() && !app.placement.is_dirty());
         for dir in [root, root2, root3] {
             let _ = std::fs::remove_dir_all(dir);
         }
@@ -11858,6 +11873,102 @@ angle=0.00
     }
 
     #[test]
+    fn nature_and_unrelated_objects_edits_save_together_and_rollback() {
+        use against_rome_maps::TransactionFailurePoint as Fail;
+        let (mut app, root) = nature_app("nature_objects_combined");
+        let map = PathBuf::from(&app.map_path_input);
+        app.nature_set_enabled(true);
+        app.nature_select_type(i32::from(NATURE_TREE));
+        app.nature.brush_size = 3;
+        app.nature.density = NatureDensity::Dense;
+        nature_stroke(&mut app, &[(10, 10)]);
+        app.nature_set_operation(NatureOperation::Remove);
+        app.nature.brush_size = 1;
+        nature_stroke(&mut app, &[(3, 3)]);
+        let (added, removed) = app.nature_pending_counts();
+        assert!(added > 0 && removed == 2);
+        app.placement.store_mut().unwrap().set_family_team(1, 2, 3).unwrap();
+        assert!(app.placement.is_dirty() && app.nature_is_dirty());
+        let before = save_file_snapshot(&map);
+        app.safe_save_current_using(|tx| {
+            let mut injected = std::mem::replace(tx, against_rome_maps::MapSaveTransaction::new("unused"))
+                .with_injected_failure(Fail::BeforeFinalCommit, "模擬磁碟失敗");
+            injected.commit().map_err(|e| e.to_string())
+        });
+        assert!(app.status_is_error);
+        assert_eq!(save_file_snapshot(&map), before);
+        assert!(app.placement.is_dirty() && app.nature_is_dirty());
+
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(!app.placement.is_dirty() && !app.nature_is_dirty());
+        let objects = nature_active_objects(&map);
+        assert!(!objects.iter().any(|o| o.slot == 0 || o.slot == 2));
+        assert_eq!(objects.iter().find(|o| o.slot == 1).unwrap().team, 3);
+        assert_eq!(objects.len(), 3 + added);
+        assert_eq!(app.placement.objects(), objects);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn nature_removal_rejects_later_edits_to_same_family() {
+        let (mut app, root) = nature_app("nature_objects_overlap");
+        let map = PathBuf::from(&app.map_path_input);
+        app.nature_set_enabled(true);
+        app.nature_set_operation(NatureOperation::Remove);
+        app.nature.brush_size = 1;
+        nature_stroke(&mut app, &[(3, 3)]);
+        assert!(app.nature_is_dirty());
+        app.placement.store_mut().unwrap().set_family_team(0, 1, 3).unwrap();
+        let before = save_file_snapshot(&map);
+        app.safe_save_current();
+        assert!(app.status_is_error && app.status_message.contains("family"), "{}", app.status_message);
+        assert_eq!(save_file_snapshot(&map), before);
+        assert!(app.placement.is_dirty() && app.nature_is_dirty());
+        assert!(app.placement.store_mut().unwrap().undo());
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn nature_planting_rejects_template_edits_after_brush_stroke() {
+        let (mut app, root) = nature_app("nature_template_changed");
+        let map = PathBuf::from(&app.map_path_input);
+        app.nature_set_enabled(true);
+        app.nature_select_type(i32::from(NATURE_TREE));
+        app.nature.brush_size = 3;
+        app.nature.density = NatureDensity::Dense;
+        nature_stroke(&mut app, &[(10, 10)]);
+        assert!(app.nature_is_dirty());
+        app.placement.store_mut().unwrap().set_family_team(0, 1, 3).unwrap();
+        let before = save_file_snapshot(&map);
+        app.safe_save_current();
+        assert!(app.status_is_error && app.status_message.contains("template"), "{}", app.status_message);
+        assert_eq!(save_file_snapshot(&map), before);
+        assert!(app.placement.is_dirty() && app.nature_is_dirty());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn nature_can_remove_an_object_added_in_the_placement_candidate() {
+        let (mut app, root) = nature_app("nature_remove_pending_placement");
+        let map = PathBuf::from(&app.map_path_input);
+        let (slot, uid) = app.placement.store_mut().unwrap()
+            .clone_family_fixed(0, 1, [512 * 65536, 0, 0]).unwrap();
+        assert!(app.placement.is_dirty());
+        app.nature_set_enabled(true);
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert_eq!(app.nature.data.as_ref().unwrap().identity.get(&(slot as i32)), Some(&(uid, NATURE_TREE)));
+        assert!(app.nature.session.remove(&[slot as i32], &[]));
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(!nature_active_objects(&map).iter().any(|o| o.uid == uid));
+        assert!(!app.placement.is_dirty() && !app.nature_is_dirty());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn nature_safe_save_failure_restores_disk_and_keeps_edits_and_history() {
         use against_rome_maps::TransactionFailurePoint as Fail;
         let (mut app, root) = nature_app("nature_save_fail");
@@ -11927,11 +12038,13 @@ angle=0.00
         assert_eq!(save_file_snapshot(&map2), before);
         assert!(app.nature_is_dirty());
 
-        // Unsaved DATA-panel edits and Nature edits both want objects.dat: refuse, write nothing.
+        // 刪除候選中的 family 被 Objects 後續修改時必須拒絕，且不得寫入。
         let (mut app, root3) = nature_app("nature_save_conflict");
         let map3 = PathBuf::from(&app.map_path_input);
         app.nature_set_enabled(true);
-        nature_stroke(&mut app, &[(10, 10)]);
+        app.nature_set_operation(NatureOperation::Remove);
+        app.nature.brush_size = 1;
+        nature_stroke(&mut app, &[(3, 3)]);
         app.placement.open = true;
         app.placement.select_object(Some((0, 1)));
         let ctx = egui::Context::default();

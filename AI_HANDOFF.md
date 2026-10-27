@@ -2056,6 +2056,14 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 - 聚焦回歸涵蓋新增預建物件、事件、鏡頭、候選缺少綁定時拒絕、交易失敗不落盤、儲存後重載，以及移動既有綁定物件後更新 Objects 面板，皆通過。首次測試編譯因 `StartCamera` 無 `PartialEq` 失敗；另一測試錯誤假設移動後 UID 不變，實際會重建 UID，已改驗證新 DATA 與劇本綁定一致。
 - 完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-sdl-load-guard-20261027 -- --test-threads=1 --quiet` 結束碼 0；workspace `cargo check`、`cargo build` 與 `git diff --check` 通過。未做桌面或遊戲驗收。
 
+## 2026-10-27 Codex：Objects 與 Nature 共用 DATA 候選
+
+- Nature 啟動時保存當時的 Placement DATA 快照；儲存時在目前 detached store 上重播 Nature，先驗證磁碟基準，並比對待刪除 family 及種植模板的物件、位置、objdata、auxiliary、light、particle、lager、biglager 記錄，後續對同 family 或模板的修改會拒絕，無關修改可合併。
+- 聚焦 Nature 22 tests、Settlement 29 tests 與原生 family 比對回歸通過，包含交易失敗回滾、同一 family／模板衝突、先前新增物件再以 Nature 移除。首次測試使用帶 child 但無 light pool 的 house family，遭既有安全檢查拒絕；改用獨立 tree family。舊測試原先預期所有 Objects＋Nature 編輯皆拒絕，改為驗證同 family 衝突。
+- 完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-sdl-load-guard-20261027 -- --test-threads=1 --quiet` 結束碼 0，workspace `cargo check`、`cargo build` 與 `git diff --check` 通過。完整測試編譯後另補 family 資料池範圍測試，獨立聚焦測試 3 passed；執行程式碼未再變更。未做桌面或遊戲驗收，快照記憶體開銷未做大型地圖效能量測。
+- spawn 與 Objects／Nature 的 DATA 合併仍待規劃；Luna 唯讀稽核指出須在同一 detached ObjectStore 上規劃並核對 disk baseline，避免 pool 後寫覆蓋。
+- 後續檢查：Nature 超過單批 96 筆時，`apply_placements` 每批重新挑選第一個同類模板；若新配置的 slot 排在原模板之前，後批可能改用新物件。此為靜態風險，尚未用回歸重現或修正。
+
 ## 2026-10-27 Codex：背景寫入中的復原候選
 
 - 地圖重開時若最新快照仍在背景寫入，顯示同一已排入佇列的候選並暫停復原按鈕；等待期間每 200 ms 更新，完成後重新檢查來源指紋與已落盤檔案，寫入失敗則顯示錯誤。依地圖與作業序號處理晚到回報，避免捨棄或切圖後重現舊提示。復原相關測試 28 passed；完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-sdl-load-guard-20261027 -- --test-threads=1 --quiet` 結束碼 0，workspace `cargo check`、`cargo build` 與 `git diff --check` 通過。未做桌面驗收。

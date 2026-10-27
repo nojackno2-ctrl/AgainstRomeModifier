@@ -1797,6 +1797,62 @@ let compare = |s: &ObjectStore, stage: &str| assert_pools_match_frozen(s, "batch
         }
         out
     }
+    #[test]
+    fn family_matches_detects_owned_changes_but_allows_unrelated_edits() {
+        let original = rich_fixture();
+        let mut current = original.clone();
+        assert!(original.family_matches(&current, 0, 1).unwrap());
+        current.set_family_team(4, 5, 3).unwrap();
+        assert!(original.family_matches(&current, 0, 1).unwrap());
+        current.set_family_team(0, 1, 3).unwrap();
+        assert!(!original.family_matches(&current, 0, 1).unwrap());
+
+        let mut current = original.clone();
+        let data = current.col(0, 1);
+        current.pools.get_mut("objdata").unwrap().bytes[8 + data * 9 + 1] ^= 1;
+        assert!(!original.family_matches(&current, 0, 1).unwrap());
+        let mut current = original.clone();
+        current.pools.get_mut("light").unwrap().bytes[light_offset(1, 0)] ^= 1;
+        assert!(!original.family_matches(&current, 0, 1).unwrap());
+        let mut current = original.clone();
+        current.pools.get_mut("particle").unwrap().bytes[particle_rec(0) + 20] ^= 1;
+        assert!(!original.family_matches(&current, 0, 1).unwrap());
+    }
+    #[test]
+    fn family_matches_covers_linked_records_and_auxiliary_tails() {
+        let mut original = rich_fixture();
+        for (name, object_offset, header, stride, tails) in [
+            ("anim", 71, 8, 21, 2), ("gfxtype", 73, 8, 15, 1), ("action", 77, 12, 25, 0),
+        ] {
+            let mut bytes = vec![0u8; header + original.count * (stride + tails * 2)];
+            bytes[..4].copy_from_slice(&1u32.to_le_bytes());
+            bytes[4..8].copy_from_slice(&(original.count as u32).to_le_bytes());
+            if header == 12 { bytes[8..12].copy_from_slice(&6u32.to_le_bytes()); }
+            bytes[header] = 1;
+            original.pools.insert(name.into(), Blob::decode(bytes).unwrap());
+            let offset = original.record(0) + object_offset;
+            original.pools.get_mut("objects").unwrap().bytes[offset..offset + 2].copy_from_slice(&0u16.to_le_bytes());
+        }
+        let n = original.count;
+        let cases = [
+            ("objects", original.column_offset(0, 7)),
+            ("position", 9),
+            ("anim", 9),
+            ("anim", 8 + n * 21),
+            ("gfxtype", 9),
+            ("gfxtype", 8 + n * 15),
+            ("action", 13),
+            ("lager", lager_rec(0) + 1),
+            ("lager", big_link_offset(0)),
+            ("biglager", biglager_rec(0) + 1),
+        ];
+        assert!(original.family_matches(&original, 0, 1).unwrap());
+        for (pool, offset) in cases {
+            let mut changed = original.clone();
+            changed.pools.get_mut(pool).unwrap().bytes[offset] ^= 1;
+            assert!(!matches!(original.family_matches(&changed, 0, 1), Ok(true)), "{pool} 在 {offset} 的變更不得略過");
+        }
+    }
     fn assert_fail_closed(s: &mut ObjectStore, slot: usize, uid: u32, needle: &str, label: &str) {
         let before = s.snapshot();
         let err = s.family_details(slot, uid).unwrap_err();
@@ -2790,6 +2846,17 @@ impl ObjectStore {
     pub fn payload(&self, name: &str) -> Option<&[u8]> {
         self.pools.get(name).map(|b| b.bytes.as_slice())
     }
+    /// 擷取目前資料池內容；不複製與比較無關的編輯歷史。
+    pub fn detached_snapshot(&self) -> Self {
+        Self {
+            pools: self.pools.clone(),
+            count: self.count,
+            positions: self.positions,
+            root: self.root.clone(),
+            history: Vec::new(),
+            redo: Vec::new(),
+        }
+    }
     fn record(&self, s: usize) -> usize {
         16 + s * 79
     }
@@ -3241,6 +3308,73 @@ impl ObjectStore {
     /// Parent-child and garrison/particle closure, with strict external ownership rejection.
     pub fn family(&self, slot: usize, uid: u32) -> Result<Vec<usize>> {
         self.family_details(slot, uid).map(|d| d.object_slots)
+    }
+
+    /// 比對 family 與其移除時會處理的完整關聯記錄，不受其他 family 的編輯影響。
+    pub fn family_matches(&self, other: &Self, slot: usize, uid: u32) -> Result<bool> {
+        if self.count != other.count || self.positions != other.positions {
+            return Ok(false);
+        }
+        let details = self.family_details(slot, uid)?;
+        if details != other.family_details(slot, uid)? {
+            return Ok(false);
+        }
+        let mut ranges: Vec<(&str, usize, usize)> = Vec::new();
+        for &object in &details.object_slots {
+            let record = self.record(object);
+            ranges.push(("objects", record, 79));
+            for (column, width) in COLUMNS.iter().copied().enumerate() {
+                ranges.push(("objects", self.column_offset(object, column), width));
+            }
+            for position in self.poslinks(object) {
+                ranges.push(("position", 8 + position * 17, 17));
+            }
+            let data = self.col(object, 1);
+            for (segment, width) in SEGMENTS.iter().copied().enumerate() {
+                let base = 8 + self.count * SEGMENTS[..segment].iter().sum::<usize>();
+                ranges.push(("objdata", base + data * width, width));
+            }
+            for (name, offset, header, stride, tails) in [
+                ("anim", 71, 8, 21, 2),
+                ("gfxtype", 73, 8, 15, 1),
+                ("action", 77, 12, 25, 0),
+            ] {
+                let linked = self.link(object, offset);
+                if linked == 65535 { continue; }
+                ranges.push((name, header + linked * stride, stride));
+                for tail in 0..tails {
+                    ranges.push((name, header + self.count * stride + tail * self.count * 2 + linked * 2, 2));
+                }
+            }
+        }
+        for &slot in &details.light_slots {
+            for (column, width) in against_rome_data::pool::WIDTHS.iter().copied().enumerate() {
+                let base = 8 + 1024 * against_rome_data::pool::WIDTHS[..column].iter().sum::<usize>();
+                ranges.push(("light", base + slot * width, width));
+            }
+        }
+        for &slot in &details.particle_slots {
+            ranges.push(("particle", 12 + slot * PARTICLE_RECORD_SIZE, PARTICLE_RECORD_SIZE));
+            for column in 0..4 {
+                ranges.push(("particle", 12 + PARTICLE_CAPACITY * PARTICLE_RECORD_SIZE + column * PARTICLE_CAPACITY * 4 + slot * 4, 4));
+            }
+        }
+        for &slot in &details.lager_slots {
+            ranges.push(("lager", 16 + slot * LAGER_RECORD_SIZE, LAGER_RECORD_SIZE));
+            ranges.push(("lager", 16 + LAGER_CAPACITY * LAGER_RECORD_SIZE + slot * 2, 2));
+        }
+        for &slot in &details.big_lager_slots {
+            ranges.push(("biglager", 12 + slot * BIG_LAGER_RECORD_SIZE, BIG_LAGER_RECORD_SIZE));
+        }
+        for (name, offset, length) in ranges {
+            let end = offset.checked_add(length).ok_or("family record offset overflow")?;
+            let left = self.payload(name).and_then(|bytes| bytes.get(offset..end))
+                .ok_or_else(|| format!("invalid family record in {name}"))?;
+            let right = other.payload(name).and_then(|bytes| bytes.get(offset..end))
+                .ok_or_else(|| format!("invalid family record in {name}"))?;
+            if left != right { return Ok(false); }
+        }
+        Ok(true)
     }
 
     fn snapshot(&self) -> BTreeMap<String, Vec<u8>> {

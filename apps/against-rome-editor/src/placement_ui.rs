@@ -389,11 +389,11 @@ impl PlacementUi {
         self.store.clone().ok_or_else(|| "Load DATA first".into())
     }
 
-    pub(crate) fn stage_candidate_store(
-        &self,
-        map: &Path,
-        store: ObjectStore,
-    ) -> Result<Vec<(PathBuf, Vec<u8>)>> {
+    pub(crate) fn comparison_snapshot(&self) -> Result<ObjectStore> {
+        self.store.as_ref().map(ObjectStore::detached_snapshot).ok_or_else(|| "Load DATA first".into())
+    }
+
+    pub(crate) fn verify_disk_baseline(&self, map: &Path) -> Result<()> {
         let disk = ObjectStore::load(map)?;
         let baseline = self
             .baseline
@@ -409,6 +409,15 @@ impl PlacementUi {
                 ));
             }
         }
+        Ok(())
+    }
+
+    pub(crate) fn stage_candidate_store(
+        &self,
+        map: &Path,
+        store: ObjectStore,
+    ) -> Result<Vec<(PathBuf, Vec<u8>)>> {
+        self.verify_disk_baseline(map)?;
         let mut candidate = Self::default();
         candidate.loaded_map = self.loaded_map.clone();
         candidate.baseline = self.baseline.clone();
