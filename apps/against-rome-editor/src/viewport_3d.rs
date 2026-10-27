@@ -1079,6 +1079,15 @@ impl Viewport3d {
                 self.hover_object = None;
             }
 
+            // Remember the gesture origin on press. The first drag frame may already
+            // be outside the sprite's pick radius; testing only the current hit would
+            // then turn an object-origin drag into a terrain brush stroke.
+            if rect.contains(pos)
+                && ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary))
+            {
+                self.drag_started_on_object = picked_obj_idx.is_some();
+            }
+
             // 9b. Terrain Picking
             let ray = self
                 .camera
@@ -3551,6 +3560,90 @@ mod tests {
             );
             assert_eq!(sky_action.picked_terrain(), None);
         }
+    }
+    #[test]
+    fn test_object_origin_drag_does_not_paint_terrain_after_leaving_pick_radius() {
+        let session = TerrainSession::create_blank(257, 32);
+        let field = Viewport3d::build_height_field(&session, 6.0, 4.0).unwrap();
+        let mut vp = Viewport3d::new();
+        let viewport_size = egui::vec2(800.0, 600.0);
+        let objects = vec![make_test_world_object(3, 8888, 1, 1, 8192.0, 8192.0)];
+        let (scene_objects, pickables, sprites) = vp.convert_world_objects(&objects);
+        let ctx = egui::Context::default();
+        let mut action = ViewportAction::None;
+        let mut run = |vp: &mut Viewport3d, events: Vec<egui::Event>| {
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, viewport_size)),
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run(raw, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    action = vp.show(ui, ctx, &session, 4.0, 50.0, 4.0, &objects, None);
+                });
+            });
+            action.clone()
+        };
+
+        run(&mut vp, vec![]);
+        let rect = vp.last_rect.expect("viewport rect is recorded");
+        let frame = vp
+            .prepare_frame(rect.size(), &field, 50.0, 4.0, &scene_objects, &sprites)
+            .unwrap();
+        let screen_at = |x: f32, z: f32| {
+            let p = frame
+                .project_world_to_screen(SceneVec3::new(x, field.sample_height(x, z), z))
+                .expect("terrain point projects to screen");
+            rect.min + egui::vec2(p.x, p.y)
+        };
+        let object_pos = screen_at(32.0, 32.0);
+        let terrain_pos = screen_at(36.0, 36.0);
+        let terrain_local = SceneVec2::new(terrain_pos.x - rect.min.x, terrain_pos.y - rect.min.y);
+        assert!(object_pos.distance(terrain_pos) > Viewport3d::OBJECT_PICK_RADIUS);
+        assert_eq!(
+            frame.pick_object(
+                terrain_local,
+                &scene_objects,
+                &pickables,
+                &field,
+                Viewport3d::OBJECT_PICK_RADIUS,
+            ),
+            None,
+            "first drag destination must be outside the object's pick radius"
+        );
+        assert!(TerrainRayPicker::try_pick_point(
+            &field,
+            vp.camera.create_ray(
+                terrain_local.x,
+                terrain_local.y,
+                rect.width(),
+                rect.height(),
+            ),
+        )
+        .is_some(), "first drag destination must still hit terrain");
+
+        let pointer = |pos: Pos2, pressed: bool| {
+            vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: Default::default(),
+                },
+            ]
+        };
+        assert_eq!(run(&mut vp, pointer(object_pos, true)), ViewportAction::None);
+        assert!(vp.drag_started_on_object);
+        assert_eq!(
+            run(&mut vp, vec![egui::Event::PointerMoved(terrain_pos)]),
+            ViewportAction::None,
+            "object-origin drag must not emit Paint"
+        );
+        assert!(!vp.is_dragging_terrain);
+        assert_eq!(run(&mut vp, pointer(terrain_pos, false)), ViewportAction::None);
+        assert!(!vp.drag_started_on_object, "release clears gesture origin");
+        assert!(!vp.is_dragging_terrain);
     }
 }
 

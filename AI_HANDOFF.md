@@ -1,3 +1,7 @@
+## 2026-10-27 Codex / GPT-6 Luna：避免物件起始拖曳觸發地形筆刷
+- 3D viewport 在 Primary press edge 記錄手勢起點是否命中物件；即使首個移動影格已離開物件拾取半徑、仍命中地形，也不會發出 Paint／CommitStroke。新增真實 egui 多影格回歸，驗證 press object → move outside pick radius onto terrain → release 全程無地形筆畫且釋放後清除狀態；既有空地拖曳／短點擊測試保留。
+- `cargo check --workspace --locked --offline --target-dir re_workspace/codex-object-drag` 通過；`cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-object-drag -- --test-threads=1 --quiet` 通過，editor app 888 passed／6 ignored；`cargo build --workspace --locked --offline --target-dir re_workspace/codex-object-drag` 通過；`git diff --check` 通過。未做桌面／遊戲內驗收；整體目標未完成。
+
 ## 2026-10-27 Codex / GPT-6 Luna：水位為零的水域筆刷提示
 - Water 工具只在 `water_surface <= 0` 顯示繁中／英文提示「水位必須大於 0 才能繪製水域。」；正值低於 4 不顯示此提示，仍由核心契約決定可否繪製。既有 egui 回歸確認零水位無寫入且提示出現，`surface = 0.5` 時提示消失且筆刷改變地形。
 - 定向測試 `water_brush_rejects_zero_surface_but_edits_at_a_positive_surface_below_four` 1 passed；`cargo check --workspace --locked --offline --target-dir re_workspace/codex-water-bed-fix` 與 `cargo build --workspace --locked --offline --target-dir re_workspace/codex-water-bed-fix` 通過，`git diff --check` 通過。未做桌面／遊戲內水域驗收；整體目標未完成。
