@@ -1947,3 +1947,4 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 - 點選使用 Raise 模式單擊；程式路由為命中物件優先選取、命中地形只發出 PickTerrain，未形成筆刷拖曳。未按 Safe Save。PowerShell 逐檔 SHA-256 比對 staging 與 TEMP map folder：52 對 52 檔、0 差異。
 - 外部唯讀調查 job `2773a3fd2150` 已終止成功：Codex 報告不能由現有資料判定黑畫面根因或 `gspy` 預期行為；提出下一步以 ProcMon 唯讀擷取 `Against_Rome.exe` 的 CreateFile／ReadFile／Load Image，核對影片 DLL、地圖/DATA 查找及映像/命令列/工作目錄。AGY 任務僅回傳 10 分鐘列印逾時的部分輸出，沒有可採用結論。
 - 狀態：3D 物件 Sprite 點選桌面驗收通過一個實際物件案例；alpha 透明區穿透、多螢幕 DPI／最小尺寸、遊戲 runtime 載入仍待驗。黑畫面根因未證實；未啟動遊戲或寫入安裝目錄。
+- 後續檢查：系統找不到 `Procmon.exe`；內建 WPR 有 `FileIO` profile，但 `wpr.exe -start FileIO -filemode -recordtempto <TEMP>` 回 `Access is denied`、`0x80070005`。未提高權限、未啟動遊戲，沒有 ETL 輸出；執行期檔案追蹤目前待有可用權限或工具後再做。

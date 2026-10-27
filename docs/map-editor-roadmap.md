@@ -74,3 +74,5 @@
 2026-10-27 桌面補驗：最新建置的 3D viewport 以 Ramp 點選兩個 terrain points 後，UI 顯示 `Ramp applied: 140 height samples modified.`；Undo／Redo／Undo 最後回到無未儲存標記。TEMP map 52 檔 SHA-256 與測試 staging 0 差異。按 `Load DATA` 後實際載入 6651 個物件並顯示 sprite；Frame (F) 可定位目前選取物件。後續從 slot 2／UID 19214 定位後實際點擊場景 Sprite，UIA 選取變更為 slot 1480／UID 20186，HUD 顯示 Hover UID，故一般 3D Sprite 點選桌面驗收通過一例。透明 alpha 區穿透仍未逐點驗證。畫面使用 missing-floortex relief fallback；遊戲 runtime 仍未驗。
 
 2026-10-27 唯讀啟動調查：Codex/AGY job `2773a3fd2150` 完成。Codex 未能由現有靜態資料判定黑畫面根因或 `gspy` 預期行為；建議後續以 ProcMon 唯讀觀察 `Against_Rome.exe` 的 `CreateFile`、`ReadFile`、`Load Image`，比對影片 DLL、地圖/DATA 路徑及實際映像／命令列／工作目錄。AGY 只回報 10 分鐘列印逾時，無有效結論。未執行 ProcMon 或啟動遊戲。
+
+2026-10-27 追蹤工具檢查：找不到 ProcMon；WPR `FileIO` profile 可用，但啟動 `wpr.exe -start FileIO -filemode -recordtempto <TEMP>` 回 `Access is denied (0x80070005)`。未提高權限或啟動遊戲，尚無執行期檔案追蹤證據。
