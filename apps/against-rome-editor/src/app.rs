@@ -12655,30 +12655,27 @@ impl EditorApp {
                 }
             });
             // 狀態列
-            ui.horizontal_wrapped(|ui| {
-                let is_3d_diagnostic = Self::is_3d_material_diagnostic(&self.status_message);
-                if !is_3d_diagnostic || self.view_mode == ViewMode::View3D {
+            let is_3d_diagnostic = Self::is_3d_material_diagnostic(&self.status_message);
+            let show_status_message = !self.status_message.is_empty()
+                && (!is_3d_diagnostic || self.view_mode == ViewMode::View3D);
+            if show_status_message {
+                ui.horizontal_wrapped(|ui| {
                     let color = if self.status_is_error {
                         Color32::from_rgb(240, 80, 80)
                     } else {
                         Color32::from_rgb(100, 200, 100)
                     };
-                    if is_3d_diagnostic {
-                        // Keep long fallback reports from pushing the tool/cursor readouts
-                        // outside narrow windows. The full message remains available on hover
-                        // and through the copy button below.
-                        let diagnostic_width = (ui.available_width() * 0.38)
-                            .clamp(90.0, 460.0)
-                            .min(ui.available_width());
-                        ui.add_sized(
-                            [diagnostic_width, ui.spacing().interact_size.y],
-                            egui::Label::new(egui::RichText::new(&self.status_message).color(color))
-                                .truncate(true),
-                        )
-                        .on_hover_text(&self.status_message);
-                    } else {
-                        ui.colored_label(color, &self.status_message);
-                    }
+                    // Keep long reports from pushing the tool/cursor readouts off-screen.
+                    // Hover exposes the complete message; 3D diagnostics also have a copy action.
+                    let status_width = (ui.available_width() * 0.38)
+                        .clamp(90.0, 460.0)
+                        .min(ui.available_width());
+                    ui.add_sized(
+                        [status_width, ui.spacing().interact_size.y],
+                        egui::Label::new(egui::RichText::new(&self.status_message).color(color))
+                            .truncate(true),
+                    )
+                    .on_hover_text(&self.status_message);
                     if is_3d_diagnostic
                         && ui
                             .button(tr(lang, "Copy 3D diagnostic", "複製 3D 診斷"))
@@ -12691,8 +12688,10 @@ impl EditorApp {
                     {
                         ctx.copy_text(self.status_message.clone());
                     }
-                }
+                });
+            }
 
+            ui.horizontal_wrapped(|ui| {
                 ui.separator();
                 ui.label(self.active_tool_status_text(lang));
 

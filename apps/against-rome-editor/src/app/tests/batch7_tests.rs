@@ -270,6 +270,100 @@ fn long_3d_fallback_diagnostic_keeps_status_controls_visible_in_narrow_window() 
 }
 
 #[test]
+fn minimum_editor_layout_stays_visible_and_non_overlapping_at_common_dpi_scales() {
+    let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0));
+    let contained = |outer: Rect, inner: Rect| {
+        inner.min.x >= outer.min.x - 0.1
+            && inner.min.y >= outer.min.y - 0.1
+            && inner.max.x <= outer.max.x + 0.1
+            && inner.max.y <= outer.max.y + 0.1
+    };
+    let overlaps = |a: Rect, b: Rect| {
+        a.min.x < b.max.x - 0.1
+            && a.max.x > b.min.x + 0.1
+            && a.min.y < b.max.y - 0.1
+            && a.max.y > b.min.y + 0.1
+    };
+
+    let diagnostic =
+        "3D floor texture archive floortex.dat not found; showing relief fallback.";
+    for pixels_per_point in [1.0, 1.5, 2.0] {
+        let mut app = EditorApp::initial_state();
+        app.set_app_language(AppLanguage::English);
+        app.view_mode = ViewMode::View3D;
+        app.session = Some(TerrainSession::create_blank(5, 32));
+        app.status_message = diagnostic.into();
+        app.status_is_error = true;
+
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput {
+            screen_rect: Some(screen),
+            ..Default::default()
+        };
+        input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().native_pixels_per_point =
+            Some(pixels_per_point);
+        let mut central_rect = Rect::NOTHING;
+        let output = ctx.run(input, |ctx| {
+            app.ui_frame(ctx);
+            central_rect = ctx.available_rect();
+        });
+
+        let top_panel = Rect::from_min_max(
+            screen.min,
+            Pos2::new(screen.max.x, central_rect.min.y),
+        );
+        let left_panel = Rect::from_min_max(
+            Pos2::new(screen.min.x, central_rect.min.y),
+            Pos2::new(central_rect.min.x, screen.max.y),
+        );
+        let viewport = app.viewport_3d.last_rect.expect("3D viewport rect");
+        let title = gui_find(&output, "Against Rome Map Editor (Rust)").expect("top row title");
+        let tools_heading = gui_find(&output, "Tools & Settings").expect("left panel heading");
+        let status_label = gui_find_prefix(&output, "3D floor texture archive")
+            .expect("truncated status message remains painted");
+        let copy_status = gui_find(&output, "Copy 3D diagnostic")
+            .expect("status copy control remains painted");
+        let tool_status = gui_find(&output, &app.active_tool_status_text(AppLanguage::English))
+            .expect("active tool status remains painted");
+        let status_row = status_label.union(copy_status);
+
+        assert!((output.pixels_per_point - pixels_per_point).abs() < 0.01);
+        for (name, rect) in [
+            ("visible screen", screen),
+            ("top panel", top_panel),
+            ("left panel", left_panel),
+            ("central area", central_rect),
+            ("3D viewport", viewport),
+            ("title", title),
+            ("left panel heading", tools_heading),
+            ("status row", status_row),
+            ("active tool status", tool_status),
+        ] {
+            assert!(contained(screen, rect), "{name} outside 800x600 logical screen at {pixels_per_point} ppp: {rect:?}");
+        }
+        assert!(contained(top_panel, title), "top title outside top panel at {pixels_per_point} ppp");
+        assert!(contained(left_panel, tools_heading), "tools heading outside left panel at {pixels_per_point} ppp");
+        assert!(contained(top_panel, status_row), "status controls outside top panel at {pixels_per_point} ppp");
+        assert!(contained(top_panel, tool_status), "tool status outside top panel at {pixels_per_point} ppp");
+        assert!(contained(central_rect, viewport), "3D viewport outside central area at {pixels_per_point} ppp");
+
+        for (a_name, a, b_name, b) in [
+            ("top panel", top_panel, "left panel", left_panel),
+            ("top panel", top_panel, "central area", central_rect),
+            ("left panel", left_panel, "central area", central_rect),
+            ("top title", title, "status row", status_row),
+            ("left panel", left_panel, "status row", status_row),
+            ("central area", central_rect, "status row", status_row),
+            ("status message", status_label, "copy control", copy_status),
+            ("status row", status_row, "tool status", tool_status),
+            ("status row", status_row, "3D viewport", viewport),
+        ] {
+            assert!(!overlaps(a, b), "{a_name} overlaps {b_name} at {pixels_per_point} ppp: {a:?} / {b:?}");
+        }
+    }
+}
+
+#[test]
 fn oversized_floor_atlas_uses_cpu_fallback_and_reports_gl_limit() {
     let layer = against_rome_textures::terrain_layer::TerrainLayer {
         width: 128,

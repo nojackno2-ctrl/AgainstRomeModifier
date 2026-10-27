@@ -1969,3 +1969,13 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 - Luna 唯讀複核也確認舊 scene test 的 anchor 實際落在不透明像素，未覆蓋透明點擊。新增 app picker regression 覆蓋前景透明／不透明、層次順序與 atlas placeholder。
 - 驗證：定向測試 `rendered_billboard_pick_uses_screen_pixels_and_passes_through_transparency` 通過；`cargo check --workspace --locked --offline --target-dir re_workspace/codex-billboard-pick` 通過；`cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-billboard-pick -- --test-threads=1 --quiet` 通過（editor app 894 passed、6 ignored，workspace 無失敗）；`cargo build --workspace --locked --offline --target-dir re_workspace/codex-billboard-pick` 與 `git diff --check` 通過。存在未修改的測試 unused warnings。
 - 以同一建置開啟 TEMP `arm_map_validate_20261027_091847\MAPS\ENDL_005`，載入 6,651 objects。Ramp 模式下不透明點 `(643,456)` 重複命中 slot 1546／UID 20253；同 sprite bounds 左上 `(595,309)` 重複穿透命中後方 slot 1287／UID 14444。取消 Ramp 後沒有未儲存標記；測試副本與 52 檔 staging 基準逐檔 SHA-256 比對 0 差異，測試程序 PID 38688 已關閉。桌面 alpha 穿透驗收通過此一實際重疊案例；多場景覆蓋及遊戲內渲染仍未驗。
+
+## 2026-10-27 Codex / GPT-6 Luna：安裝版遊戲啟動唯讀重測
+
+- 以 `C:\Program Files (x86)\Against Rome\Against_Rome.exe` 在原安裝目錄啟動 PID 28000，視窗標題為 `15.10.2003 Against Rome - Version 1.000`。啟動約 120 秒後 CUA 截圖仍全黑；程序 `Responding=True`、CPU 約 1.66 秒，未進入主選單。以 Alt+F4 關閉並確認 PID 已結束。
+- 僅觀察畫面與程序，未載入地圖、未寫入安裝目錄。啟動穩定性仍未解；依此結果不進行安裝版自製地圖驗收。後續優先處理可用桌面驗收或離線回歸覆蓋的編輯器缺口。
+
+## 2026-10-27 Codex / GPT-6 Luna：最小視窗狀態列重疊修正
+
+- 以 headless `EditorApp` 在 800×600 邏輯尺寸檢視 `pixels_per_point` 1.0／1.5／2.0，確認狀態訊息與工具狀態文字原先畫在相同位置。`app.rs` 現將訊息限寬截短、hover 可讀全文，並把工具／游標及未儲存狀態放在獨立列；3D 診斷複製控制保留。
+- `batch7_tests.rs` 新增完整 EditorApp 最小視窗 regression，檢查中央 viewport 和面板範圍、狀態訊息／複製按鈕／工具文字可見且互不重疊。驗證：`cargo check --workspace --locked --offline --target-dir re_workspace/codex-status-layout` 通過；完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-status-layout -- --test-threads=1 --quiet` 通過（editor app 895 passed、6 ignored、0 failed；workspace 無失敗）；`cargo build --workspace --locked --offline --target-dir re_workspace/codex-status-layout` 與 `git diff --check` 通過。僅有既有 unused／unused_mut warnings。未做原生多螢幕／實體 DPI 驗收，未提交／推送。
