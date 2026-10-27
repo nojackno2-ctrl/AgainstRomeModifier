@@ -116,6 +116,7 @@ pub struct SceneUi {
     translate_dialog: Option<TranslateDialog>,
     add_dialog: Option<AddDialog>,
     confirm_restore: bool,
+    scene_filter: String,
 }
 
 impl SceneUi {
@@ -148,6 +149,7 @@ impl SceneUi {
         self.translate_dialog = None;
         self.add_dialog = None;
         self.confirm_restore = false;
+        self.scene_filter.clear();
         self.status = status;
     }
 
@@ -1296,29 +1298,58 @@ impl SceneUi {
             }
         });
         let mut result: Result<()> = Ok(());
-        egui::ScrollArea::vertical()
-            .max_height(220.0)
-            .id_source("scene_objects")
-            .show(ui, |ui| {
-                for i in 0..self.objects.len() {
-                    let o = &self.objects[i];
-                    let label = format!(
-                        "{}{} #{} {} [{}] T{}",
-                        if self.is_removed(o) { "✖ " } else { "" },
-                        o.source_file,
-                        o.object_index,
-                        o.name,
-                        o.kind(),
-                        o.team
-                    );
-                    if ui
-                        .selectable_label(self.selected == Some(i), label)
-                        .clicked()
-                    {
-                        self.select(Some(i));
+        let query = self.scene_filter.trim().to_lowercase();
+        let visible_objects: Vec<_> = self
+            .objects
+            .iter()
+            .enumerate()
+            .filter_map(|(index, object)| {
+                matches_scene_object_filter(object, self.is_removed(object), &query)
+                    .then_some(index)
+            })
+            .collect();
+        let filter_hint = self.t(
+            "篩選檔案、名稱、類型、隊伍或編號",
+            "Filter file, name, kind, team or index",
+        );
+        ui.horizontal(|ui| {
+            ui.add(
+                egui::TextEdit::singleline(&mut self.scene_filter)
+                    .hint_text(filter_hint),
+            );
+            ui.label(format!("{}/{}", visible_objects.len(), self.objects.len()));
+        });
+        if visible_objects.is_empty() {
+            ui.label(self.t("沒有符合的 SDL 物件。", "No SDL objects match this filter."));
+        } else {
+            let row_height = ui.text_style_height(&egui::TextStyle::Body);
+            egui::ScrollArea::vertical()
+                .max_height(220.0)
+                .id_source("scene_objects")
+                .show_rows(ui, row_height, visible_objects.len(), |ui, rows| {
+                    for row in rows {
+                        let i = visible_objects[row];
+                        let label = {
+                            let o = &self.objects[i];
+                            format!(
+                                "{}{} #{} {} [{}] T{}",
+                                if self.is_removed(o) { "✖ " } else { "" },
+                                o.source_file,
+                                o.object_index,
+                                o.name,
+                                o.kind(),
+                                o.team
+                            )
+                        };
+                        if ui
+                            .selectable_label(self.selected == Some(i), label)
+                            .clicked()
+                        {
+                            self.select(Some(i));
+                        }
                     }
-                }
-            });
+                });
+        }
         if let Some(i) = self.selected {
             ui.separator();
             let o = self.objects[i].clone();
@@ -1436,6 +1467,33 @@ fn kind_text(kind: &str, english: bool) -> String {
     .to_string()
 }
 
+fn matches_scene_object_filter(object: &MapSceneObject, removed: bool, query: &str) -> bool {
+    let normalized_query = query.to_lowercase();
+    let terms: Vec<_> = normalized_query.split_whitespace().collect();
+    if terms.is_empty() {
+        return true;
+    }
+    let kind_english = match object.kind() {
+        "建築" => "building",
+        "單位" => "unit",
+        _ => "object",
+    };
+    let searchable = format!(
+        "{} #{} id{} {} {} {} {} T{} {}",
+        object.source_file,
+        object.object_index,
+        object.object_index,
+        object.name,
+        object.kind(),
+        kind_english,
+        object.team,
+        object.team,
+        if removed { "removed 待移除" } else { "" },
+    )
+    .to_lowercase();
+    terms.iter().all(|term| searchable.contains(term))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1514,6 +1572,20 @@ mod tests {
         }
         assert!(!ui.redo());
         assert!(ui.take_history_receipts().is_empty());
+        cleanup(dir);
+    }
+
+    #[test]
+    fn scene_object_filter_searches_file_name_kind_team_index_and_removal() {
+        let (ui, dir) = loaded("scene_filter");
+        let object = &ui.objects()[0];
+        assert!(matches_scene_object_filter(object, false, "bauromhau00"));
+        assert!(matches_scene_object_filter(object, false, "ENDLOS_01_SIEDLUNG01.SDL BUILDING"));
+        assert!(matches_scene_object_filter(object, false, "T0 #0"));
+        assert!(!matches_scene_object_filter(object, false, "figrom"));
+        assert!(matches_scene_object_filter(object, true, "removed"));
+        assert!(!matches_scene_object_filter(object, false, "removed"));
+        assert!(matches_scene_object_filter(object, false, "   "));
         cleanup(dir);
     }
 

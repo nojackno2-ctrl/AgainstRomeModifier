@@ -2015,3 +2015,9 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 
 - 前述 3D 地形深度遮擋已提交並推送 `53c2579`；`HEAD` 與 `origin/主要開發` 同步。最新建置以 `--map C:\Program Files (x86)\Against Rome\MAPS\ENDL_001` 啟動後，再從 UI 唯讀載入 `MP_001`；SDL 場景面板顯示 520 個物件，3D relief terrain 與 `Atlas: 144 tiles` 可見。編輯器程序已關閉，未操作 Safe Save，未修改安裝地圖。
 - 本次只證明零售地圖可由編輯器讀取並顯示 SDL 清單／地形；尚未驗證編輯器匯出地圖能由遊戲載入，也未驗證深度遮擋對零售 DATA sprite 的實際效果。原先 `ENDL_001` 的 DATA object 數為 0，不能作 sprite 遮擋驗收證據。
+
+## 2026-10-27 Codex / GPT-6 Luna：SDL 場景清單篩選
+
+- `scene_ui.rs` 新增 SDL 物件即時篩選與可視列虛擬化；支援檔案路徑、物件名稱／中英文類型、隊伍、索引及待移除標記，多詞以 AND 比對，顯示命中數。加入涵蓋各欄位的 regression。
+- 驗證：聚焦測試通過；完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-scene-filter-20261027 -- --test-threads=1 --quiet` 通過（editor app 899 passed、6 ignored，workspace 無失敗）；`cargo check --workspace --locked --offline --target-dir %TEMP%\arm-scene-filter-20261027` 與 `cargo build --workspace --locked --offline --target-dir %TEMP%\arm-scene-filter-20261027` 通過。
+- 零售地圖桌面驗收未完成：新建置執行檔使用 `--map <完整路徑>` 或 `--game <安裝目錄> --map MP_001` 均立即以結束碼 1 離開，未形成視窗；原因未查明。未儲存或修改安裝地圖。`git diff --check` 通過。
