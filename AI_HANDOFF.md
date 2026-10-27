@@ -1940,3 +1940,10 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 - 新啟動 `re_workspace/codex-alpha-pick/debug/against-rome-editor.exe --game <TEMP game root> --map ENDL_005`，實際在 3D viewport 啟用 Ramp。第一點選取訊息為 `(54, 151)`，第二點 `(40, 28)` 後 UI 顯示 `Ramp applied: 140 height samples modified.` 並出現未儲存標記。其後執行 Undo／Redo／Undo，最終 UI 為 `Undo performed.` 且未再顯示 `[Unsaved Changes]`。
 - 測試只操作 TEMP 地圖；未按 Safe Save。staging 與 TEMP map folder 均 52 檔，逐檔 SHA-256 相同、0 差異。初次開啟 Objects 面板時尚未載入 DATA；按 `Load DATA` 後 UI 顯示 `Active objects: 6651 / Capacity: 14000`，3D 場景可見建築／森林 sprite 與 marker，Frame (F) 也能移動畫面至已選 slot 0。其後不同位置點擊未能改變選取 slot，故不宣稱 Sprite picking 通過。畫面使用 `floortex.dat` 缺失 relief fallback。
 - 這次實際點擊成功，修正 2026-10-27 前一筆「Ramp 起點狀態未前進」的觀察：先前座標操作未建立 gesture；本次用 CUA 新鮮截圖後點 viewport 地形，UIA 狀態轉移與 Height 改變訊息均可見。Ramp desktop click／Undo 已驗，透明／不透明 Sprite 點選、多螢幕 DPI、最小尺寸及遊戲 runtime 仍待驗。
+
+## 2026-10-27 Codex：3D 物件 Sprite 點選桌面驗收與遊戲啟動唯讀調查
+
+- 以執行中的 `re_workspace/codex-alpha-pick/debug/against-rome-editor.exe` 和 TEMP `ENDL_005` 驗收。Objects 面板載入 6651 個物件；從 slot 2／UID 19214 定位後，點擊 3D 場景可見物件，UIA 選取變為 slot 1480／UID 20186，HUD 同時顯示該 UID 的 Hover 標籤。證明此場景至少一個 Sprite 的實際點選／選取可用；尚未對已知透明像素逐點驗證 alpha 穿透。
+- 點選使用 Raise 模式單擊；程式路由為命中物件優先選取、命中地形只發出 PickTerrain，未形成筆刷拖曳。未按 Safe Save。PowerShell 逐檔 SHA-256 比對 staging 與 TEMP map folder：52 對 52 檔、0 差異。
+- 外部唯讀調查 job `2773a3fd2150` 已終止成功：Codex 報告不能由現有資料判定黑畫面根因或 `gspy` 預期行為；提出下一步以 ProcMon 唯讀擷取 `Against_Rome.exe` 的 CreateFile／ReadFile／Load Image，核對影片 DLL、地圖/DATA 查找及映像/命令列/工作目錄。AGY 任務僅回傳 10 分鐘列印逾時的部分輸出，沒有可採用結論。
+- 狀態：3D 物件 Sprite 點選桌面驗收通過一個實際物件案例；alpha 透明區穿透、多螢幕 DPI／最小尺寸、遊戲 runtime 載入仍待驗。黑畫面根因未證實；未啟動遊戲或寫入安裝目錄。

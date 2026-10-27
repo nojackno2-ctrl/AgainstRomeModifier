@@ -71,4 +71,6 @@
 
 2026-10-27 隔離 runtime 續驗：editor-saved `ENDL_005` 的 52 檔 staging 經 `--game <TEMP 根目錄> --map ENDL_005 --validate-map --lang zh` 檢查為 0 錯誤、5 個 wave-no-destination 警告。完整 TEMP 遊戲副本啟動與安裝執行檔搭配 TEMP 工作目錄都超過 60 秒黑畫面，沒有遊戲內載入證據。安裝版地圖寫入指令被安全檢查拒絕；未寫入安裝版。事後比較 ENDL_005 原始備份 manifest 為 55 檔、0 差異。
 
-2026-10-27 桌面補驗：最新建置的 3D viewport 以 Ramp 點選兩個 terrain points 後，UI 顯示 `Ramp applied: 140 height samples modified.`；Undo／Redo／Undo 最後回到無未儲存標記。TEMP map 52 檔 SHA-256 與測試 staging 0 差異。按 `Load DATA` 後實際載入 6651 個物件並顯示 sprite；Frame (F) 可定位目前選取物件，但不同位置點擊未觀察到選取 slot 變更，Sprite picking 仍未驗。畫面使用 missing-floortex relief fallback；遊戲 runtime 仍未驗。
+2026-10-27 桌面補驗：最新建置的 3D viewport 以 Ramp 點選兩個 terrain points 後，UI 顯示 `Ramp applied: 140 height samples modified.`；Undo／Redo／Undo 最後回到無未儲存標記。TEMP map 52 檔 SHA-256 與測試 staging 0 差異。按 `Load DATA` 後實際載入 6651 個物件並顯示 sprite；Frame (F) 可定位目前選取物件。後續從 slot 2／UID 19214 定位後實際點擊場景 Sprite，UIA 選取變更為 slot 1480／UID 20186，HUD 顯示 Hover UID，故一般 3D Sprite 點選桌面驗收通過一例。透明 alpha 區穿透仍未逐點驗證。畫面使用 missing-floortex relief fallback；遊戲 runtime 仍未驗。
+
+2026-10-27 唯讀啟動調查：Codex/AGY job `2773a3fd2150` 完成。Codex 未能由現有靜態資料判定黑畫面根因或 `gspy` 預期行為；建議後續以 ProcMon 唯讀觀察 `Against_Rome.exe` 的 `CreateFile`、`ReadFile`、`Load Image`，比對影片 DLL、地圖/DATA 路徑及實際映像／命令列／工作目錄。AGY 只回報 10 分鐘列印逾時，無有效結論。未執行 ProcMon 或啟動遊戲。
