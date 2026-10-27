@@ -12,7 +12,7 @@ use against_rome_packaging::{
 use against_rome_scenario::model::{ScenarioDocument, Spawn};
 use crate::layout_io::{LayoutDialogKind, LayoutFilePicker};
 use eframe::egui::{self, Color32, Vec2};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 /// Borrowed live editor state. Capture is read-only and never saves or reloads a session.
 #[derive(Clone, Copy)]
@@ -420,6 +420,17 @@ impl PackagingUi {
                 "Please specify output ZIP file path.",
             )
             .to_string();
+            self.status_message = msg.clone();
+            self.status_is_error = true;
+            return Err(msg);
+        }
+
+        if let Err(reason) = validate_export_destination(dir, zip) {
+            let msg = if self.english {
+                format!("Unsafe ZIP export destination: {reason}")
+            } else {
+                format!("ZIP 匯出目的地不安全：{reason}")
+            };
             self.status_message = msg.clone();
             self.status_is_error = true;
             return Err(msg);
@@ -1299,6 +1310,80 @@ impl PackagingUi {
             }
         }
     }
+}
+
+/// Resolves a path through existing symlinks/junctions while allowing missing trailing
+/// components, then rejects ZIP destinations within the source map or game MAPS tree.
+fn validate_export_destination(source: &Path, destination: &Path) -> Result<(), String> {
+    let source = resolve_path_through_existing_ancestors(source)
+        .map_err(|e| format!("cannot resolve source map path: {e}"))?;
+    let destination = resolve_path_through_existing_ancestors(destination)
+        .map_err(|e| format!("cannot resolve ZIP destination: {e}"))?;
+
+    if destination.starts_with(&source) {
+        return Err("the ZIP must be outside the source map directory".to_string());
+    }
+    let game_root = against_rome_maps::detect_game_root(&destination, None)
+        .or_else(|| against_rome_maps::detect_game_root(&source, None));
+    if let Some(game_root) = game_root {
+        let maps_dir = resolve_path_through_existing_ancestors(&game_root.join("MAPS"))
+            .map_err(|e| format!("cannot resolve game MAPS directory: {e}"))?;
+        if destination.starts_with(&maps_dir) {
+            return Err("the ZIP must be outside the game MAPS directory".to_string());
+        }
+    }
+    Ok(())
+}
+
+/// Makes the path absolute and lexically clean, then canonicalizes its nearest existing
+/// ancestor so existing symlink/junction components cannot hide an unsafe destination.
+fn resolve_path_through_existing_ancestors(path: &Path) -> std::io::Result<PathBuf> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    let mut normalized = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            Component::Prefix(_) | Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    normalized.push(component.as_os_str());
+                }
+            }
+            Component::Normal(part) => normalized.push(part),
+        }
+    }
+
+    let mut existing = normalized.clone();
+    let mut missing = Vec::new();
+    loop {
+        match std::fs::symlink_metadata(&existing) {
+            Ok(_) => break,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+        let Some(name) = existing.file_name().map(|name| name.to_os_string()) else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("no existing ancestor for {}", normalized.display()),
+            ));
+        };
+        missing.push(name);
+        if !existing.pop() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("no existing ancestor for {}", normalized.display()),
+            ));
+        }
+    }
+    let mut resolved = std::fs::canonicalize(existing)?;
+    for component in missing.into_iter().rev() {
+        resolved.push(component);
+    }
+    Ok(resolved)
 }
 
 fn memory_snapshot(

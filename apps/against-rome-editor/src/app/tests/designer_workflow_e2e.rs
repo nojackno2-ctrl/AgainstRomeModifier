@@ -751,6 +751,69 @@ fn packaging_temp_map_zip_payload_hashes_and_safe_default_directory() {
 }
 
 #[test]
+fn packaging_export_rejects_source_and_game_maps_destinations_but_allows_external_zip() {
+    use against_rome_packaging::exporter::ModBundleExporter;
+
+    let root = workflow_fixture("packaging_destination_guard");
+    let mut app = wizard_map(&root, 5, false);
+    // Mark only this already-created TEMP fixture as a game root so detect_game_root
+    // can distinguish its MAPS folder from an arbitrary directory named "MAPS".
+    std::fs::write(root.join("Against_Rome.exe"), []).unwrap();
+    let map = app.loaded_map_path.clone().unwrap();
+    let before = map_bytes(&map);
+    app.packaging.map_dir_input = map.to_string_lossy().into_owned();
+    app.packaging.generate_thumbnail = false;
+
+    let nested_target = map.join("nested/unsafe.zip");
+    app.packaging.output_zip_input = nested_target.to_string_lossy().into_owned();
+    app.packaging.request_export();
+    app.process_packaging_export_request();
+    assert!(!nested_target.exists());
+    assert!(!map.join("nested").exists(), "rejected export must not create directories or temp files");
+    assert!(app.packaging.status_is_error);
+    assert!(app.packaging.status_message.contains("source map"));
+    assert_eq!(map_bytes(&map), before);
+
+    let maps_dir = root.join("MAPS");
+    let maps_entries_before: std::collections::BTreeSet<_> = std::fs::read_dir(&maps_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    let game_maps_target = root.join("MAPS/unsafe.zip");
+    app.packaging.output_zip_input = game_maps_target.to_string_lossy().into_owned();
+    app.packaging.request_export();
+    app.process_packaging_export_request();
+    assert!(!game_maps_target.exists());
+    assert!(app.packaging.status_is_error);
+    assert!(app.packaging.status_message.contains("game MAPS"));
+    let maps_entries_after: std::collections::BTreeSet<_> = std::fs::read_dir(&maps_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(maps_entries_after, maps_entries_before, "rejected export must create no ZIP or sibling temporary file");
+    assert_eq!(map_bytes(&map), before);
+
+    let external_zip = root.join("outside/export.zip");
+    app.packaging.output_zip_input = external_zip.to_string_lossy().into_owned();
+    app.packaging.request_export();
+    app.process_packaging_export_request();
+    assert!(external_zip.is_file(), "external destination should be created");
+    let manifest = ModBundleExporter::verify_zip(&external_zip).unwrap();
+    assert!(!manifest.files.is_empty());
+    for entry in &manifest.files {
+        let bytes = before.get(&PathBuf::from(&entry.relative_path)).unwrap();
+        let hash: String = against_rome_data::sha256::sha256(bytes)
+            .iter()
+            .map(|byte| format!("{byte:02X}"))
+            .collect();
+        assert_eq!(entry.sha256.to_uppercase(), hash, "{}", entry.relative_path);
+    }
+    assert_eq!(map_bytes(&map), before, "export must not alter source map files");
+    drop(app);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn packaging_export_blocks_unsaved_loaded_map_and_safe_save_retry_contains_current_edits() {
     use against_rome_packaging::exporter::ModBundleExporter;
 

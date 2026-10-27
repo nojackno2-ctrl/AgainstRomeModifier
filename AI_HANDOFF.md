@@ -1979,3 +1979,14 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 
 - 以 headless `EditorApp` 在 800×600 邏輯尺寸檢視 `pixels_per_point` 1.0／1.5／2.0，確認狀態訊息與工具狀態文字原先畫在相同位置。`app.rs` 現將訊息限寬截短、hover 可讀全文，並把工具／游標及未儲存狀態放在獨立列；3D 診斷複製控制保留。
 - `batch7_tests.rs` 新增完整 EditorApp 最小視窗 regression，檢查中央 viewport 和面板範圍、狀態訊息／複製按鈕／工具文字可見且互不重疊。驗證：`cargo check --workspace --locked --offline --target-dir re_workspace/codex-status-layout` 通過；完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-status-layout -- --test-threads=1 --quiet` 通過（editor app 895 passed、6 ignored、0 failed；workspace 無失敗）；`cargo build --workspace --locked --offline --target-dir re_workspace/codex-status-layout` 與 `git diff --check` 通過。僅有既有 unused／unused_mut warnings。未做原生多螢幕／實體 DPI 驗收，未提交／推送。
+
+## 2026-10-27 Codex / GPT-6 Luna：ZIP 匯出目的地防護
+
+- `packaging_ui.rs` 在 ZIP 寫入前解析並正規化輸出路徑，沿最近既存父目錄解析 symlink／junction；拒絕寫入來源地圖子目錄或遊戲 `MAPS` 目錄。錯誤回報至匯出狀態，不建立目標目錄、ZIP 或暫存檔。新增 E2E 回歸，確認兩種拒絕情境及外部目標匯出雜湊／來源不變。
+- 聚焦回歸 1 passed、`packaging_` 測試 16 passed、`cargo check --workspace --locked --offline` 與 `cargo build --workspace --locked --offline` 通過；首次完整 workspace 測試有 OS error 112（D: 空間耗盡）造成部分失敗，並非全套通過。已將本次失敗建置產生的 ignored `re_workspace/zip-destination-guard`（1,470,006,122 bytes）移至 `%TEMP%\arm-codex-zip-destination-guard-preserved-20261027` 保留，D: 空間恢復；需重跑完整驗證。路徑檢查與實際寫入間仍存在 TOCTOU 競態。
+- 狀態：待完整 workspace 驗證及提交；未做桌面／遊戲驗收。
+
+## 2026-10-27 Codex：ZIP 匯出防護完整驗證
+
+- 移出本次失敗建置留下的 ignored target 後，D: 空間恢復；完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-codex-zip-guard-20261027 -- --test-threads=1 --quiet` 結束碼 0，editor app 896 passed／6 ignored，其餘 workspace 測試與 doctest 全部完成且無失敗。`cargo check --workspace --locked --offline`、`cargo build --workspace --locked --offline`、定向匯出測試及 `git diff --check` 均通過。
+- 狀態：程式與驗證完成；尚未提交。路徑檢查與檔案建立之間仍有 TOCTOU 競態；未做桌面／遊戲驗收。
