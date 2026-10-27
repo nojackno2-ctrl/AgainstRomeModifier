@@ -1983,10 +1983,19 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 ## 2026-10-27 Codex / GPT-6 Luna：ZIP 匯出目的地防護
 
 - `packaging_ui.rs` 在 ZIP 寫入前解析並正規化輸出路徑，沿最近既存父目錄解析 symlink／junction；拒絕寫入來源地圖子目錄或遊戲 `MAPS` 目錄。錯誤回報至匯出狀態，不建立目標目錄、ZIP 或暫存檔。新增 E2E 回歸，確認兩種拒絕情境及外部目標匯出雜湊／來源不變。
-- 聚焦回歸 1 passed、`packaging_` 測試 16 passed、`cargo check --workspace --locked --offline` 與 `cargo build --workspace --locked --offline` 通過；首次完整 workspace 測試有 OS error 112（D: 空間耗盡）造成部分失敗，並非全套通過。已將本次失敗建置產生的 ignored `re_workspace/zip-destination-guard`（1,470,006,122 bytes）移至 `%TEMP%\arm-codex-zip-destination-guard-preserved-20261027` 保留，D: 空間恢復；需重跑完整驗證。路徑檢查與實際寫入間仍存在 TOCTOU 競態。
-- 狀態：待完整 workspace 驗證及提交；未做桌面／遊戲驗收。
+- 聚焦回歸 1 passed、`packaging_` 測試 16 passed、`cargo check --workspace --locked --offline` 與 `cargo build --workspace --locked --offline` 通過；首次完整 workspace 測試曾因 D: 空間不足而部分失敗。已將本次建置 target（1,470,006,122 bytes）移至 `%TEMP%\arm-codex-zip-destination-guard-preserved-20261027` 保留，恢復磁碟空間；其後完整 workspace 測試結束碼 0（editor app 896 passed／6 ignored）。路徑檢查與實際寫入間仍存在 TOCTOU 競態。
+- 狀態：已提交並推送 `cb1b547`；未做桌面／遊戲驗收。
 
 ## 2026-10-27 Codex：ZIP 匯出防護完整驗證
 
 - 移出本次失敗建置留下的 ignored target 後，D: 空間恢復；完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-codex-zip-guard-20261027 -- --test-threads=1 --quiet` 結束碼 0，editor app 896 passed／6 ignored，其餘 workspace 測試與 doctest 全部完成且無失敗。`cargo check --workspace --locked --offline`、`cargo build --workspace --locked --offline`、定向匯出測試及 `git diff --check` 均通過。
-- 狀態：程式與驗證完成；尚未提交。路徑檢查與檔案建立之間仍有 TOCTOU 競態；未做桌面／遊戲驗收。
+- 狀態：已提交並推送 `cb1b547`。路徑檢查與檔案建立之間仍有 TOCTOU 競態；未做桌面／遊戲驗收。
+
+## 2026-10-27 Codex：音景草稿原生支援提示與雙語補齊
+
+- 修正 Ambience 的 Soundscape 分頁中文硬編碼，新增英／繁中說明；以明顯提示註明 `soundscape.sndz` 僅供編輯器草稿往返，Against Rome 不會讀取或播放該區域，避免與原生遊戲支援混淆。雙語 UI render regression 5 passed；app `cargo check`、`cargo build` 及完整 workspace 測試通過（editor app 896 passed／6 ignored）。
+
+## 2026-10-27 Codex：音景 UI 支援範圍提示與驗證
+
+- Soundscape 分頁說明已本地化，並在英／繁中明確提示私有 `soundscape.sndz` 草稿不會被遊戲讀取或播放。聚焦 `chinese_ui_has_no_untranslated_literals` 5 passed；`cargo check -p against-rome-editor-app --locked --offline`、`cargo build -p against-rome-editor-app --locked --offline` 及完整 workspace 測試均通過（editor app 896 passed／6 ignored，其餘 targets 無失敗）。
+- 唯讀稽核確認 3D viewport 的 terrain render 固定在 sprites 前繪製，而 sprite picking 只比對 sprite 深度／alpha，沒有 terrain 深度測試；後方物件可能蓋住地形且攔截點擊，會干擾地形編輯。現有 ray height-field 與 LOD 三角形不是完全相同表面，後續遮擋應共用畫面三角形資料並為可見與 picking 增加一致回歸。

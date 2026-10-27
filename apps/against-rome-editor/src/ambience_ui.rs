@@ -36,6 +36,8 @@ pub const SAVED_LABEL: &str = "Saved with map / 隨地圖儲存";
 pub const PREVIEW_LABEL: &str = "Preview only – not saved / 僅預覽，不會儲存";
 pub const RESET_PREVIEW_LABEL: &str = "Reset preview-only fields / 重設僅預覽欄位";
 const PREVIEW_TOOLTIP: &str = "Reset preview-only changes before saving. Presets also change saved boden fields. / 儲存前須重設僅預覽變更；天候預設也會修改隨地圖儲存的 boden 欄位。";
+const SOUNDSCAPE_DRAFT_NOTICE_EN: &str = "Editor draft only: soundscape.sndz is saved for editor round-trip; the game does not read this file or play these zones.";
+const SOUNDSCAPE_DRAFT_NOTICE_ZH: &str = "僅供編輯器使用的草稿：soundscape.sndz 會隨地圖儲存並供編輯器往返讀寫；遊戲不會讀取此檔或播放這些區域。";
 
 /// 僅套用實際有地圖序列化的欄位，保留其餘基準值。
 fn with_persistent_fields(mut baseline: AtmosphereProfile, current: &AtmosphereProfile) -> AtmosphereProfile {
@@ -1176,7 +1178,19 @@ impl AmbienceUi {
 
     fn render_soundscape_tab(&mut self, ui: &mut egui::Ui, _map_path: Option<&Path>) {
         ui.heading(tr(self.app_language, "Soundscape Zone Studio (SNDZ)", "環境音效區域工作室 (SNDZ)"));
-        ui.label("配置地圖環境音效區域：水體流動、森林鳥鳴、定居點人聲、戰場氛圍。");
+        ui.label(tr(
+            self.app_language,
+            "Plan water, forest, settlement, and battlefield ambience zones.",
+            "規劃水體、森林、聚落與戰場環境音效區域。",
+        ));
+        ui.colored_label(
+            Color32::from_rgb(225, 180, 80),
+            tr(
+                self.app_language,
+                SOUNDSCAPE_DRAFT_NOTICE_EN,
+                SOUNDSCAPE_DRAFT_NOTICE_ZH,
+            ),
+        );
 
         ui.separator();
         ui.horizontal(|ui| {
@@ -2020,10 +2034,24 @@ mod batch20_tests {
                 });
                 assert!(!text.is_empty());
                 if lang == AppLanguage::TraditionalChinese {
-                    for literal in ["Atmospheric Lighting", "Weather Preset", "Precipitation", "Wind Speed", "Wind Direction", "Fog Enabled", "Scene Lighting Bridge", "Game Clock", "Trigger Flash", "Environment Parameters", "Water Level", "Sync with Editor Water", "Water Color", "Day Start", "No active map", "Soundscape Zone Studio", "Add Sound Zone", "Configured Sound Zones", "Edit Zone", "Delete", "Hydrology", "SmoothStep", "Map Briefing Localization", "Application Language"] {
+                    for literal in ["Atmospheric Lighting", "Weather Preset", "Precipitation", "Wind Speed", "Wind Direction", "Fog Enabled", "Scene Lighting Bridge", "Game Clock", "Trigger Flash", "Environment Parameters", "Water Level", "Sync with Editor Water", "Water Color", "Day Start", "No active map", "Soundscape Zone Studio", "Plan water, forest", "Editor draft only", "Add Sound Zone", "Configured Sound Zones", "Edit Zone", "Delete", "Hydrology", "SmoothStep", "Map Briefing Localization", "Application Language"] {
                         assert!(!text.contains(literal), "未翻譯：{literal}\n{text}");
                     }
                     assert!(text.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)));
+                }
+                if tab == AmbienceTab::Soundscape {
+                    let expected_notice = if lang == AppLanguage::English {
+                        SOUNDSCAPE_DRAFT_NOTICE_EN
+                    } else {
+                        SOUNDSCAPE_DRAFT_NOTICE_ZH
+                    };
+                    let other_notice = if lang == AppLanguage::English {
+                        SOUNDSCAPE_DRAFT_NOTICE_ZH
+                    } else {
+                        SOUNDSCAPE_DRAFT_NOTICE_EN
+                    };
+                    assert!(text.contains(expected_notice), "missing localized soundscape warning\n{text}");
+                    assert!(!text.contains(other_notice), "soundscape warning leaked other language\n{text}");
                 }
                 assert_eq!(format!("{:?}", panel.profile), before);
                 assert_eq!(format!("{:?}", panel.zones), zone_before);
