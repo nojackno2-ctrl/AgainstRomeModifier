@@ -233,6 +233,81 @@ fn new_building_is_saved_as_a_prebuilt_data_object_with_binding() {
 }
 
 #[test]
+fn prebuilt_spawn_and_start_camera_share_one_safe_save() {
+    let (mut app, root, map) = fixture("prebuilt_with_camera", &[]);
+    place_house(&mut app, (30, 30), 0);
+    let spawn_id = app.scenario.document().spawns[0].id;
+    app.scenario.add_events(&[against_rome_scenario::Event {
+        name: "主屋區域勝利".into(),
+        conditions: vec![against_rome_scenario::Condition {
+            kind: 2, target_id: spawn_id, min_x: 7000, min_z: 7000,
+            max_x: 9000, max_z: 9000, ..Default::default()
+        }],
+        actions: vec![against_rome_scenario::Action { kind: 3, ..Default::default() }],
+        ..Default::default()
+    }]).unwrap();
+    app.campaign.start_camera.enabled = true;
+    app.apply_start_camera_candidate().unwrap();
+    let plan = app.preview_spawn_data_for_save(&map).unwrap().unwrap();
+    let staged = app.scenario.stage_transaction_files_with(&map, Some((&plan.scenario, &plan.active))).unwrap();
+    assert!(app.campaign.stage_camera_candidate_with_active(&map, &staged, app.scenario.known_aliases(), Some(&[])).is_err(), "候選 DATA 缺少綁定時不得編譯");
+    let original_data = std::fs::read(map.join("DATA/objects.dat")).unwrap();
+    let original_script = std::fs::read(map.join("SCRIPT/ak_level.bci")).unwrap();
+    let blockers = app.save_blockers();
+    assert!(blockers.is_empty(), "{blockers:?}");
+
+    app.safe_save_current_using(|_| Err("模擬交易失敗".into()));
+    assert!(app.status_is_error);
+    assert!(app.campaign.camera_pending() && app.scenario.dirty());
+    assert_eq!(std::fs::read(map.join("DATA/objects.dat")).unwrap(), original_data);
+    assert_eq!(std::fs::read(map.join("SCRIPT/ak_level.bci")).unwrap(), original_script);
+    assert!(!map.join("arm_scenario.json").exists());
+
+    save_ok(&mut app);
+    assert!(!app.campaign.camera_pending() && !app.scenario.dirty());
+    let saved = against_rome_scenario::ScenarioDocument::from_json(&std::fs::read(map.join("arm_scenario.json")).unwrap()).unwrap();
+    let binding = saved.data_slots.iter().find(|b| b.spawn_id == spawn_id).unwrap();
+    assert!(saved.spawns.iter().any(|s| s.id == spawn_id && s.prebuilt));
+    assert!(data_objects(&map).iter().any(|o| o.slot as i32 == binding.slot && o.uid == binding.uid));
+    let camera: against_rome_scenario::StartCamera = serde_json::from_slice(&std::fs::read(map.join("arm_start_camera.json")).unwrap()).unwrap();
+    assert!(camera.enabled);
+    let script = std::fs::read(map.join("SCRIPT/ak_level.bci")).unwrap();
+    against_rome_campaign::export::verify_exported_script(&original_script, &script, &saved, Some(&camera)).unwrap();
+    let mut reloaded = EditorApp::initial_state();
+    reloaded.set_loaded_map(map.clone(), crate::storage::load_map(&map).unwrap()).unwrap();
+    reloaded.scenario.load_session(&map).unwrap();
+    assert_eq!(reloaded.scenario.document(), &saved);
+    assert_eq!(serde_json::to_value(reloaded.scenario.start_camera()).unwrap(), serde_json::to_value(&camera).unwrap());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn moved_bound_spawn_and_camera_refresh_loaded_placement() {
+    let (mut app, root, map) = fixture("move_bound_with_camera", &[]);
+    place_house(&mut app, (30, 30), 0);
+    save_ok(&mut app);
+    app.placement.load_session(&map).unwrap();
+    sync(&mut app, &map);
+    let spawn_id = app.scenario.document().spawns[0].id;
+    let before = data_objects(&map)[0].clone();
+    app.spawn_ui.select_all();
+    app.spawn_ui.move_selected(&mut app.scenario, &cx(), 512.0, 0.0, false);
+    assert!(!app.spawn_ui.status().1, "{}", app.spawn_ui.status().0);
+    app.campaign.start_camera.enabled = true;
+    app.apply_start_camera_candidate().unwrap();
+    save_ok(&mut app);
+    let saved = data_objects(&map);
+    assert_eq!(saved.len(), 1);
+    let binding = app.scenario.document().data_slots.iter().find(|b| b.spawn_id == spawn_id).unwrap();
+    assert_eq!((saved[0].slot as i32, saved[0].uid), (binding.slot, binding.uid));
+    assert_eq!(saved[0].position[0], before.position[0] + 512.0);
+    assert_eq!(app.placement.objects(), saved);
+    assert!(!app.placement.is_dirty() && !app.scenario.dirty());
+    assert!(!app.campaign.camera_pending());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn bound_building_region_victory_event_survives_safe_save_and_reload() {
     let (mut app, root, map) = fixture("bound_region_victory", &[]);
     place_house(&mut app, (30, 30), 0);

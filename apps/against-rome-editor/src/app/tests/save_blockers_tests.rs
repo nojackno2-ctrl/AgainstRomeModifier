@@ -391,14 +391,14 @@ fn save_blockers_data_conflicts_are_reported_together() {
         assert!(blocker.actions.contains(&Action::OpenPanel));
         app.resolve_save_blocker(blocker.panel, Action::OpenPanel, &ctx);
     }
-    assert!(app.placement.open && app.campaign.open);
+    assert!(app.placement.open);
     assert!(blockers
         .iter()
         .any(|b| b.kind == Kind::DataConflict && b.panel == Panel::Objects));
-    assert!(blockers
+    assert!(!blockers
         .iter()
         .any(|b| b.kind == Kind::DataConflict && b.panel == Panel::Campaign));
-    app.safe_save_current_using(|_| panic!("兩項 DATA 衝突均不可略過"));
+    app.safe_save_current_using(|_| panic!("Objects DATA 衝突不可略過"));
     assert_eq!(save_file_snapshot(&root), before);
     std::fs::remove_dir_all(root).unwrap();
 }

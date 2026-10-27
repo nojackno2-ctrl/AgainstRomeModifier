@@ -1305,10 +1305,11 @@ impl EditorApp {
             Vec::new()
         };
         let camera_pending = self.campaign.camera_pending();
-        let staged_scenario = self.campaign.stage_camera_candidate(
+        let staged_scenario = self.campaign.stage_camera_candidate_with_active(
             &path,
             &staged_scenario,
             self.scenario.known_aliases(),
+            spawn_plan.as_ref().map(|p| p.active.as_slice()),
         )?;
         for (rel_path, bytes) in &staged_scenario {
             tx.stage_file(rel_path, bytes.clone())?;

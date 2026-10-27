@@ -1331,6 +1331,17 @@ impl CampaignUi {
         scenario_files: &[(PathBuf, Vec<u8>)],
         aliases: &[String],
     ) -> Result<Vec<(PathBuf, Vec<u8>)>, String> {
+        self.stage_camera_candidate_with_active(map, scenario_files, aliases, None)
+    }
+
+    /// 使用同一交易中已規劃的 DATA 物件驗證劇本，避免讀到尚未提交的舊磁碟狀態。
+    pub(crate) fn stage_camera_candidate_with_active(
+        &self,
+        map: &Path,
+        scenario_files: &[(PathBuf, Vec<u8>)],
+        aliases: &[String],
+        staged_active: Option<&[(i32, u32)]>,
+    ) -> Result<Vec<(PathBuf, Vec<u8>)>, String> {
         if self.camera_dirty && self.camera_candidate.is_none() {
             return Err("Start camera: Apply to the loaded map before Safe Save".into());
         }
@@ -1386,8 +1397,8 @@ impl CampaignUi {
             None => ScenarioDocument::default(),
         };
         document.version = 6;
-        let active =
-            if !document.data_slots.is_empty() || document.spawns.iter().any(|s| s.prebuilt) {
+        let disk_active =
+            if staged_active.is_none() && (!document.data_slots.is_empty() || document.spawns.iter().any(|s| s.prebuilt)) {
                 let store =
                     against_rome_placement::ObjectStore::load(map).map_err(|e| e.to_string())?;
                 Some(
@@ -1410,7 +1421,7 @@ impl CampaignUi {
             } else {
                 Some(aliases)
             },
-            active.as_deref(),
+            staged_active.or(disk_active.as_deref()),
         )?;
         against_rome_campaign::export::verify_exported_script(
             &candidate.original,

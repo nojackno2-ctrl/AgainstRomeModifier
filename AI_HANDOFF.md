@@ -2050,6 +2050,12 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 - 發現清除標記持續遮蔽同一地圖後續成功寫入的快照。背景作業加入每路徑序號與完成回報：僅最新寫入成功才解除遮蔽；開啟／檢視前先處理完成回報，失敗仍保留遮蔽與錯誤，包含刪除入列失敗及不同地圖交錯情境。復原聚焦測試 24 passed；最新完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-sdl-load-guard-20261027 -- --test-threads=1 --quiet` 結束碼 0，workspace `cargo check`、`cargo build` 與 `git diff --check` 通過。未做桌面驗收。
 - Luna 唯讀檢視確認 FIFO、舊寫入與後續刪除的順序保護；舊背景作業錯誤仍沿用既有行為提示並重置快照去重狀態。原先寫入未完成就重開時無提示的限制已由下節處理。
 
+## 2026-10-27 Codex：預建物件與開局鏡頭同筆儲存
+
+- 開局鏡頭重新編譯使用同筆 spawn DATA 候選的有效 slot／UID，而非尚未提交的磁碟 DATA；儲存預覽採用相同候選，解除兩者互斥。Placement／Nature 與 spawn DATA 的互斥維持，避免多個 pool 候選互相覆蓋。
+- 聚焦回歸涵蓋新增預建物件、事件、鏡頭、候選缺少綁定時拒絕、交易失敗不落盤、儲存後重載，以及移動既有綁定物件後更新 Objects 面板，皆通過。首次測試編譯因 `StartCamera` 無 `PartialEq` 失敗；另一測試錯誤假設移動後 UID 不變，實際會重建 UID，已改驗證新 DATA 與劇本綁定一致。
+- 完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-sdl-load-guard-20261027 -- --test-threads=1 --quiet` 結束碼 0；workspace `cargo check`、`cargo build` 與 `git diff --check` 通過。未做桌面或遊戲驗收。
+
 ## 2026-10-27 Codex：背景寫入中的復原候選
 
 - 地圖重開時若最新快照仍在背景寫入，顯示同一已排入佇列的候選並暫停復原按鈕；等待期間每 200 ms 更新，完成後重新檢查來源指紋與已落盤檔案，寫入失敗則顯示錯誤。依地圖與作業序號處理晚到回報，避免捨棄或切圖後重現舊提示。復原相關測試 28 passed；完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-sdl-load-guard-20261027 -- --test-threads=1 --quiet` 結束碼 0，workspace `cargo check`、`cargo build` 與 `git diff --check` 通過。未做桌面驗收。

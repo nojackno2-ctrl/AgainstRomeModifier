@@ -296,8 +296,12 @@ impl EditorApp {
             Ok(Vec::new())
         };
         let staged = staged.and_then(|s| {
-            self.campaign
-                .stage_camera_candidate(&path, &s, self.scenario.known_aliases())
+            self.campaign.stage_camera_candidate_with_active(
+                &path,
+                &s,
+                self.scenario.known_aliases(),
+                spawn_plan.as_ref().map(|p| p.active.as_slice()),
+            )
         });
         // 結束閉包借用後才加入衝突與診斷明細。
         if let Err(e) = &staged {
@@ -395,9 +399,6 @@ impl EditorApp {
         for (dirty, panel) in [(self.placement.is_dirty(), Objects), (self.nature.session.is_dirty(), Nature)] {
             if !spawn_data || !dirty { continue; }
             blockers.push(SaveBlocker::new(DataConflict, panel, "Spawn placement DATA changes (prebuilt buildings / bound spawns) cannot be saved together with pending Objects (DATA) or Nature edits; save or discard those first", "生成物件的 DATA 變更不可與物件或自然地景變更同時儲存；請先處理其中一方"));
-        }
-        if spawn_data && self.campaign.camera_pending() {
-            blockers.push(SaveBlocker::new(DataConflict, Campaign, "Start camera candidate and new prebuilt DATA objects cannot be saved in one transaction; apply one and save first", "開局鏡頭與新增預建物件不可在同一交易儲存"));
         }
         if self.campaign.camera_pending()
             && self
