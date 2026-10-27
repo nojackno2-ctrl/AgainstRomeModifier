@@ -1,3 +1,8 @@
+## 2026-10-27 Codex：3D 空地點擊清除物件選取
+- 一般 3D 模式點擊空白地形時，`PickTerrain` 現會同時清除 placement 選取；射線未命中地形的天空點擊送出 `SelectObject(None)`。Ramp 取點保留既有物件選取；場景移動模式、Alt 相機、物件命中與地形筆刷路徑不變。新增真實多影格 egui/App regression，覆蓋物件點選→Ramp 取點保留選取→空地點擊清除且保留取點座標→天空點擊清除。
+- 曾誤把 Ramp 測試按下事件當作放開結果，以及同影格游標移動造成 CommitStroke；分開事件影格並改驗 press action 後，`test_viewport_3d_click_empty_terrain_and_sky_clears_object_selection_regression` 通過。`cargo check --workspace --locked --offline --target-dir re_workspace/codex-object-drag`、完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-object-drag -- --test-threads=1 --quiet`（editor app 889 passed／6 ignored；workspace 通過）、`cargo build --workspace --locked --offline --target-dir re_workspace/codex-object-drag` 及 `git diff --check` 通過。`cargo fmt --all -- --check` 未通過，顯示大量既有 workspace 格式差異；未執行全域格式化。未做本次變更的桌面／遊戲驗收；整體目標未完成。
+- GPT-6 Luna 委派曾因 Codex CLI `helper_unknown_error: setup refresh had errors` 無法啟動；AGY 曾停留在等待測試，父端停止該派工後接手完成。保留原有 `AGENTS.md`／`README.md` 未提交變更。
+
 ## 2026-10-27 Codex / GPT-6 Luna：避免物件起始拖曳觸發地形筆刷
 - 3D viewport 在 Primary press edge 記錄手勢起點是否命中物件；即使首個移動影格已離開物件拾取半徑、仍命中地形，也不會發出 Paint／CommitStroke。新增真實 egui 多影格回歸，驗證 press object → move outside pick radius onto terrain → release 全程無地形筆畫且釋放後清除狀態；既有空地拖曳／短點擊測試保留。
 - `cargo check --workspace --locked --offline --target-dir re_workspace/codex-object-drag` 通過；`cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-object-drag -- --test-threads=1 --quiet` 通過，editor app 888 passed／6 ignored；`cargo build --workspace --locked --offline --target-dir re_workspace/codex-object-drag` 通過；`git diff --check` 通過。未做桌面／遊戲內驗收；整體目標未完成。

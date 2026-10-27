@@ -112,6 +112,12 @@ impl ViewportAction {
     pub fn is_pick_terrain(&self) -> bool {
         matches!(self, Self::PickTerrain { .. })
     }
+
+    /// 判斷此動作在一般 3D 視口模式下是否用來清除物件選取。
+    #[inline]
+    pub fn clears_object_selection(&self) -> bool {
+        matches!(self, Self::SelectObject(None) | Self::PickTerrain { .. })
+    }
 }
 
 /// Keyboard camera commands (C# `Map3DViewControl.OnKeyDown`).
@@ -1161,6 +1167,8 @@ impl Viewport3d {
                         let raw = &objects[idx];
                         action = ViewportAction::SelectObject(Some((raw.slot, raw.uid)));
                         self.drag_started_on_object = true;
+                    } else {
+                        action = ViewportAction::SelectObject(None);
                     }
                     // For failed ray pick on empty space: do not emit PickTerrain
                 }
@@ -3385,6 +3393,7 @@ mod tests {
         assert_eq!(action.picked_terrain(), Some((gx, gy)));
         assert!(action.is_pick_terrain());
         assert_eq!(action.selected_object(), None);
+        assert!(action.clears_object_selection());
 
         // 3. Coordinate clamping: values must remain clamped within [0.0..=vertex_size - 1]
         let max_coord = (session.vertex_size - 1) as f32;
@@ -3555,10 +3564,17 @@ mod tests {
 
             assert_eq!(
                 sky_action,
-                ViewportAction::None,
-                "Failed ray pick on sky must not emit PickTerrain or any action"
+                if terrain_pick_mode {
+                    ViewportAction::None
+                } else {
+                    ViewportAction::SelectObject(None)
+                },
+                "一般模式點擊天空應清除選取，且不送出 PickTerrain"
             );
             assert_eq!(sky_action.picked_terrain(), None);
+            if !terrain_pick_mode {
+                assert!(sky_action.clears_object_selection());
+            }
         }
     }
     #[test]

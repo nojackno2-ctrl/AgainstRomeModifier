@@ -3255,6 +3255,9 @@ impl EditorApp {
                 }
             }
             ViewportAction::PickTerrain { grid_x, grid_y } => {
+                if !self.ramp_selecting {
+                    self.placement.select_object(None);
+                }
                 if self.current_map_is_original() {
                     return;
                 }
@@ -10602,6 +10605,193 @@ angle=0.00
         });
         assert_eq!(app.ramp_start, Some((23.0, 41.0)));
         assert!(!app.is_painting);
+    }
+
+    fn make_test_placement_fixture_at(map: &Path, base_uid: u32, x: f32, z: f32) {
+        use against_rome_placement::{COLUMNS, SEGMENTS};
+        use std::fs;
+        let data = map.join("DATA");
+        fs::create_dir_all(&data).unwrap();
+        let n = 2;
+        let mut objects = vec![0u8; 16 + n * (79 + COLUMNS.iter().sum::<usize>())];
+        objects[..4].copy_from_slice(&1u32.to_le_bytes());
+        objects[4..8].copy_from_slice(&(n as u32).to_le_bytes());
+        objects[8..12].copy_from_slice(&30u32.to_le_bytes());
+        objects[12..16].copy_from_slice(&30u32.to_le_bytes());
+        for slot in 0..n {
+            let r = 16 + slot * 79;
+            objects[r] = u8::from(slot < 1);
+            objects[r + 3..r + 7].copy_from_slice(&(base_uid + slot as u32).to_le_bytes());
+            for offset in [67, 69] {
+                objects[r + offset..r + offset + 2].copy_from_slice(&(slot as u16).to_le_bytes());
+            }
+            for offset in [71, 73, 77] {
+                objects[r + offset..r + offset + 2].fill(255);
+            }
+            for col in 0..18 {
+                let offset =
+                    16 + n * 79 + n * COLUMNS[..col].iter().sum::<usize>() + slot * COLUMNS[col];
+                if COLUMNS[col] == 2 {
+                    objects[offset..offset + 2].fill(255);
+                }
+                if col == 1 {
+                    objects[offset..offset + 2].copy_from_slice(&(slot as u16).to_le_bytes());
+                }
+            }
+        }
+        let mut position = vec![0u8; 8 + n * 17];
+        position[..4].copy_from_slice(&1u32.to_le_bytes());
+        position[4..8].copy_from_slice(&(n as u32).to_le_bytes());
+        position[8] = 1;
+        position[9..13].copy_from_slice(&x.to_le_bytes());
+        position[13..17].copy_from_slice(&0.0f32.to_le_bytes());
+        position[17..21].copy_from_slice(&z.to_le_bytes());
+        let mut objdata = vec![0u8; 8 + n * SEGMENTS.iter().sum::<usize>()];
+        objdata[..4].copy_from_slice(&1u32.to_le_bytes());
+        objdata[4..8].copy_from_slice(&(n as u32).to_le_bytes());
+        for (name, bytes) in [
+            ("objects", objects),
+            ("position", position),
+            ("objdata", objdata),
+        ] {
+            fs::write(data.join(format!("{name}.dat")), bytes).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_viewport_3d_click_empty_terrain_and_sky_clears_object_selection_regression() {
+        let dir = PendingPanelTemp(temp_map_dir("viewport_3d_deselect_regression"));
+        make_test_placement_fixture_at(&dir.0, 10001, 8192.0, 8192.0);
+
+        let mut app = EditorApp::initial_state();
+        app.placement.load_session(&dir.0).unwrap();
+        let session = TerrainSession::create_blank(257, 32);
+        app.session = Some(session);
+
+        let objects = app.placement.objects();
+        assert_eq!(objects.len(), 1);
+        assert_eq!(objects[0].slot, 0);
+        assert_eq!(objects[0].uid, 10001);
+        assert_eq!(app.placement.selected_object(), None);
+
+        let ctx = egui::Context::default();
+        let viewport_size = egui::vec2(800.0, 600.0);
+
+        let drive_frame = |app: &mut EditorApp, events: Vec<egui::Event>| -> ViewportAction {
+            let input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, viewport_size)),
+                events,
+                ..Default::default()
+            };
+            let mut action = ViewportAction::None;
+            let _ = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let placement_objects = app.placement.objects();
+                    let selected_obj = app.placement.selected_object();
+                    app.viewport_3d.english = app.lang() == AppLanguage::English;
+                    app.viewport_3d.terrain_pick_mode = app.ramp_selecting;
+                    app.viewport_3d.show_grid = app.show_grid;
+                    app.viewport_3d.show_objects = app.show_objects;
+                    app.viewport_3d.scene_pick = app.scene.scene_pick_active();
+                    action = app.viewport_3d.show(
+                        ui,
+                        ctx,
+                        app.session.as_ref().unwrap(),
+                        app.height_step,
+                        app.water_surface,
+                        app.brush_radius,
+                        &placement_objects,
+                        selected_obj,
+                    );
+                });
+            });
+            app.handle_viewport_3d_action(action.clone());
+            action
+        };
+
+        // 第 0 影格：完成版面配置並記錄 last_rect 與相機畫面。
+        drive_frame(&mut app, vec![]);
+        let canvas_rect = app.viewport_3d.last_rect.expect("viewport 應配置畫布矩形");
+
+        let field = Viewport3d::build_height_field(app.session.as_ref().unwrap(), app.height_step, 4.0).unwrap();
+        let (scene_objects, _, sprites) = app.viewport_3d.convert_world_objects(&objects);
+        let frame = app.viewport_3d
+            .prepare_frame(canvas_rect.size(), &field, app.water_surface, 4.0, &scene_objects, &sprites)
+            .expect("應可建立場景畫面資料");
+        let screen_pt = frame
+            .project_world_to_screen(against_rome_scene::math::Vec3::new(32.0, 0.0, 32.0))
+            .expect("中心物件應可投影至畫面");
+        let obj_click_pos = Pos2::new(canvas_rect.min.x + screen_pt.x, canvas_rect.min.y + screen_pt.y);
+
+        // 流程 1：點擊已放置物件，應選取該物件。
+        let _ = drive_frame(&mut app, ramp_pointer(obj_click_pos, egui::PointerButton::Primary, true));
+        let obj_act = drive_frame(&mut app, ramp_pointer(obj_click_pos, egui::PointerButton::Primary, false));
+        assert_eq!(
+            obj_act,
+            ViewportAction::SelectObject(Some((0, 10001))),
+            "左鍵點擊物件應送出 SelectObject"
+        );
+        assert_eq!(
+            app.placement.selected_object(),
+            Some((0, 10001)),
+            "App handler 應將 placement selected_object 更新為 (0, 10001)"
+        );
+
+        // Ramp 端點取點應保留目前的物件選取。
+        app.ramp_selecting = true;
+        let ramp_pos = canvas_rect.center() + egui::vec2(80.0, 0.0);
+        let _ = drive_frame(&mut app, vec![egui::Event::PointerMoved(ramp_pos)]);
+        let ramp_act = drive_frame(&mut app, ramp_pointer(ramp_pos, egui::PointerButton::Primary, true));
+        assert!(ramp_act.is_pick_terrain());
+        assert_eq!(app.placement.selected_object(), Some((0, 10001)));
+        let _ = drive_frame(&mut app, ramp_pointer(ramp_pos, egui::PointerButton::Primary, false));
+        app.cancel_ramp_selection();
+
+        // 流程 2：點擊空白地形時，清除選取並保留 PickTerrain 動作。
+        let empty_pos = canvas_rect.center() + egui::vec2(120.0, 0.0);
+        let _ = drive_frame(&mut app, vec![egui::Event::PointerMoved(empty_pos)]);
+        let _ = drive_frame(&mut app, ramp_pointer(empty_pos, egui::PointerButton::Primary, true));
+        let empty_act = drive_frame(&mut app, ramp_pointer(empty_pos, egui::PointerButton::Primary, false));
+        assert!(
+            empty_act.is_pick_terrain(),
+            "點擊空白地形應送出 PickTerrain，實際為：{empty_act:?}"
+        );
+        assert!(
+            empty_act.picked_terrain().is_some(),
+            "動作應提供有效的 picked_terrain 座標"
+        );
+        assert!(
+            empty_act.clears_object_selection(),
+            "空白地形取點動作應表示需清除物件選取"
+        );
+        assert_eq!(
+            app.placement.selected_object(),
+            None,
+            "點擊空白地形後，App handler 應將目前選取清除為 None"
+        );
+
+        // 流程 3：再次選取物件，再點擊天空；應清除選取且不送出 PickTerrain。
+        let _ = drive_frame(&mut app, ramp_pointer(obj_click_pos, egui::PointerButton::Primary, true));
+        let obj_act2 = drive_frame(&mut app, ramp_pointer(obj_click_pos, egui::PointerButton::Primary, false));
+        assert_eq!(obj_act2, ViewportAction::SelectObject(Some((0, 10001))));
+        assert_eq!(app.placement.selected_object(), Some((0, 10001)));
+
+        let sky_pos = Pos2::new(canvas_rect.min.x + 10.0, canvas_rect.min.y + 10.0);
+        let _ = drive_frame(&mut app, vec![egui::Event::PointerMoved(sky_pos)]);
+        let _ = drive_frame(&mut app, ramp_pointer(sky_pos, egui::PointerButton::Primary, true));
+        let sky_act = drive_frame(&mut app, ramp_pointer(sky_pos, egui::PointerButton::Primary, false));
+        assert_eq!(
+            sky_act,
+            ViewportAction::SelectObject(None),
+            "點擊天空應送出 SelectObject(None)"
+        );
+        assert!(sky_act.clears_object_selection());
+        assert_eq!(sky_act.picked_terrain(), None);
+        assert_eq!(
+            app.placement.selected_object(),
+            None,
+            "點擊天空後，App handler 應將目前選取清除為 None"
+        );
     }
 
     #[test]
