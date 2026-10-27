@@ -66,3 +66,7 @@
 
 - CUA 以安裝版 `Against_Rome.exe` 啟動，首次截圖為黑畫面；等待約一分鐘後，同一程序呈現俄文主選單與歷史地圖列表，遊戲背景及選單字樣正常顯示。未選取地圖、未載入或儲存地圖；未修改安裝檔。退出後程序已結束；`Against_Rome.exe` SHA-256 與既有基準一致。
 - 黑畫面期間程序約 10 秒 CPU 累增 18.9 秒，單一執行緒 5 秒 CPU 累增 4.89 秒；GPU Engine utilization 15 次取樣全為 0。WPR 未錄製，未安裝 cdb／WinDbg／ProcDump；未取得呼叫堆疊，因此原因仍未知。此證據證明本次最終能進入遊戲選單，不代表自製地圖載入、遊戲玩法或啟動延遲原因已驗證。
+
+2026-10-27 補充：唯讀啟動 `Against_Rome.exe --runmode gspy` 後 30 秒仍黑畫面，程序仍回應且沒有新 Application Error。此觀察不證明模式預期畫面或 DirectDraw 根因；待確認 gspy 的正確使用方式後再決定續查。未載入地圖或修改安裝檔。
+
+2026-10-27 隔離 runtime 續驗：editor-saved `ENDL_005` 的 52 檔 staging 經 `--game <TEMP 根目錄> --map ENDL_005 --validate-map --lang zh` 檢查為 0 錯誤、5 個 wave-no-destination 警告。完整 TEMP 遊戲副本啟動與安裝執行檔搭配 TEMP 工作目錄都超過 60 秒黑畫面，沒有遊戲內載入證據。安裝版地圖寫入指令被安全檢查拒絕；未寫入安裝版。事後比較 ENDL_005 原始備份 manifest 為 55 檔、0 差異。

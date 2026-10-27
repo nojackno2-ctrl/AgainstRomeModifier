@@ -1922,3 +1922,15 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 ## 2026-10-27 Codex / GPT-6 Luna：透明 Sprite 桌面點選驗收續查
 - 以 `re_workspace/codex-alpha-pick/debug/against-rome-editor.exe` 載入同一 TEMP `ENDL_005`，桌面確認 3D 場景、6,651 objects 與 `Atlas: 3 tiles`。本次以實體座標啟動 Ramp 後，在 viewport 地形點擊，UIA 顯示游標命中 `Tile: (58, 23) Y: 0.91`，但 Ramp 起點狀態未前進；Escape 可取消模式。座標點擊可更新 hover，尚不能證明 click handler 收到點擊，也未驗證透明／不透明 Sprite 選取。未 Safe Save。
 - 程式入口已有 800×600 最小視窗設定。驗收後 TEMP 地圖與基準副本各 64 檔逐檔 SHA-256 比對為 0 差異；原安裝遊戲維持唯讀。`git diff --check` 通過。狀態：圖集顯示及 hover 對位可見；需確認 viewport click handler 的可觀察回饋後再驗透明區點選。
+
+## 2026-10-27 Codex：gspy 啟動參數唯讀黑畫面測試
+
+- 只讀稽核提出 `--runmode gspy` 可跳過啟動影片的反組譯假說。以安裝版執行檔、安裝目錄為工作目錄啟動 PID 22152；CUA 截圖在啟動後 30 秒仍為全黑，程序 Responding=True、CPU 約 0.92 秒，未見新 Application Error。Alt+F4 後確認程序結束。
+- 結果尚不能判定 gspy 的預期畫面或 DirectDraw 故障；此前正常參數同一遊戲程序約一分鐘後曾顯示菜單。未載入地圖、未寫入安裝目錄；安裝版原始檔及地圖保持唯讀。下一步應先查明 gspy 的預期模式／入口流程，再決定是否續查；遊戲內地圖驗收仍待進行。
+
+## 2026-10-27 Codex：隔離遊戲地圖載入驗收續查
+
+- 將 editor-saved `ENDL_005` staging（52 個非 recovery 檔）放入 TEMP 完整遊戲副本。以 `re_workspace/codex-alpha-pick/debug/against-rome-editor.exe --game <TEMP 根目錄> --map ENDL_005 --validate-map --lang zh` 執行 Design Check：0 錯誤、5 個 wave-no-destination 警告；直接 `--map <路徑>` 因缺遊戲根目錄 alias catalog 而回報 2 錯誤，改用 `--game` 後通過。
+- 安裝版 `ENDL_005` 備份至 `%TEMP%\arm_ingame_acceptance_20261027_091806\original_ENDL_005`：來源與備份皆 55 檔，逐檔 SHA-256 完全一致。安全檢查拒絕從該 TEMP staging 清除並複製至安裝版測試槽；未重試或改道寫入安裝版。
+- 另建完整 TEMP 遊戲副本並啟動其執行檔，以及用安裝執行檔搭配 TEMP 工作目錄；兩種方式畫面均維持黑色超過 60 秒，程序仍回應，未進入遊戲選單或載入地圖。兩個進程均正常關閉。之後重新比較安裝版 ENDL_005 與原始備份：55 檔、0 差異。
+- 狀態：隔離 staging 通過編輯器語意檢查，但尚未得到遊戲 runtime 接受證據。後續需找到可顯示選單且仍能讓遊戲安全讀取 TEMP 地圖的啟動方式，或在安全檢查允許下按已核對 manifest 的備份／還原流程驗收。
