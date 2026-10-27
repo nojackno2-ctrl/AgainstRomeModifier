@@ -1966,5 +1966,6 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 ## 2026-10-27 Codex / GPT-6 Luna：3D sprite 點選對齊畫面與透明穿透
 
 - `viewport_3d.rs` 過去以 3D 投影框反算 sprite 像素，但實際畫面是投影錨點定位的固定螢幕矩形；點選現在依照同一錨點、尺寸、alpha mask 與 painter 順序命中。透明前景可穿透選到後方物件；atlas 尚未上 GPU 時，placeholder 依實際不透明矩形命中。marker fallback 保留，sprite 不再重複走舊投影框。
-- Luna 唯讀複核也確認舊 scene test 的 anchor 實際落在不透明像素，未覆蓋透明點擊。新增 app picker regression 覆蓋前景透明／不透明、層次順序與 atlas placeholder；真實桌面透明像素點擊仍未驗收。
+- Luna 唯讀複核也確認舊 scene test 的 anchor 實際落在不透明像素，未覆蓋透明點擊。新增 app picker regression 覆蓋前景透明／不透明、層次順序與 atlas placeholder。
 - 驗證：定向測試 `rendered_billboard_pick_uses_screen_pixels_and_passes_through_transparency` 通過；`cargo check --workspace --locked --offline --target-dir re_workspace/codex-billboard-pick` 通過；`cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-billboard-pick -- --test-threads=1 --quiet` 通過（editor app 894 passed、6 ignored，workspace 無失敗）；`cargo build --workspace --locked --offline --target-dir re_workspace/codex-billboard-pick` 與 `git diff --check` 通過。存在未修改的測試 unused warnings。
+- 以同一建置開啟 TEMP `arm_map_validate_20261027_091847\MAPS\ENDL_005`，載入 6,651 objects。Ramp 模式下不透明點 `(643,456)` 重複命中 slot 1546／UID 20253；同 sprite bounds 左上 `(595,309)` 重複穿透命中後方 slot 1287／UID 14444。取消 Ramp 後沒有未儲存標記；測試副本與 52 檔 staging 基準逐檔 SHA-256 比對 0 差異，測試程序 PID 38688 已關閉。桌面 alpha 穿透驗收通過此一實際重疊案例；多場景覆蓋及遊戲內渲染仍未驗。
