@@ -2048,4 +2048,10 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 ## 2026-10-27 Codex：捨棄後新復原快照的背景順序
 
 - 發現清除標記持續遮蔽同一地圖後續成功寫入的快照。背景作業加入每路徑序號與完成回報：僅最新寫入成功才解除遮蔽；開啟／檢視前先處理完成回報，失敗仍保留遮蔽與錯誤，包含刪除入列失敗及不同地圖交錯情境。復原聚焦測試 24 passed；最新完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-sdl-load-guard-20261027 -- --test-threads=1 --quiet` 結束碼 0，workspace `cargo check`、`cargo build` 與 `git diff --check` 通過。未做桌面驗收。
-- Luna 唯讀檢視確認 FIFO、舊寫入與後續刪除的順序保護；舊背景作業錯誤仍沿用既有行為提示並重置快照去重狀態。若寫入未完成就重開，當次仍遮蔽快照；完成後須重新開啟或檢視才會顯示。
+- Luna 唯讀檢視確認 FIFO、舊寫入與後續刪除的順序保護；舊背景作業錯誤仍沿用既有行為提示並重置快照去重狀態。原先寫入未完成就重開時無提示的限制已由下節處理。
+
+## 2026-10-27 Codex：背景寫入中的復原候選
+
+- 地圖重開時若最新快照仍在背景寫入，顯示同一已排入佇列的候選並暫停復原按鈕；等待期間每 200 ms 更新，完成後重新檢查來源指紋與已落盤檔案，寫入失敗則顯示錯誤。依地圖與作業序號處理晚到回報，避免捨棄或切圖後重現舊提示。復原相關測試 28 passed；完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-sdl-load-guard-20261027 -- --test-threads=1 --quiet` 結束碼 0，workspace `cargo check`、`cargo build` 與 `git diff --check` 通過。未做桌面驗收。
+- Luna 唯讀稽核確認須防止未完成的候選直接復原、晚到回報跨地圖影響提示，以及來源指紋變更後覆蓋新編輯；現有指紋仍為檔案大小與修改時間，不是內容雜湊。
+- 依使用者要求正常關閉 8 個先前桌面測試編輯器程序（PID 5312、5968、10268、12776、15512、34856、38528、40096）；均已結束，未強制終止。

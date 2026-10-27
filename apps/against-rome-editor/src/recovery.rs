@@ -111,6 +111,10 @@ pub fn read(root: &Path, map: &Path, source: &Value) -> Result<Option<Value>, St
     }
     let value: Value = serde_json::from_slice(&std::fs::read(path).map_err(|e| e.to_string())?)
         .map_err(|e| format!("Corrupt snapshot / 復原檔損毀：{e}"))?;
+    validate_manifest(&value, map, source)?;
+    Ok(Some(value))
+}
+fn validate_manifest(value: &Value, map: &Path, source: &Value) -> Result<(), String> {
     if value["version"].as_u64() != Some(VERSION)
         || value["map_path"] != json!(map)
         || !value["pending"].is_object()
@@ -123,7 +127,7 @@ pub fn read(root: &Path, map: &Path, source: &Value) -> Result<Option<Value>, St
         return Err("Map source changed; restore disabled / 地圖來源已變更，禁止復原".into());
     }
     validate_pending(&value["pending"])?;
-    Ok(Some(value))
+    Ok(())
 }
 /// 先拒絕缺欄位、尺寸錯誤與未來格式，避免讓損毀資料進入復原工作。
 pub(crate) fn validate_pending(p: &Value) -> Result<(), String> {
@@ -165,7 +169,7 @@ pub(crate) fn validate_pending(p: &Value) -> Result<(), String> {
     Ok(())
 }
 enum Command {
-    Write(PathBuf, Value, u64),
+    Write(PathBuf, std::sync::Arc<Value>, u64),
     Delete(PathBuf, u64),
     #[cfg(test)]
     Barrier(mpsc::Sender<()>),
@@ -180,12 +184,15 @@ pub struct Recovery {
     pub root: Option<PathBuf>,
     pub source: Value,
     pub offer: Option<Result<Value, String>>,
+    pub offer_write_pending: bool,
+    offer_operation: Option<(PathBuf, u64, PathBuf)>,
     pub last: Option<Value>,
     pub checked: Instant,
     sender: Option<mpsc::Sender<Command>>,
     worker: Option<std::thread::JoinHandle<()>>,
     cleared: std::collections::HashSet<PathBuf>,
     latest: std::collections::HashMap<PathBuf, u64>,
+    in_flight: std::collections::HashMap<PathBuf, (u64, std::sync::Arc<Value>)>,
     sequence: u64,
     pending_error: Option<String>,
     results: Option<mpsc::Receiver<Completion>>,
@@ -196,12 +203,15 @@ impl Default for Recovery {
             root: crate::storage::editor_data_dir(),
             source: Value::Null,
             offer: None,
+            offer_write_pending: false,
+            offer_operation: None,
             last: None,
             checked: Instant::now(),
             sender: None,
             worker: None,
             cleared: Default::default(),
             latest: Default::default(),
+            in_flight: Default::default(),
             sequence: 0,
             pending_error: None,
             results: None,
@@ -254,8 +264,25 @@ impl Recovery {
         if let Some(rx) = &self.results {
             while let Ok(completion) = rx.try_recv() {
                 let latest = self.latest.get(&completion.path) == Some(&completion.sequence);
+                if latest && self.offer_operation.as_ref().is_some_and(|(path, sequence, _)| *path == completion.path && *sequence == completion.sequence) {
+                    let (_, _, map) = self.offer_operation.take().expect("已確認復原作業存在");
+                    self.offer_write_pending = false;
+                    if self.offer.is_some() {
+                        self.offer = Some(match &completion.result {
+                            Err(e) => Err(format!("Snapshot write failed / 復原快照寫入失敗：{e}")),
+                            Ok(()) => fingerprint(&map).and_then(|current| {
+                                if current != self.source {
+                                    return Err("Map source changed; restore disabled / 地圖來源已變更，禁止復原".into());
+                                }
+                                let root = self.root.as_ref().ok_or("Editor data directory unavailable")?;
+                                read(root, &map, &current)?.ok_or("Snapshot missing after write / 寫入後找不到復原快照".into())
+                            }),
+                        });
+                    }
+                }
                 if latest {
                     self.latest.remove(&completion.path);
+                    self.in_flight.remove(&completion.path);
                     if completion.write && completion.result.is_ok() {
                         self.cleared.remove(&completion.path);
                     }
@@ -276,9 +303,17 @@ impl Recovery {
         self.last = None;
         self.checked = Instant::now();
         self.offer = None;
+        self.offer_write_pending = false;
+        self.offer_operation = None;
         match fingerprint(map) {
             Ok(source) => {
                 self.source = source;
+                if let Some((path, sequence, offer)) = self.in_flight_offer(map) {
+                    self.offer = Some(offer);
+                    self.offer_write_pending = true;
+                    self.offer_operation = Some((path, sequence, map.to_path_buf()));
+                    return;
+                }
                 if self
                     .root
                     .as_ref()
@@ -301,6 +336,14 @@ impl Recovery {
     /// 稍後檢視沿用開圖指紋，不能把外部變更重新當作記憶體工作的基準。
     pub fn review(&mut self, map: &Path) {
         self.drain_results();
+        self.offer_write_pending = false;
+        self.offer_operation = None;
+        if let Some((path, sequence, offer)) = self.in_flight_offer(map) {
+            self.offer = Some(offer);
+            self.offer_write_pending = true;
+            self.offer_operation = Some((path, sequence, map.to_path_buf()));
+            return;
+        }
         if self
             .root
             .as_ref()
@@ -335,17 +378,18 @@ impl Recovery {
         self.sequence = self.sequence.wrapping_add(1);
         let sequence = self.sequence;
         self.latest.insert(path.clone(), sequence);
-        self.send(Command::Write(
-            path.clone(),
-            manifest(map, &self.source, pending.clone()),
-            sequence,
-        ))?;
+        let value = std::sync::Arc::new(manifest(map, &self.source, pending.clone()));
+        self.in_flight.remove(&path);
+        self.send(Command::Write(path.clone(), value.clone(), sequence))?;
+        self.in_flight.insert(path, (sequence, value));
         self.last = Some(pending);
         Ok(true)
     }
     pub fn clear(&mut self, map: &Path) -> Result<(), String> {
         self.last = None;
         self.offer = None;
+        self.offer_write_pending = false;
+        self.offer_operation = None;
         self.delete_snapshot(map)
     }
     /// 刪除其他地圖的快照，不改變目前地圖的復原提示與自動儲存狀態。
@@ -357,9 +401,25 @@ impl Recovery {
             self.sequence = self.sequence.wrapping_add(1);
             let sequence = self.sequence;
             self.latest.insert(path.clone(), sequence);
+            self.in_flight.remove(&path);
             self.send(Command::Delete(path, sequence))?;
         }
         Ok(())
+    }
+    fn in_flight_offer(&self, map: &Path) -> Option<(PathBuf, u64, Result<Value, String>)> {
+        let path = snapshot_path(self.root.as_ref()?, map);
+        let (sequence, value) = self.in_flight.get(&path)?;
+        if self.latest.get(&path) != Some(sequence) {
+            return None;
+        }
+        let result = fingerprint(map).and_then(|current| {
+            if current != self.source {
+                return Err("Map source changed; restore disabled / 地圖來源已變更，禁止復原".into());
+            }
+            validate_manifest(value, map, &current)?;
+            Ok((**value).clone())
+        });
+        Some((path, *sequence, result))
     }
 }
 pub fn write(path: &Path, value: &Value) -> Result<(), String> {
@@ -465,6 +525,105 @@ mod tests {
         r.open(&map);
         assert!(r.offer.is_none(), "較舊的寫入不得解除後續捨棄的遮蔽");
         assert!(r.poll().is_none());
+    }
+    #[test]
+    fn reopening_while_write_is_queued_offers_candidate_after_commit() {
+        let temp = Temp::new();
+        let map = temp.0.join("map");
+        std::fs::create_dir(&map).unwrap();
+        let mut r = Recovery::default();
+        r.root = Some(temp.0.join("editor"));
+        r.open(&map);
+        let pending = json!({"terrain":{"vertex_size":1,"collision_size":1,"heights":[2],"passability":[0]},"water":[0.0,0],"reset_auxiliary_layers":false,"camera_pending":false,"camera_dirty":false,"omitted_panels":[],"campaign_camera":against_rome_campaign::cinematics::MapStartCamera::default()});
+        let (commands, command_rx) = mpsc::channel();
+        let (done, completions) = mpsc::channel();
+        r.sender = Some(commands);
+        r.results = Some(completions);
+        r.clear(&map).unwrap();
+        assert!(r.save(&map, true, pending.clone()).unwrap());
+        r.open(&map);
+        assert!(r.offer_write_pending);
+        assert_eq!(r.offer.as_ref().unwrap().as_ref().unwrap()["pending"], pending);
+
+        let Command::Delete(path, sequence) = command_rx.recv().unwrap() else { panic!("應先刪除舊快照") };
+        done.send(Completion { result: delete(&path), path, sequence, write: false }).unwrap();
+        let Command::Write(path, value, sequence) = command_rx.recv().unwrap() else { panic!("應寫入新快照") };
+        done.send(Completion { result: write(&path, &value), path, sequence, write: true }).unwrap();
+        assert!(r.poll().is_none());
+        assert!(!r.offer_write_pending);
+        assert_eq!(r.offer.as_ref().unwrap().as_ref().unwrap()["pending"], pending);
+    }
+    #[test]
+    fn pending_candidate_rechecks_source_after_write() {
+        let temp = Temp::new();
+        let map = temp.0.join("map");
+        std::fs::create_dir(&map).unwrap();
+        let mut r = Recovery::default();
+        r.root = Some(temp.0.join("editor"));
+        r.open(&map);
+        let pending = json!({"terrain":{"vertex_size":1,"collision_size":1,"heights":[2],"passability":[0]},"water":[0.0,0],"reset_auxiliary_layers":false,"camera_pending":false,"camera_dirty":false,"omitted_panels":[],"campaign_camera":against_rome_campaign::cinematics::MapStartCamera::default()});
+        let (commands, command_rx) = mpsc::channel();
+        let (done, completions) = mpsc::channel();
+        r.sender = Some(commands);
+        r.results = Some(completions);
+        assert!(r.save(&map, true, pending).unwrap());
+        r.open(&map);
+        assert!(r.offer_write_pending);
+        let Command::Write(path, value, sequence) = command_rx.recv().unwrap() else { panic!("應寫入快照") };
+        std::fs::write(map.join("boden.bmp"), b"changed").unwrap();
+        done.send(Completion { result: write(&path, &value), path, sequence, write: true }).unwrap();
+        r.poll();
+        assert!(!r.offer_write_pending);
+        assert!(r.offer.as_ref().unwrap().is_err());
+        r.clear(&map).unwrap();
+        r.poll();
+        assert!(r.offer.is_none());
+    }
+    #[test]
+    fn pending_candidate_ignores_late_completion_after_discard_or_switch() {
+        for switch_map in [false, true] {
+            let temp = Temp::new();
+            let map = temp.0.join("map");
+            let other = temp.0.join("other");
+            std::fs::create_dir(&map).unwrap();
+            std::fs::create_dir(&other).unwrap();
+            let mut r = Recovery::default();
+            r.root = Some(temp.0.join("editor"));
+            r.open(&map);
+            let pending = json!({"terrain":{"vertex_size":1,"collision_size":1,"heights":[2],"passability":[0]},"water":[0.0,0],"reset_auxiliary_layers":false,"camera_pending":false,"camera_dirty":false,"omitted_panels":[],"campaign_camera":against_rome_campaign::cinematics::MapStartCamera::default()});
+            let (commands, command_rx) = mpsc::channel();
+            let (done, completions) = mpsc::channel();
+            r.sender = Some(commands);
+            r.results = Some(completions);
+            assert!(r.save(&map, true, pending).unwrap());
+            r.open(&map);
+            assert!(r.offer_write_pending);
+            let Command::Write(path, _, sequence) = command_rx.recv().unwrap() else { panic!("應寫入快照") };
+            if switch_map { r.open(&other); } else { r.clear(&map).unwrap(); }
+            done.send(Completion { result: Ok(()), path, sequence, write: true }).unwrap();
+            assert!(r.poll().is_none());
+            assert!(r.offer.is_none());
+            assert!(!r.offer_write_pending);
+        }
+    }
+    #[test]
+    fn pending_candidate_reports_failed_background_write() {
+        let temp = Temp::new();
+        let mut r = Recovery::default();
+        r.root = Some(temp.0.join("editor"));
+        r.open(&temp.0);
+        let pending = json!({"terrain":{"vertex_size":1,"collision_size":1,"heights":[2],"passability":[0]},"water":[0.0,0],"reset_auxiliary_layers":false,"camera_pending":false,"camera_dirty":false,"omitted_panels":[],"campaign_camera":against_rome_campaign::cinematics::MapStartCamera::default()});
+        let (commands, command_rx) = mpsc::channel();
+        let (done, completions) = mpsc::channel();
+        r.sender = Some(commands);
+        r.results = Some(completions);
+        assert!(r.save(&temp.0, true, pending).unwrap());
+        r.open(&temp.0);
+        let Command::Write(path, _, sequence) = command_rx.recv().unwrap() else { panic!("應寫入快照") };
+        done.send(Completion { result: Err("模擬寫入失敗".into()), path, sequence, write: true }).unwrap();
+        assert!(r.poll().is_some());
+        assert!(!r.offer_write_pending);
+        assert!(r.offer.as_ref().unwrap().is_err());
     }
     #[test]
     fn failed_new_snapshot_does_not_clear_discard_marker() {

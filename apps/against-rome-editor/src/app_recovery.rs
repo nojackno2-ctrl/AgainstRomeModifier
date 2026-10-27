@@ -51,6 +51,9 @@ impl EditorApp {
             self.set_status(format!("Autosave failed / 自動快照失敗：{e}"), true);
         }
         ctx.request_repaint_after(AUTOSAVE_INTERVAL);
+        if self.recovery.offer_write_pending {
+            ctx.request_repaint_after(std::time::Duration::from_millis(200));
+        }
         // 面板與已提交的磁碟狀態尚未同步時，保留既有快照，避免用不完整狀態覆寫。
         if self.post_commit_warning.is_some() {
             return;
@@ -195,6 +198,9 @@ impl EditorApp {
         let mut choice = 0;
         egui::Window::new("Crash recovery / 當機復原").collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
             ui.label("Unsaved work snapshot found / 找到未儲存工作快照");
+            if self.recovery.offer_write_pending {
+                ui.label("Snapshot is being written; restore will be available after it finishes. / 復原快照正在寫入，完成後才能復原。");
+            }
             match offer {
                 Ok(value) => {
                     let time = crate::recovery::utc_timestamp(value["timestamp"].as_u64().unwrap_or_default());
@@ -207,7 +213,7 @@ impl EditorApp {
                 Err(e) => { ui.colored_label(Color32::RED, e); }
             }
             ui.horizontal(|ui| {
-                if ui.add_enabled(offer.is_ok(), egui::Button::new("Restore / 復原")).clicked() { choice = 1; }
+                if ui.add_enabled(offer.is_ok() && !self.recovery.offer_write_pending, egui::Button::new("Restore / 復原")).clicked() { choice = 1; }
                 if ui.button("Discard / 捨棄").clicked() { choice = 2; }
                 if ui.button("Decide later / 稍後決定").clicked() { choice = 3; }
             });
