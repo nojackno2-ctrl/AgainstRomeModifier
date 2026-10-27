@@ -175,6 +175,7 @@ pub struct EditorApp {
     emboss: Option<EmbossBaseline>,
     pub status_message: String,
     pub status_is_error: bool,
+    post_commit_warning: Option<String>,
 
     // 筆刷參數
     pub active_tool: ActiveTool,
@@ -688,6 +689,7 @@ impl EditorApp {
             emboss: None,
             status_message: "Ready. Blank 257x257 map initialized.".to_string(),
             status_is_error: false,
+            post_commit_warning: None,
             active_tool: ActiveTool::HeightRaise,
             brush_radius: 12.0,
             brush_strength: 8,
@@ -871,6 +873,16 @@ impl EditorApp {
         let result = self.save_transaction(confirm_design, commit);
         match result {
             Ok(report) => {
+                if let Some(warning) = &self.post_commit_warning {
+                    self.status_message = format!(
+                        "{} {warning}",
+                        tr(self.lang(),
+                            "Files were saved, but a panel could not refresh. Preserve pending edits and reload the map before saving or exporting again:",
+                            "檔案已儲存，但面板無法重新載入。請先保留待處理的編輯，重新載入地圖後再儲存或匯出：")
+                    );
+                    self.status_is_error = true;
+                    return;
+                }
                 let saved_status = format!(
                     "Saved safely in one transaction ({} files, {} cache deletions).",
                     report.written_files.len(),
@@ -1174,6 +1186,9 @@ impl EditorApp {
         ) -> Result<against_rome_maps::MapSaveReport, String>,
     ) -> Result<against_rome_maps::MapSaveReport, String> {
         use against_rome_ambience::soundscape::{SoundscapeBinaryStorage, SoundscapeSnapshot};
+        if let Some(warning) = &self.post_commit_warning {
+            return Err(format!("Files were already saved, but panel refresh failed; reload the map before saving again: {warning}"));
+        }
         // A brush stroke still in flight must be part of the candidate, never half-recorded.
         self.nature_end_stroke();
         let blockers = self.save_blockers();
@@ -1349,11 +1364,14 @@ impl EditorApp {
         let session = self.session.as_mut().expect("session validated above");
         session.raw_boden_bmp = Some(height);
         session.raw_collision_bmp = Some(collision);
+        let mut post_commit_errors = Vec::new();
         if let (Some(emboss), Some((image, green))) = (self.emboss.as_mut(), staged_emboss) {
-            emboss
+            if let Err(e) = emboss
                 .session
                 .commit_baseline(session.heights(), Some(&green))
-                .map_err(|e| format!("emboss baseline: {e}"))?;
+            {
+                post_commit_errors.push(format!("emboss baseline: {e}"));
+            }
             emboss.raw = image;
         }
         session.commit_baseline();
@@ -1366,13 +1384,17 @@ impl EditorApp {
             self.ambience.status_is_error = false;
         }
         if placement_dirty && !nature_dirty {
-            self.placement.commit_baseline(&path)?;
+            if let Err(e) = self.placement.commit_baseline(&path) {
+                post_commit_errors.push(format!("placement baseline: {e}"));
+            }
         }
         if nature_dirty {
             // The committed objects.dat is the new baseline for both Nature and the DATA panel.
             self.nature.accept_saved();
             if self.placement.is_loaded() {
-                self.placement.commit_baseline(&path)?;
+                if let Err(e) = self.placement.commit_baseline(&path) {
+                    post_commit_errors.push(format!("placement baseline after nature save: {e}"));
+                }
             }
         }
         self.settlement_undo.clear();
@@ -1380,25 +1402,41 @@ impl EditorApp {
         if spawn_data_staged {
             // The committed DATA is the new baseline for the Objects panel and the clearance cache.
             if self.placement.is_loaded() {
-                self.placement.commit_baseline(&path)?;
+                if let Err(e) = self.placement.commit_baseline(&path) {
+                    post_commit_errors.push(format!("placement baseline after spawn save: {e}"));
+                }
             }
             self.spawn_landscape = None;
         }
         if camera_pending {
-            self.scenario.load_session(&path)?;
-            self.campaign.camera_saved();
+            match self.scenario.load_session(&path) {
+                Ok(()) => self.campaign.camera_saved(),
+                Err(e) => post_commit_errors.push(format!("scenario camera reload: {e}")),
+            }
         } else if scenario_dirty {
-            self.scenario
-                .commit_baseline_with(&path, spawn_plan.as_ref().map(|p| &p.scenario))?;
+            if let Err(e) = self
+                .scenario
+                .commit_baseline_with(&path, spawn_plan.as_ref().map(|p| &p.scenario))
+            {
+                post_commit_errors.push(format!("scenario baseline: {e}"));
+            }
         }
         if textures_dirty {
-            self.textures.commit_baseline(&path)?;
+            if let Err(e) = self.textures.commit_baseline(&path) {
+                post_commit_errors.push(format!("texture baseline: {e}"));
+            }
         }
         if scene_dirty {
-            self.scene.commit_baseline(&path)?;
+            if let Err(e) = self.scene.commit_baseline(&path) {
+                post_commit_errors.push(format!("scene baseline: {e}"));
+            }
         }
-        self.clear_recovery();
-        self.reset_journal_epoch();
+        if post_commit_errors.is_empty() {
+            self.clear_recovery();
+            self.reset_journal_epoch();
+        } else {
+            self.post_commit_warning = Some(post_commit_errors.join("; "));
+        }
         if let Ok(source) = crate::recovery::fingerprint(&path) { self.recovery.source = source; }
         self.recovery_deferred = false;
         Ok(report)
@@ -1548,6 +1586,7 @@ impl EditorApp {
         self.floor_atlas_source = None;
         self.viewport_3d.set_floor_atlas(None);
         self.reset_journal_epoch();
+        self.post_commit_warning = None;
         self.save_blockers_open = false;
         self.save_focus_nature = false;
         self.pending_save_warnings = None;
@@ -1613,6 +1652,7 @@ impl EditorApp {
         self.floor_atlas_source = None;
         self.viewport_3d.set_floor_atlas(None);
         self.reset_journal_epoch();
+        self.post_commit_warning = None;
         self.recovery.offer = None;
         self.recovery.last = None;
         self.save_blockers_open = false;
@@ -1871,9 +1911,17 @@ impl EditorApp {
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
             .show(ctx, |ui| {
-                ui.label(tr(lang, "Discard unsaved changes? Closing also discards pending DATA and scenario edits.", "要捨棄未儲存的變更嗎？關閉也會捨棄待儲存的 DATA 與劇本編輯。"));
+                if self.post_commit_warning.is_some() {
+                    ui.label(tr(lang, "Files were saved, but a panel could not refresh. Discard the current editor state and recovery snapshot to continue?", "檔案已儲存，但面板同步失敗。要捨棄目前編輯器狀態與復原快照並繼續嗎？"));
+                } else {
+                    ui.label(tr(lang, "Discard unsaved changes? Closing also discards pending DATA and scenario edits.", "要捨棄未儲存的變更嗎？關閉也會捨棄待儲存的 DATA 與劇本編輯。"));
+                }
                 ui.horizontal(|ui| {
-                    discard = ui.button(tr(lang, "Discard unsaved changes", "捨棄未儲存的變更")).clicked();
+                    discard = ui.button(if self.post_commit_warning.is_some() {
+                        tr(lang, "Discard editor state", "捨棄編輯器狀態")
+                    } else {
+                        tr(lang, "Discard unsaved changes", "捨棄未儲存的變更")
+                    }).clicked();
                     cancel = ui.button(tr(lang, "Keep editing", "繼續編輯")).clicked();
                 });
             });
@@ -3168,7 +3216,8 @@ impl EditorApp {
     }
 
     pub fn has_unsaved_changes(&self) -> bool {
-        self.terrain_is_dirty()
+        self.post_commit_warning.is_some()
+            || self.terrain_is_dirty()
             || self.placement.is_dirty()
             || self.nature.session.is_dirty()
             || self.scenario.dirty()
@@ -3189,7 +3238,8 @@ impl EditorApp {
     /// Dirty state for map ZIP export. Package reports, AI previews, and modifier/save-manager
     /// reviews are not map contents; these must not block exporting an otherwise clean map.
     fn has_unsaved_map_content(&self) -> bool {
-        self.terrain_is_dirty()
+        self.post_commit_warning.is_some()
+            || self.terrain_is_dirty()
             || self.placement.is_dirty()
             || self.nature.session.is_dirty()
             || self.scenario.dirty()

@@ -2032,4 +2032,10 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 
 - `SdlSceneCatalog::load_directory` 改為回報損毀 `.sdl` 檔及路徑，不再略過解析錯誤；目錄列舉錯誤也會回報。地圖切換前先完整驗證 SDL，新增回歸確認損毀目的地地圖不會替換目前地圖或場景。
 - 驗證：完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-sdl-load-guard-20261027 -- --test-threads=1 --quiet` 結束碼 0（editor app 900 passed／6 ignored，workspace 無失敗）；`cargo check --workspace --locked --offline --target-dir %TEMP%\arm-sdl-load-guard-20261027`、`cargo build --workspace --locked --offline --target-dir %TEMP%\arm-sdl-load-guard-20261027`、`git diff --check` 通過。未做桌面／遊戲驗收。
-- 後續風險：Safe Save 在磁碟交易成功後仍有可失敗的面板 baseline reload，可能回報假失敗或造成 UI 部分更新；需另行修正並補故障注入回歸。
+- 後續風險：Safe Save 的提交後面板 reload 可能失敗；下節新增提示與阻擋，仍須後續改進同步復原流程。
+
+## 2026-10-27 Codex：Safe Save 提交後面板同步防護
+
+- 磁碟交易成功後若 baseline／面板重新載入失敗，記錄各面板錯誤並提示檔案已儲存；保留同步阻擋狀態、既有復原快照與 Undo journal，阻止再次儲存或匯出目前地圖，直到地圖重新載入。復原計時器在阻擋期間不覆寫既有快照；捨棄確認會說明快照也會被清除。
+- 聚焦故障注入及乾淨面板阻擋測試均通過；首次測試因測試事件缺少 action 而驗證失敗，補齊有效 action 後通過。最新版完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-sdl-load-guard-20261027 -- --test-threads=1 --quiet` 結束碼 0；`cargo check --workspace --locked --offline --target-dir %TEMP%\arm-postcommit-save-sync-20261027`、同參數 `cargo build` 與 `git diff --check` 通過。
+- 限制：此防護未自動修復失敗的面板同步；保留的舊快照可能因地圖來源指紋變更而無法直接復原，且既有快照不涵蓋所有面板。未做桌面或遊戲驗收。

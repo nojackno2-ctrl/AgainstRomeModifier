@@ -51,6 +51,10 @@ impl EditorApp {
             self.set_status(format!("Autosave failed / 自動快照失敗：{e}"), true);
         }
         ctx.request_repaint_after(AUTOSAVE_INTERVAL);
+        // 面板與已提交的磁碟狀態尚未同步時，保留既有快照，避免用不完整狀態覆寫。
+        if self.post_commit_warning.is_some() {
+            return;
+        }
         // 僅清除本輪已寫入或已套用的快照，保留尚待選擇的舊快照。
         if !self.recovery_deferred && self.recovery.offer.is_none()
             && self.recovery.last.is_some() && !self.has_unsaved_changes() {
@@ -393,6 +397,67 @@ mod tests {
         assert!(!a.undo_journal.can_undo() && !a.undo_journal.can_redo());
         a.collect_pilot_receipts();
         assert!(!a.undo_journal.can_undo());
+    }
+    #[test]
+    fn committed_save_with_failed_panel_refresh_keeps_dirty_state_and_recovery() {
+        let (mut a, _root) = app();
+        let map = a.loaded_map_path.clone().unwrap();
+        a.scenario.load_session(&map).unwrap();
+        a.scenario
+            .add_events(&[against_rome_scenario::Event {
+                name: "Post-commit refresh test".into(),
+                actions: vec![against_rome_scenario::Action {
+                    text: "post-commit".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }])
+            .unwrap();
+        edit(&mut a);
+        a.collect_pilot_receipts();
+        let journal = a.undo_journal.clone();
+        let pending = a.recovery_pending();
+        a.recovery.save(&map, true, pending).unwrap();
+        a.recovery.flush();
+        let snapshot = snapshot_path(a.recovery.root.as_ref().unwrap(), &map);
+        assert!(snapshot.exists());
+
+        a.safe_save_confirming_using(|_| true, |tx| {
+            let report = tx.commit().map_err(|e| e.to_string())?;
+            std::fs::write(map.join("arm_scenario.json"), b"corrupt after transaction")
+                .map_err(|e| e.to_string())?;
+            Ok(report)
+        });
+
+        assert!(a.status_is_error, "{}", a.status_message);
+        assert!(a.status_message.contains("檔案已儲存") || a.status_message.contains("Files were saved"));
+        assert!(a.status_message.contains("scenario baseline"));
+        assert!(a.scenario.dirty(), "scenario edits remain pending for recovery");
+        assert!(a.has_unsaved_changes());
+        assert_eq!(a.undo_journal, journal);
+        a.recovery.flush();
+        assert!(snapshot.exists(), "failed panel refresh must retain recovery snapshot");
+        let saved_snapshot = std::fs::read(&snapshot).unwrap();
+        a.recovery_tick(&egui::Context::default());
+        a.recovery.flush();
+        assert_eq!(std::fs::read(&snapshot).unwrap(), saved_snapshot);
+        a.safe_save_confirming_using(|_| true, |_| panic!("未同步面板不可再次寫入"));
+        assert!(a.status_is_error);
+        assert!(a.status_message.contains("already saved"));
+        assert!(a.has_unsaved_map_content());
+        assert_eq!(crate::storage::load_map(&map).unwrap().heights()[0], 70);
+    }
+    #[test]
+    fn failed_refresh_blocks_clean_panels_until_map_reloaded() {
+        let (mut a, _root) = app();
+        let map = a.loaded_map_path.clone().unwrap();
+        a.post_commit_warning = Some("placement baseline".into());
+        assert!(a.has_unsaved_changes());
+        assert!(a.has_unsaved_map_content());
+        assert!(a.set_loaded_map(map.clone(), crate::storage::load_map(&map).unwrap()).is_err());
+        a.install_loaded_map(map.clone(), crate::storage::load_map(&map).unwrap()).unwrap();
+        assert!(a.post_commit_warning.is_none());
+        assert!(!a.has_unsaved_changes());
     }
     #[test]
     fn recovery_bound_spawn_safe_save_moves_and_deletes_data() {
