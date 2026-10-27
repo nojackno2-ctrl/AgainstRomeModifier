@@ -1,3 +1,8 @@
+## 2026-10-27 Codex：安裝版遊戲延遲啟動畫面複查
+- 以 CUA 從 `C:\Program Files (x86)\Against Rome\Against_Rome.exe` 啟動安裝版；第一張截圖為黑畫面，約一分鐘後同一程序顯示俄文主選單，再開啟歷史地圖清單時場景背景及文字均正常繪出。此次未選地圖、未載入或儲存地圖，未改安裝檔。主程式雜湊仍為 `6AC85239EA3B87A4357ED8CE09A1818E68C09FE3C00E8D98831F473577B719BF`；退出後 PID 42436 已不存在。
+- 啟動黑畫面期間 PID 42436 在 10 秒內 CPU 累增約 18.9 秒；其中一執行緒連續 5 秒消耗約 4.89 CPU 秒，23 個執行緒，15 次 GPU Engine utilization 取樣皆 0%。模組包含 `ddraw.dll`、NVIDIA `nvd3dum.dll`／`nvldumd.dll`、`ds_andll.dll`、`Quartz.dll`、`D3DIM700.DLL`、`mpg2splt.ax`、`msmpeg2adec.dll`。這表示啟動時曾有 CPU 工作但尚無 stack 證據可判定原因；可能只是較長啟動期，不能沿用「持續黑屏」作結論。`wpr -status` 顯示未錄製；本機只找到 `wpr.exe`，未找到 cdb／WinDbg／ProcDump。沒有對安裝版地圖或設定寫入。
+- 下一步：在隔離的自製地圖副本完成 editor export → 遊戲地圖載入的檢查；若仍需解析啟動延遲，須先取得可用 stack capture 工具或權限。此次只證明遊戲可進入選單及歷史地圖列表，不證明任何地圖載入、可玩性或原版啟動修復。
+
 ## 2026-10-27 Codex：Phase 5 原生視窗啟動失敗對話框
 - `apps/against-rome-editor/src/main.rs` 僅在 `eframe::run_native` 回傳錯誤時，使用既有 `rfd` 顯示中英雙語錯誤對話框；內容保留原始錯誤，並建議確認／更新 OpenGL 顯示卡驅動、改用本機一般桌面工作階段及回報完整錯誤。原有 `main()` stderr 與 exit 1 不變；命令列解析、地圖載入、驗證等原生啟動前錯誤維持原本 stderr 流程。新增訊息組裝單元測試；不表示 context 失敗後仍可編輯。
 - 父端複核後，定向訊息測試 1 passed；`cargo check --workspace --locked --offline --target-dir re_workspace/codex-startup-dialog` 與 `cargo build --workspace --locked --offline --target-dir re_workspace/codex-startup-dialog` 通過。完整序列 workspace 測試輸出中各目標皆通過，editor app 889 passed／6 ignored、binary 訊息測試 1 passed；本機未刻意觸發原生圖形內容建立失敗／桌面對話框。`git diff --check` 通過；`rustfmt --check apps/against-rome-editor/src/main.rs` 因 main.rs 既有多處格式差異未通過，未格式化整檔。不表示 context 失敗後仍可編輯。
