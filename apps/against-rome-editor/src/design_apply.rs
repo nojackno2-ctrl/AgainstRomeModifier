@@ -100,18 +100,34 @@ pub struct PlacementBatch {
     pub skipped: Vec<String>,
 }
 
+/// 一次分組操作固定使用同一批來源，避免新配置的低 slot 成為後續批次的模板。
+pub(crate) struct PlacementTemplates(HashMap<u16, (usize, u32, [f32; 3], f32)>);
+
+impl PlacementTemplates {
+    pub(crate) fn capture(store: &ObjectStore) -> Self {
+        let mut templates = HashMap::new();
+        for o in store.objects() {
+            if o.parent.is_none() && o.position.iter().all(|v| v.is_finite()) {
+                templates.entry(o.type_id).or_insert((o.slot, o.uid, o.position, o.rotation_degrees));
+            }
+        }
+        Self(templates)
+    }
+}
+
 /// Clones template families to each request. All-or-nothing for core errors (the store is only
 /// replaced when every request in the batch succeeded); requests with no template instance,
 /// invalid coordinates or an out-of-map position are skipped and reported.
 pub fn apply_placements(store: &mut ObjectStore, requests: &[PlacementRequest]) -> Result<PlacementBatch, String> {
-    let mut templates: HashMap<u16, (usize, u32, [f32; 3], f32)> = HashMap::new();
-    for o in store.objects() {
-        if o.parent.is_none() && o.position.iter().all(|v| v.is_finite()) {
-            templates
-                .entry(o.type_id)
-                .or_insert((o.slot, o.uid, o.position, o.rotation_degrees));
-        }
-    }
+    let templates = PlacementTemplates::capture(store);
+    apply_placements_with_templates(store, requests, &templates)
+}
+
+pub(crate) fn apply_placements_with_templates(
+    store: &mut ObjectStore,
+    requests: &[PlacementRequest],
+    templates: &PlacementTemplates,
+) -> Result<PlacementBatch, String> {
     let mut candidate = store.clone();
     let mut batch = PlacementBatch::default();
     let mut missing: BTreeMap<i32, usize> = BTreeMap::new();
@@ -126,7 +142,7 @@ pub fn apply_placements(store: &mut ObjectStore, requests: &[PlacementRequest]) 
             outside += 1;
             continue;
         }
-        let Some(&(slot, uid, pos, rot)) = u16::try_from(r.type_id).ok().and_then(|t| templates.get(&t)) else {
+        let Some(&(slot, uid, pos, rot)) = u16::try_from(r.type_id).ok().and_then(|t| templates.0.get(&t)) else {
             *missing.entry(r.type_id).or_default() += 1;
             continue;
         };

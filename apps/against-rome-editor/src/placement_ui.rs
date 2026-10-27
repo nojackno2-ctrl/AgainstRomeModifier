@@ -1,5 +1,5 @@
 //! DATA object-family editor. Its Save is independent of terrain/image saving.
-use crate::design_apply::{apply_placements, PlacementBatch, PlacementRequest};
+use crate::design_apply::{apply_placements, apply_placements_with_templates, PlacementBatch, PlacementRequest, PlacementTemplates};
 use crate::layout_io::{
     self, LayoutApplyOptions, LayoutContext, LayoutDialogKind, LayoutFilePicker, MapLayoutKind,
     MapLayoutPreset,
@@ -1427,8 +1427,9 @@ impl PlacementUi {
             .ok_or("請先載入 MAP（Objects 面板 Load DATA）")?
             .clone();
         let mut total = PlacementBatch::default();
+        let templates = PlacementTemplates::capture(&candidate);
         for chunk in requests.chunks(crate::design_apply::MAX_OBJECTS_PER_BATCH) {
-            let batch = apply_placements(&mut candidate, chunk)?;
+            let batch = apply_placements_with_templates(&mut candidate, chunk, &templates)?;
             total.consumed += batch.consumed;
             total.ops += batch.ops;
             total.placed += batch.placed;
@@ -3155,6 +3156,31 @@ mod tests {
         }
         assert!(!ui.store.as_ref().unwrap().can_redo());
         assert!(!expected.can_redo());
+    }
+
+    #[test]
+    fn design_grouped_batches_keep_original_template() {
+        let cap = crate::design_apply::MAX_OBJECTS_PER_BATCH;
+        let temp = Temp::new();
+        let template_slot = cap + 1;
+        let count = template_slot + 1;
+        fixture_with_capacity(&temp.0, count, count);
+        for (name, header, stride) in [("objects", 16, 79), ("position", 8, 17), ("objdata", 8, 9)] {
+            let path = temp.0.join(format!("DATA/{name}.dat"));
+            let mut bytes = fs::read(&path).unwrap();
+            for slot in 0..template_slot { bytes[header + slot * stride] = 0; }
+            fs::write(path, bytes).unwrap();
+        }
+        let mut ui = PlacementUi::default();
+        ui.load_session(&temp.0).unwrap();
+        let mut requests = vec![request(300.0, 400.0); cap + 1];
+        for item in &mut requests { item.team = None; }
+        requests[0].team = Some(3);
+        let report = ui.apply_requests_grouped(&requests).unwrap();
+        assert_eq!(report.placed, cap + 1);
+        let objects = ui.objects();
+        assert_eq!(objects.iter().find(|o| o.slot == 0).unwrap().team, 3);
+        assert_eq!(objects.iter().find(|o| o.slot == cap).unwrap().team, 0, "後一批必須沿用原模板，而非低 slot 的新物件");
     }
 
     #[test]

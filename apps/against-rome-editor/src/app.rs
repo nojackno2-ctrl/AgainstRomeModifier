@@ -3980,7 +3980,7 @@ impl EditorApp {
         &self, target_map: &Path, session: &NatureEditSession,
         mut store: against_rome_placement::ObjectStore,
     ) -> Result<against_rome_placement::ObjectStore, String> {
-        use crate::design_apply::{apply_placements, PlacementRequest};
+        use crate::design_apply::{apply_placements_with_templates, PlacementRequest, PlacementTemplates};
         if !session.is_dirty() {
             return Ok(store);
         }
@@ -4063,9 +4063,10 @@ impl EditorApp {
                 team: None,
             })
             .collect();
+        let templates = PlacementTemplates::capture(&store);
         let mut rest = requests.as_slice();
         while !rest.is_empty() {
-            let batch = apply_placements(&mut store, rest)
+            let batch = apply_placements_with_templates(&mut store, rest, &templates)
                 .map_err(|e| format!("Nature: cannot add objects: {e}"))?;
             if batch.consumed == 0 || batch.placed != batch.consumed || !batch.skipped.is_empty() {
                 return Err(format!(
@@ -11870,6 +11871,69 @@ angle=0.00
             before.get(&PathBuf::from("DATA/objects.dat"))
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn nature_batches_reuse_original_family_with_distinct_child_rotation() {
+        let (root, map) = nature_game("nature_stable_batch_template", true);
+        let count = 200usize;
+        nature_data_fixture(&map, count);
+        let objects_path = map.join("DATA/objects.dat");
+        let position_path = map.join("DATA/position.dat");
+        let mut objects = std::fs::read(&objects_path).unwrap();
+        let mut positions = std::fs::read(&position_path).unwrap();
+        let original_root = objects[16..16 + 79].to_vec();
+        let original_child = objects[16 + 4 * 79..16 + 5 * 79].to_vec();
+        let root_position = positions[8..25].to_vec();
+        let child_position = positions[8 + 4 * 17..8 + 5 * 17].to_vec();
+        for slot in 0..5 {
+            objects[16 + slot * 79] = 0;
+            positions[8 + slot * 17] = 0;
+        }
+        for (slot, record, pos) in [(198usize, original_root, root_position), (199, original_child, child_position)] {
+            let offset = 16 + slot * 79;
+            objects[offset..offset + 79].copy_from_slice(&record);
+            objects[offset + 3..offset + 7].copy_from_slice(&(slot as u32 + 1).to_le_bytes());
+            for link in [67, 69] {
+                objects[offset + link..offset + link + 2].copy_from_slice(&(slot as u16).to_le_bytes());
+            }
+            positions[8 + slot * 17..8 + (slot + 1) * 17].copy_from_slice(&pos);
+        }
+        positions[21 + 198 * 17..25 + 198 * 17].copy_from_slice(&0.0f32.to_le_bytes());
+        positions[21 + 199 * 17..25 + 199 * 17].copy_from_slice(&45.0f32.to_le_bytes());
+        let parent_col = 16 + count * 79 + count * against_rome_placement::COLUMNS[..13].iter().sum::<usize>();
+        objects[parent_col + 199 * 2..parent_col + 199 * 2 + 2].copy_from_slice(&198u16.to_le_bytes());
+        std::fs::write(&objects_path, objects).unwrap();
+        std::fs::write(&position_path, positions).unwrap();
+        let mut lights = vec![0u8; against_rome_data::pool::PAYLOAD_LEN];
+        lights[..4].copy_from_slice(&1u32.to_le_bytes());
+        lights[4..8].copy_from_slice(&1024u32.to_le_bytes());
+        std::fs::write(map.join("DATA/light.dat"), lights).unwrap();
+
+        let mut app = EditorApp::initial_state();
+        app.session = Some(TerrainSession::create_blank(5, 32));
+        app.map_path_input = map.display().to_string();
+        app.placement.load_session(&map).unwrap();
+        app.nature_set_enabled(true);
+        assert!(!app.status_is_error, "{}", app.status_message);
+        let additions: Vec<_> = (0..=crate::design_apply::MAX_OBJECTS_PER_BATCH)
+            .map(|i| against_rome_environment::nature::NatureAddition::new(
+                i32::from(NATURE_TREE), "LanGerNad00_Tanne", 1000.0 + i as f32 * 10.0,
+                0.0, 1000.0, if i == 0 { std::f32::consts::FRAC_PI_2 } else { 0.0 },
+            )).collect();
+        assert!(app.nature.session.plant_many(&additions).unwrap());
+        let candidate = app.replay_nature_candidate(&map, &app.nature.session, app.placement.detached_store().unwrap()).unwrap();
+        let objects = candidate.objects();
+        let last_root = objects.iter().find(|o| o.parent.is_none() && (o.position[0] - 1960.0).abs() < 0.01).unwrap();
+        let child = objects.iter().find(|o| o.parent == Some(last_root.slot)).unwrap();
+        assert_eq!(child.rotation_degrees, 45.0, "後續批次必須沿用原 family 的子物件旋轉");
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        let saved = nature_active_objects(&map);
+        let last_root = saved.iter().find(|o| o.parent.is_none() && (o.position[0] - 1960.0).abs() < 0.01).unwrap();
+        let child = saved.iter().find(|o| o.parent == Some(last_root.slot)).unwrap();
+        assert_eq!(child.rotation_degrees, 45.0, "交易落盤後仍須保留原 family 的子物件旋轉");
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

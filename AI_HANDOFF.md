@@ -2062,7 +2062,7 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 - 聚焦 Nature 22 tests、Settlement 29 tests 與原生 family 比對回歸通過，包含交易失敗回滾、同一 family／模板衝突、先前新增物件再以 Nature 移除。首次測試使用帶 child 但無 light pool 的 house family，遭既有安全檢查拒絕；改用獨立 tree family。舊測試原先預期所有 Objects＋Nature 編輯皆拒絕，改為驗證同 family 衝突。
 - 完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-sdl-load-guard-20261027 -- --test-threads=1 --quiet` 結束碼 0，workspace `cargo check`、`cargo build` 與 `git diff --check` 通過。完整測試編譯後另補 family 資料池範圍測試，獨立聚焦測試 3 passed；執行程式碼未再變更。未做桌面或遊戲驗收，快照記憶體開銷未做大型地圖效能量測。
 - spawn 與 Objects／Nature 的 DATA 合併仍待規劃；Luna 唯讀稽核指出須在同一 detached ObjectStore 上規劃並核對 disk baseline，避免 pool 後寫覆蓋。
-- 後續檢查：Nature 超過單批 96 筆時，`apply_placements` 每批重新挑選第一個同類模板；若新配置的 slot 排在原模板之前，後批可能改用新物件。此為靜態風險，尚未用回歸重現或修正。
+- 分批放置模板漂移修正（已驗證）：一般分組與 Nature 超過 96 筆時固定原模板，避免低 slot 新物件成為後批模板。修正前測試重現一般放置隊伍由 0 變成 3；Nature 97 筆具子物件的 family 在舊流程中第 97 筆子物件旋轉由 45° 變成 0°。修正後兩項回歸通過，Nature 亦驗證 Safe Save 落盤後旋轉；分組測試 4 passed、Nature 測試 23 passed，完整 workspace `cargo check`、`cargo test --workspace --locked --offline --no-fail-fast -j 1` 與 `cargo build` 均通過；尚未驗證桌面或遊戲操作，未量測大型地圖效能。
 
 ## 2026-10-27 Codex：背景寫入中的復原候選
 
