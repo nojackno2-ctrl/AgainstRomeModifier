@@ -2021,3 +2021,9 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 - `scene_ui.rs` 新增 SDL 物件即時篩選與可視列虛擬化；支援檔案路徑、物件名稱／中英文類型、隊伍、索引及待移除標記，多詞以 AND 比對，顯示命中數。加入涵蓋各欄位的 regression。
 - 驗證：聚焦測試通過；完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-scene-filter-20261027 -- --test-threads=1 --quiet` 通過（editor app 899 passed、6 ignored，workspace 無失敗）；`cargo check --workspace --locked --offline --target-dir %TEMP%\arm-scene-filter-20261027` 與 `cargo build --workspace --locked --offline --target-dir %TEMP%\arm-scene-filter-20261027` 通過。
 - 零售地圖桌面驗收未完成：新建置執行檔使用 `--map <完整路徑>` 或 `--game <安裝目錄> --map MP_001` 均立即以結束碼 1 離開，未形成視窗；原因未查明。未儲存或修改安裝地圖。`git diff --check` 通過。
+
+## 2026-10-27 Codex / GPT-6 Luna：SDL 篩選零售桌面驗收更正
+
+- 更正上一節啟動觀察：以 TEMP 建置 `against-rome-editor.exe --map "C:\Program Files (x86)\Against Rome\MAPS\MP_001"` 可正常保持視窗執行；先前短時間輪詢時誤將程序判成已結束。`MP_001` 從啟動參數唯讀載入，SDL 顯示 520 個物件。
+- 桌面搜尋 `BauGerPal00` 顯示 40/520；多詞 `T8 #0` 顯示 6/520 且每筆皆為 `#0`／`T8`；不存在字串顯示 0/520 與空結果提示。清除搜尋後以 Alt+F4 結束該 TEMP 建置程序；未按 Safe Save，未修改安裝地圖。
+- 狀態：SDL 篩選有實際零售資料桌面驗收證據；editor-to-game 匯出載入與安裝遊戲 runtime 仍待驗。
