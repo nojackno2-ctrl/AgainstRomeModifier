@@ -1995,6 +1995,7 @@ impl EditorApp {
                 &self.scenario,
             ),
         );
+        self.process_packaging_export_request();
         self.campaign.english = self.lang() == AppLanguage::English;
         let camera_history = self.capture_camera_control();
         self.campaign.show(
@@ -3181,6 +3182,82 @@ impl EditorApp {
             || self.ai_planner.is_dirty()
             || self.ambience.is_dirty()
             || self.toolbox.is_dirty()
+    }
+
+    /// Dirty state for map ZIP export. Package reports, AI previews, and modifier/save-manager
+    /// reviews are not map contents; these must not block exporting an otherwise clean map.
+    fn has_unsaved_map_content(&self) -> bool {
+        self.terrain_is_dirty()
+            || self.placement.is_dirty()
+            || self.nature.session.is_dirty()
+            || self.scenario.dirty()
+            || self.scenario.graph_ui().is_dirty()
+            || self.textures.is_dirty()
+            || self.scene.is_dirty()
+            || self.event_graph.is_dirty()
+            || self.maps.is_dirty()
+            || self.environment.is_dirty()
+            || self.landscape.is_dirty()
+            || self.campaign.is_dirty()
+            || self.ambience.is_dirty()
+    }
+
+    fn packaging_source_is_loaded_map(&self) -> bool {
+        let Some(loaded) = self.loaded_map_path.as_deref() else {
+            return false;
+        };
+        let source = Path::new(self.packaging.map_dir_input.trim());
+        if source.as_os_str().is_empty() {
+            return false;
+        }
+        match (std::fs::canonicalize(source), std::fs::canonicalize(loaded)) {
+            (Ok(source), Ok(loaded)) => source
+                .to_string_lossy()
+                .eq_ignore_ascii_case(&loaded.to_string_lossy()),
+            _ => false,
+        }
+    }
+
+    /// Handles UI export requests only after drawing the panel, so it rechecks the current
+    /// map/source and dirty state after any input or overwrite confirmation in this frame.
+    pub(crate) fn process_packaging_export_request(&mut self) {
+        let Some((requested_source, confirmed_overwrite, current_source, current_target)) =
+            self.packaging.take_export_request()
+        else {
+            return;
+        };
+
+        if requested_source != current_source {
+            self.packaging.export_target_changed();
+            return;
+        }
+
+        if self.packaging_source_is_loaded_map() && self.has_unsaved_map_content() {
+            self.packaging.block_export_for_unsaved_map();
+            return;
+        }
+
+        if confirmed_overwrite
+            .as_ref()
+            .is_some_and(|(approved_source, approved_target)| {
+                approved_source != &current_source || approved_target != &current_target
+            })
+        {
+            self.packaging.export_target_changed();
+            if current_target.is_file() {
+                self.packaging
+                    .set_overwrite_approval(current_source, current_target);
+            }
+            return;
+        }
+
+        if confirmed_overwrite.is_none() && current_target.is_file() {
+            self.packaging
+                .set_overwrite_approval(current_source, current_target);
+            return;
+        }
+
+        let _ = self.packaging.run_export();
     }
 
     fn update_texture(&mut self, ctx: &egui::Context) {

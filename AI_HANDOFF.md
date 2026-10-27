@@ -1936,10 +1936,11 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 
 ## 2026-10-27 Codex：隔離遊戲地圖載入驗收續查
 
-- 將 editor-saved `ENDL_005` staging（52 個非 recovery 檔）放入 TEMP 完整遊戲副本。以 `re_workspace/codex-alpha-pick/debug/against-rome-editor.exe --game <TEMP 根目錄> --map ENDL_005 --validate-map --lang zh` 執行 Design Check：0 錯誤、5 個 wave-no-destination 警告；直接 `--map <路徑>` 因缺遊戲根目錄 alias catalog 而回報 2 錯誤，改用 `--game` 後通過。
-- 安裝版 `ENDL_005` 備份至 `%TEMP%\arm_ingame_acceptance_20261027_091806\original_ENDL_005`：來源與備份皆 55 檔，逐檔 SHA-256 完全一致。安全檢查拒絕從該 TEMP staging 清除並複製至安裝版測試槽；未重試或改道寫入安裝版。
-- 另建完整 TEMP 遊戲副本並啟動其執行檔，以及用安裝執行檔搭配 TEMP 工作目錄；兩種方式畫面均維持黑色超過 60 秒，程序仍回應，未進入遊戲選單或載入地圖。兩個進程均正常關閉。之後重新比較安裝版 ENDL_005 與原始備份：55 檔、0 差異。
-- 狀態：隔離 staging 通過編輯器語意檢查，但尚未得到遊戲 runtime 接受證據。後續需找到可顯示選單且仍能讓遊戲安全讀取 TEMP 地圖的啟動方式，或在安全檢查允許下按已核對 manifest 的備份／還原流程驗收。
+- 將 editor-saved `ENDL_005` staging（52 個非 recovery 檔）放入 TEMP 完整遊戲副本。以 `re_workspace/codex-alpha-pick/debug/against-rome-editor.exe --game <TEMP 根目錄> --map ENDL_005 --validate-map --lang zh` 執行 Design Check 曾為 0 錯誤、5 個 wave-no-destination 警告；本次安裝版測試前重跑同版本工具，以 `--game C:\Program Files (x86)\Against Rome --map ENDL_005 --validate-map --lang zh` 得 0 錯誤、6 警告（新增 wave-not-hostile；生成隊伍 1 沒有敵對外交動作）。直接 `--map <路徑>` 因缺遊戲根目錄 alias catalog 而回報 2 錯誤，使用 `--game` 後通過。
+- 安裝版 `ENDL_005` 備份至 `%TEMP%\arm_ingame_acceptance_20261027_091806\original_ENDL_005`：來源與備份皆 55 檔，逐檔 SHA-256 完全一致。當時安全檢查拒絕從 TEMP staging 清除並複製至安裝版測試槽；未寫入安裝版。
+- 啟動模式證據需區分：完整 TEMP 遊戲副本與「安裝執行檔搭配 TEMP 工作目錄」曾黑畫面超過 60 秒；另次以安裝版執行檔和安裝目錄作工作目錄，約一分鐘後曾進入俄文主選單及歷史地圖清單（見本檔第 1 項）。本次以同一安裝執行檔／CWD 實測 PID 14580，等待 120 秒仍全黑；程序 Responding=True，CPU 約 2.25 秒，未進入選單或載入地圖。啟動行為不穩定，具體根因未證實。
+- 本次依既有授權將安裝版 `MAPS\ENDL_005`（55 檔）及 `arm_custom_maps.json` 備份至 `%TEMP%\arm_ingame_backup_ENDL_005_20261027_102817`，manifest 共 56 個檔案。把 staging 的 52 檔覆蓋至自製測試槽（不刪除 staging 缺少的原有檔），逐檔驗證 52 檔 hash 相符、登錄檔未改；遊戲關閉後以備份還原，最終 ENDL_005 55 檔、0 hash 差異，`arm_custom_maps.json` hash 相同。未碰 `ENDL_000..004` 或其他原始遊戲檔。
+- 狀態：離線 Design Check 0 錯誤但有 6 警告；本次遊戲畫面載入未通過，地圖 runtime 行為仍未驗。後續先追查安裝版啟動畫面差異；在沒有穩定進入選單前，不再重複寫入測試槽。任何新測試仍須先建立唯一 TEMP 備份與逐檔 SHA-256 manifest，結束後還原驗證。
 
 ## 2026-10-27 Codex：3D Ramp 實體點擊／復原桌面驗收
 
@@ -1954,3 +1955,10 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 - 外部唯讀調查 job `2773a3fd2150` 已終止成功：Codex 報告不能由現有資料判定黑畫面根因或 `gspy` 預期行為；提出下一步以 ProcMon 唯讀擷取 `Against_Rome.exe` 的 CreateFile／ReadFile／Load Image，核對影片 DLL、地圖/DATA 查找及映像/命令列/工作目錄。AGY 任務僅回傳 10 分鐘列印逾時的部分輸出，沒有可採用結論。
 - 狀態：3D 物件 Sprite 點選桌面驗收通過一個實際物件案例；alpha 透明區穿透、多螢幕 DPI／最小尺寸、遊戲 runtime 載入仍待驗。黑畫面根因未證實；未啟動遊戲或寫入安裝目錄。
 - 後續檢查：系統找不到 `Procmon.exe`；內建 WPR 有 `FileIO` profile，但 `wpr.exe -start FileIO -filemode -recordtempto <TEMP>` 回 `Access is denied`、`0x80070005`。未提高權限、未啟動遊戲，沒有 ETL 輸出；執行期檔案追蹤目前待有可用權限或工具後再做。
+
+## 2026-10-27 Codex：阻擋未儲存地圖的 ZIP 匯出
+
+- `packaging_ui.rs` 將匯出與覆蓋確認交由 EditorApp 在面板更新後處理；來源路徑比對目前載入地圖，並於寫入前重查地圖 dirty 狀態。來源或 ZIP 目標在確認後改變時，舊覆蓋核准失效。未儲存目前地圖會提示先 Safe Save；明確選取的其他磁碟地圖仍可匯出。入門說明同步註明 ZIP 讀取已儲存檔案。
+- 回歸案例涵蓋 dirty terrain/scenario 阻擋、Safe Save 後 ZIP payload hash、外部來源地圖、package report dirty 不阻擋、地圖切換及確認期間來源變更保護。
+- 驗證：`cargo check --workspace --locked --offline --target-dir re_workspace/codex-unsaved-export` 通過；`cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-unsaved-export -- --test-threads=1 --quiet` 通過（editor app 893 passed、6 ignored，workspace 無失敗）；`cargo build --workspace --locked --offline --target-dir re_workspace/codex-unsaved-export` 通過；`git diff --check` 通過。僅有既有測試未使用變數警告。
+- 限制：未做 GUI 視覺驗收。Phase 6 遊戲地圖載入本日仍黑畫面 120 秒；測試槽已從 TEMP 備份還原，55 檔及登錄檔 hash 均核對相同；runtime 載入仍未驗證。

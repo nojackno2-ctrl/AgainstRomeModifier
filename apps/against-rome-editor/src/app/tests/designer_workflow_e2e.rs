@@ -729,7 +729,10 @@ fn packaging_temp_map_zip_payload_hashes_and_safe_default_directory() {
     app.packaging.map_dir_input = map.to_string_lossy().into_owned();
     app.packaging.output_zip_input = zip.to_string_lossy().into_owned();
     app.packaging.generate_thumbnail = false;
-    app.packaging.run_export().unwrap();
+    // Packaging 報告狀態不是地圖內容 dirty，不應阻擋匯出。
+    app.packaging.dirty = true;
+    app.packaging.request_export();
+    app.process_packaging_export_request();
     assert!(zip.is_file());
     // verify_zip 實際讀取所有 ZIP payload 並驗證 SHA-256；再與來源逐檔比對。
     let manifest = ModBundleExporter::verify_zip(&zip).unwrap();
@@ -744,6 +747,182 @@ fn packaging_temp_map_zip_payload_hashes_and_safe_default_directory() {
     }
     assert_eq!(map_bytes(&map), before);
     drop(app);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn packaging_export_blocks_unsaved_loaded_map_and_safe_save_retry_contains_current_edits() {
+    use against_rome_packaging::exporter::ModBundleExporter;
+
+    let root = workflow_fixture("packaging_unsaved_guard");
+    let mut app = wizard_map(&root, 5, false);
+    let map = app.loaded_map_path.clone().unwrap();
+    let before = map_bytes(&map);
+    let zip = root.join("unsaved-export.zip");
+    app.packaging.map_dir_input = map.to_string_lossy().into_owned();
+    app.packaging.output_zip_input = zip.to_string_lossy().into_owned();
+    app.packaging.generate_thumbnail = false;
+
+    let terrain = app.session.as_mut().unwrap();
+    let old_height = terrain.heights()[0];
+    terrain.apply_height_changes(&[crate::terrain::SampleChange {
+        index: 0,
+        before: old_height,
+        after: old_height + 1,
+    }]);
+    assert!(terrain.commit_stroke());
+    app.scenario
+        .add_events(&[against_rome_scenario::Event {
+            name: "Unsaved export guard".into(),
+            actions: vec![against_rome_scenario::Action {
+                kind: 1,
+                team: 1,
+                other_team: 2,
+                hostile: true,
+                ..Default::default()
+            }],
+            ..Default::default()
+        }])
+        .unwrap();
+    let can_undo_before = app.undo_journal.can_undo();
+    assert!(app.has_unsaved_map_content());
+
+    app.packaging.request_export();
+    app.process_packaging_export_request();
+    assert!(!zip.exists(), "blocked export must not create a package");
+    assert_eq!(map_bytes(&map), before, "blocked export must not write map files");
+    assert!(app.packaging.status_message.contains("Safe Save"));
+    assert!(app.status_is_error || app.packaging.status_is_error);
+    assert!(app.session.as_ref().unwrap().is_dirty());
+    assert!(app.scenario.dirty());
+    assert_eq!(app.undo_journal.can_undo(), can_undo_before);
+
+    spawn_save_tests::save_ok(&mut app);
+    assert!(!app.has_unsaved_map_content());
+    app.packaging.request_export();
+    app.process_packaging_export_request();
+    assert!(zip.is_file(), "retry after Safe Save should produce the ZIP");
+    let manifest = ModBundleExporter::verify_zip(&zip).unwrap();
+    for name in ["boden.bmp", "arm_scenario.json"] {
+        let saved = std::fs::read(map.join(name)).unwrap();
+        let expected_hash: String = against_rome_data::sha256::sha256(&saved)
+            .iter()
+            .map(|b| format!("{b:02X}"))
+            .collect();
+        let entry = manifest
+            .files
+            .iter()
+            .find(|entry| entry.relative_path == name)
+            .unwrap_or_else(|| panic!("ZIP manifest is missing {name}"));
+        assert_eq!(entry.sha256.to_uppercase(), expected_hash, "{name}");
+    }
+
+    // A dirty editor may still package a distinct, explicitly selected disk map.
+    let external_root = workflow_fixture("packaging_external_source");
+    let external_app = wizard_map(&external_root, 6, false);
+    let external_map = external_app.loaded_map_path.clone().unwrap();
+    let external_zip = root.join("external-source.zip");
+    let terrain = app.session.as_mut().unwrap();
+    let old_height = terrain.heights()[1];
+    terrain.apply_height_changes(&[crate::terrain::SampleChange {
+        index: 1,
+        before: old_height,
+        after: old_height + 1,
+    }]);
+    assert!(terrain.commit_stroke());
+    app.packaging.map_dir_input = external_map.to_string_lossy().into_owned();
+    app.packaging.output_zip_input = external_zip.to_string_lossy().into_owned();
+    app.packaging.request_export();
+    app.process_packaging_export_request();
+    assert!(external_zip.is_file(), "a distinct source map remains exportable");
+    assert!(app.has_unsaved_map_content());
+    drop(external_app);
+    drop(app);
+    std::fs::remove_dir_all(external_root).unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn packaging_overwrite_confirmation_rechecks_map_dirty_state_before_replacing_zip() {
+    let root = workflow_fixture("packaging_overwrite_dirty_guard");
+    let mut app = wizard_map(&root, 5, false);
+    let map = app.loaded_map_path.clone().unwrap();
+    let zip = root.join("existing-export.zip");
+    let previous_zip = b"previous verified package";
+    std::fs::write(&zip, previous_zip).unwrap();
+    app.packaging.map_dir_input = map.to_string_lossy().into_owned();
+    app.packaging.output_zip_input = zip.to_string_lossy().into_owned();
+
+    app.packaging.request_export();
+    app.process_packaging_export_request();
+    assert!(app.packaging.pending_overwrite_confirm);
+    assert_eq!(std::fs::read(&zip).unwrap(), previous_zip);
+
+    // A clean map switch resets the pending overwrite prompt rather than carrying its approval
+    // to the newly loaded source.
+    let mut next_map_app = wizard_map(&root, 6, false);
+    let next_map = next_map_app.loaded_map_path.clone().unwrap();
+    let next_session = next_map_app.session.take().unwrap();
+    app.set_loaded_map(next_map.clone(), next_session).unwrap();
+    assert!(!app.packaging.pending_overwrite_confirm);
+    assert_eq!(std::fs::read(&zip).unwrap(), previous_zip);
+    drop(next_map_app);
+    app.packaging.map_dir_input = next_map.to_string_lossy().into_owned();
+    app.packaging.output_zip_input = zip.to_string_lossy().into_owned();
+
+    app.packaging.request_export();
+    app.process_packaging_export_request();
+    assert!(app.packaging.pending_overwrite_confirm);
+
+    let terrain = app.session.as_mut().unwrap();
+    let old_height = terrain.heights()[0];
+    terrain.apply_height_changes(&[crate::terrain::SampleChange {
+        index: 0,
+        before: old_height,
+        after: old_height + 1,
+    }]);
+    assert!(terrain.commit_stroke());
+    app.packaging.confirm_overwrite_and_export();
+    app.process_packaging_export_request();
+
+    assert!(!app.packaging.pending_overwrite_confirm);
+    assert!(app.packaging.status_message.contains("Safe Save"));
+    assert_eq!(std::fs::read(&zip).unwrap(), previous_zip);
+    assert!(app.has_unsaved_map_content());
+    drop(app);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn packaging_overwrite_confirmation_rejects_changed_source_map() {
+    let root = workflow_fixture("packaging_overwrite_source_guard");
+    let other_root = workflow_fixture("packaging_overwrite_source_other");
+    let mut app = wizard_map(&root, 5, false);
+    let original_map = app.loaded_map_path.clone().unwrap();
+    let other_app = wizard_map(&other_root, 6, false);
+    let other_map = other_app.loaded_map_path.clone().unwrap();
+    let zip = root.join("existing-export.zip");
+    let previous_zip = b"previous verified package";
+    std::fs::write(&zip, previous_zip).unwrap();
+    app.packaging.map_dir_input = original_map.to_string_lossy().into_owned();
+    app.packaging.output_zip_input = zip.to_string_lossy().into_owned();
+
+    app.packaging.request_export();
+    app.process_packaging_export_request();
+    assert!(app.packaging.pending_overwrite_confirm);
+
+    // Changing the source field while the prompt is open must not reuse approval for map A.
+    app.packaging.map_dir_input = other_map.to_string_lossy().into_owned();
+    app.packaging.confirm_overwrite_and_export();
+    app.process_packaging_export_request();
+
+    assert!(app.packaging.pending_overwrite_confirm);
+    assert!(app.packaging.status_is_error);
+    assert_eq!(std::fs::read(&zip).unwrap(), previous_zip);
+
+    drop(other_app);
+    drop(app);
+    std::fs::remove_dir_all(other_root).unwrap();
     std::fs::remove_dir_all(root).unwrap();
 }
 

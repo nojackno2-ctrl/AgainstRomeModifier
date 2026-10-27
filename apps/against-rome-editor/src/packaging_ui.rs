@@ -151,8 +151,16 @@ pub struct PackagingUi {
     pub dirty: bool,
     pub pending_discard: bool,
     pub pending_overwrite_confirm: bool,
+    pending_export_request: Option<PendingExportRequest>,
+    pending_overwrite_approval: Option<(PathBuf, PathBuf)>,
     pub status_message: String,
     pub status_is_error: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PendingExportRequest {
+    requested_source: PathBuf,
+    confirmed_overwrite: Option<(PathBuf, PathBuf)>,
 }
 
 impl Default for PackagingUi {
@@ -187,6 +195,8 @@ impl Default for PackagingUi {
             dirty: false,
             pending_discard: false,
             pending_overwrite_confirm: false,
+            pending_export_request: None,
+            pending_overwrite_approval: None,
             status_message: "Ready.".to_string(),
             status_is_error: false,
         }
@@ -211,6 +221,8 @@ impl PackagingUi {
         self.budget_report = None;
         self.pending_discard = false;
         self.pending_overwrite_confirm = false;
+        self.pending_export_request = None;
+        self.pending_overwrite_approval = None;
     }
 
     /// Resets all map-bound packaging reports, export results, preflight findings, diff snapshots,
@@ -220,6 +232,8 @@ impl PackagingUi {
         self.dirty = false;
         self.pending_discard = false;
         self.pending_overwrite_confirm = false;
+        self.pending_export_request = None;
+        self.pending_overwrite_approval = None;
         self.map_dir_input = map_path
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
@@ -330,42 +344,62 @@ impl PackagingUi {
     }
 
     pub fn request_export(&mut self) {
-        let dir = Path::new(self.map_dir_input.trim());
-        let zip = Path::new(self.output_zip_input.trim());
-
-        if !dir.is_dir() {
-            self.status_message = if self.english {
-                format!("Invalid map directory: {}", dir.display())
-            } else {
-                format!("無效的地圖資料夾路徑：{}", dir.display())
-            };
-            self.status_is_error = true;
-            return;
-        }
-        if zip.as_os_str().is_empty() {
-            self.status_message = tl(
-                self.english,
-                "請指定輸出 ZIP 檔案路徑。",
-                "Please specify output ZIP file path.",
-            )
-            .to_string();
-            self.status_is_error = true;
-            return;
-        }
-
-        if zip.exists() {
-            self.pending_overwrite_confirm = true;
-        } else {
-            let _ = self.run_export();
-        }
+        self.pending_export_request = Some(PendingExportRequest {
+            requested_source: PathBuf::from(self.map_dir_input.trim()),
+            confirmed_overwrite: None,
+        });
     }
 
-    pub fn confirm_overwrite_and_export(&mut self) -> Result<(), String> {
+    /// Confirms the source and output shown by the overwrite prompt. The host rechecks both
+    /// paths and the source map's dirty state immediately before writing the ZIP.
+    pub fn confirm_overwrite_and_export(&mut self) {
         self.pending_overwrite_confirm = false;
-        self.run_export()
+        let confirmed_overwrite = self.pending_overwrite_approval.take();
+        self.pending_export_request = Some(PendingExportRequest {
+            requested_source: PathBuf::from(self.map_dir_input.trim()),
+            confirmed_overwrite,
+        });
     }
 
-    pub fn run_export(&mut self) -> Result<(), String> {
+    pub(crate) fn take_export_request(
+        &mut self,
+    ) -> Option<(PathBuf, Option<(PathBuf, PathBuf)>, PathBuf, PathBuf)> {
+        let request = self.pending_export_request.take()?;
+        Some((
+            request.requested_source,
+            request.confirmed_overwrite,
+            PathBuf::from(self.map_dir_input.trim()),
+            PathBuf::from(self.output_zip_input.trim()),
+        ))
+    }
+
+    pub(crate) fn block_export_for_unsaved_map(&mut self) {
+        self.pending_overwrite_confirm = false;
+        self.status_message = tl(
+            self.english,
+            "目前載入的地圖有未儲存修改；請先執行 Safe Save，再重新匯出。",
+            "The loaded map has unsaved edits. Run Safe Save before exporting again.",
+        )
+        .to_string();
+        self.status_is_error = true;
+    }
+
+    pub(crate) fn export_target_changed(&mut self) {
+        self.status_message = tl(
+            self.english,
+            "輸出 ZIP 路徑已變更；請重新確認匯出目標。",
+            "The output ZIP path changed. Confirm the export target again.",
+        )
+        .to_string();
+        self.status_is_error = true;
+    }
+
+    pub(crate) fn set_overwrite_approval(&mut self, source: PathBuf, target: PathBuf) {
+        self.pending_overwrite_approval = Some((source, target));
+        self.pending_overwrite_confirm = true;
+    }
+
+    pub(crate) fn run_export(&mut self) -> Result<(), String> {
         let dir = Path::new(self.map_dir_input.trim());
         let zip = Path::new(self.output_zip_input.trim());
 
@@ -880,14 +914,20 @@ impl PackagingUi {
                 .collapsible(false)
                 .resizable(false)
                 .show(ctx, |ui| {
+                    let (source, target) = self
+                        .pending_overwrite_approval
+                        .as_ref()
+                        .map(|(source, target)| (source.display().to_string(), target.display().to_string()))
+                        .unwrap_or_else(|| (self.map_dir_input.trim().to_string(), self.output_zip_input.trim().to_string()));
                     ui.label(format!(
-                        "{}\n{}",
+                        "{}\n{}\n{}",
                         tl(
                             self.english,
-                            "目標 ZIP 檔案已存在，匯出將覆蓋既有檔案：",
-                            "Target ZIP file already exists. Exporting will overwrite it:"
+                            "匯出來源地圖：",
+                            "Source map:"
                         ),
-                        self.output_zip_input.trim()
+                        source,
+                        format!("{}\n{}", tl(self.english, "輸出 ZIP（將覆蓋）：", "Output ZIP (will be overwritten):"), target)
                     ));
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
@@ -904,8 +944,7 @@ impl PackagingUi {
                 });
 
             if do_overwrite {
-                self.pending_overwrite_confirm = false;
-                let _ = self.run_export();
+                self.confirm_overwrite_and_export();
             } else if cancel {
                 self.pending_overwrite_confirm = false;
             }
@@ -1807,18 +1846,20 @@ mod tests {
         let mut ui = PackagingUi::default();
         ui.map_dir_input = dir.to_string_lossy().to_string();
 
-        // Target file exists -> request_export flags pending_overwrite_confirm
+        // The host app decides whether to block, request overwrite confirmation, or export.
         ui.output_zip_input = existing_zip.to_string_lossy().to_string();
         ui.request_export();
-        assert!(ui.pending_overwrite_confirm);
+        assert!(ui.pending_export_request.is_some());
+        assert!(!ui.pending_overwrite_confirm);
+        let (_, confirmed, _, target) = ui.take_export_request().unwrap();
+        assert!(confirmed.is_none());
+        assert_eq!(target, existing_zip);
 
-        // Cancel resets confirmation
-        ui.pending_overwrite_confirm = false;
-
-        // Target file does not exist -> pending_overwrite_confirm is not set
+        // A new target also becomes a host request; file existence is checked at execution time.
         ui.output_zip_input = non_existent_zip.to_string_lossy().to_string();
         ui.request_export();
         assert!(!ui.pending_overwrite_confirm);
+        assert!(ui.take_export_request().is_some());
 
         let _ = std::fs::remove_dir_all(&dir);
     }

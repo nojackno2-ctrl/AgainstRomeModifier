@@ -161,8 +161,8 @@ impl GettingStartedUi {
                             ui.heading(tr(lang, "5. Scenario, Validation & Save", "5. 劇本事件、檢查與安全儲存"));
                             ui.label(tr(
                                 lang,
-                                "Define victory/defeat conditions, attack waves, and cutscene cameras. Run Design Check (F5) to verify 24 DATA files and path connectivity before Safe Save.",
-                                "設定勝利／失敗目標、波次進攻與劇本事件。存檔前執行設計檢查 (F5) 確保 24 項 DATA 檔案與連通性完整無缺。",
+                                "Define victory/defeat conditions, attack waves, and cutscene cameras. Run Design Check (F5) before Safe Save. Save the loaded map before exporting its ZIP bundle; exports read saved files.",
+                                "設定勝利／失敗目標、波次進攻與劇本事件。Safe Save 前執行設計檢查 (F5)。匯出 ZIP 套件前先安全儲存目前地圖，套件會讀取磁碟上已儲存的檔案。",
                             ));
                             ui.horizontal_wrapped(|ui| {
                                 if ui.add_enabled(map_loaded, egui::Button::new(tr(lang, "Scenario / Camera", "劇本／鏡頭"))).on_hover_text(tr(lang, "Edit triggers, conditions, and camera actions", "編輯觸發事件、判斷條件與鏡頭動作")).clicked() {
