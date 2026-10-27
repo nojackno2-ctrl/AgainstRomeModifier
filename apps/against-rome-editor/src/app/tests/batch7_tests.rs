@@ -578,6 +578,15 @@ fn minimum_window_size_hud_and_controls_remain_unclipped() {
                 clip_rect.contains_rect(hud_rect),
                 "HUD text must fit within its actual painter clip: {hud_rect:?} vs {clip_rect:?}"
             );
+            let minimap_rect = app
+                .minimap
+                .last_window_rect
+                .expect("Minimap window rect must be recorded");
+            assert!(
+                !hud_rect.expand(4.0).intersects(minimap_rect),
+                "HUD panel must not overlap the Minimap window: HUD={:?} Minimap={minimap_rect:?}",
+                hud_rect.expand(4.0)
+            );
             // Verify full content is preserved in the wrapped galley
             let paint_label = if lang == AppLanguage::English {
                 "Click: Paint / Pick Object"

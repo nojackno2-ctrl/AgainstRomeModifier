@@ -1737,7 +1737,9 @@ impl Viewport3d {
             atlas_str,
             notice
         );
-        let max_width = (rect.width() - 16.0).max(60.0);
+        // Reserve a narrow left column for the HUD so it stays clear of the
+        // floating bottom-right Minimap at the editor's minimum window size.
+        let max_width = (rect.width() - 16.0).min(200.0).max(60.0);
         let color = Color32::from_rgba_unmultiplied(220, 220, 220, 180);
         let galley = painter.layout(
             text,
@@ -1745,8 +1747,18 @@ impl Viewport3d {
             color,
             max_width,
         );
-        let hud_y = (rect.max.y - 8.0 - galley.size().y).max(rect.min.y + 4.0);
-        let hud_pos = Pos2::new(rect.min.x + 8.0, hud_y);
+        // Keep the HUD at the top of the canvas so it does not sit beneath the
+        // bottom-right Minimap window on the minimum-size editor window.
+        let hud_pos = Pos2::new(rect.min.x + 8.0, rect.min.y + 8.0);
+        let hud_background = Rect::from_min_size(
+            hud_pos - egui::Vec2::splat(4.0),
+            galley.size() + egui::Vec2::splat(8.0),
+        );
+        painter.rect_filled(
+            hud_background,
+            3.0,
+            Color32::from_rgba_unmultiplied(0, 0, 0, 150),
+        );
         painter.galley(hud_pos, galley, color);
     }
 

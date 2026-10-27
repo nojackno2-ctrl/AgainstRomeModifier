@@ -269,6 +269,7 @@ pub struct MinimapUi {
     pub open: bool,
     pub show_selection: bool,
     pub show_markers: bool,
+    pub last_window_rect: Option<Rect>,
 }
 
 impl Default for MinimapUi {
@@ -277,6 +278,7 @@ impl Default for MinimapUi {
             open: true,
             show_selection: true,
             show_markers: true,
+            last_window_rect: None,
         }
     }
 }
@@ -296,13 +298,14 @@ impl MinimapUi {
         markers: &[MinimapMarker],
     ) -> Option<MinimapNavResult> {
         if !self.open {
+            self.last_window_rect = None;
             return None;
         }
 
         let mut target_nav = None;
         let title = tr(lang, "Minimap Overview", "小地圖總覽");
 
-        egui::Window::new(title)
+        let window_response = egui::Window::new(title)
             .id(egui::Id::new("minimap_overview_window"))
             .open(&mut self.open)
             .default_pos(minimap_default_position(ctx.screen_rect()))
@@ -457,6 +460,10 @@ impl MinimapUi {
                     }
                 }
             });
+
+        self.last_window_rect = window_response.and_then(|_| {
+            ctx.memory(|memory| memory.area_rect(egui::Id::new("minimap_overview_window")))
+        });
 
         target_nav
     }

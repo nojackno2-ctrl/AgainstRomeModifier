@@ -11,10 +11,10 @@
 - 啟動尺寸為 1280×800、最小尺寸 800×600 邏輯點；未找到可確認的 DPI／多螢幕程式缺陷或原生視窗回歸，現有合成排版測試未涵蓋原生縮放。150%／200% 下最小視窗約需 1200×900／1600×1200 實體像素，屬工作區適配風險而非已重現裁切。保留尺寸設定；下一步於 100%／150%／200%、最小視窗、不同 DPI 螢幕移動及小於預設尺寸工作區進行桌面驗收。
 
 ## 2026-10-27 Codex：最小視窗 3D HUD 折行修正
-- 以 egui headless `800×600`、中英語系及 3D／Blended 模式重現 HUD 文字超出窄視口、被 clip rect 截斷的風險。`viewport_3d.rs::render_hud` 現以 viewport 可用寬度排版折行，並依 galley 高度貼齊底部；回歸測試檢查視口內四邊界、實際裁剪矩形與完整說明字串。
+- 以 egui headless `800×600`、中英語系及 3D／Blended 模式重現 HUD 文字超出窄視口、遭 clip rect 截斷及被 Minimap 遮擋的風險。`viewport_3d.rs::render_hud` 將 HUD 放在視口左上、最大寬度限制 200 logical points 並折行，背景加半透明底色；回歸測試檢查視口 bounds、實際裁剪矩形、完整說明字串與 Minimap 不相交。
 - 聚焦測試 `minimum_window_size_hud_and_controls_remain_unclipped` 通過；`cargo check --workspace --locked --offline --target-dir re_workspace/codex-min-window-hud` 通過；完整序列 workspace 測試通過（editor app 890 passed／6 ignored；其餘 workspace targets 無失敗）；`cargo build --workspace --locked --offline --target-dir re_workspace/codex-min-window-hud` 通過，未見 MSVC 連結錯誤；`git diff --check` 通過。
-- CUA 以本次建置啟動原生視窗，空白 257×257 地圖切至 3D 後 HUD 可見；未儲存地圖。調整視窗操作未能確認實際 800×600，因此不算最小尺寸桌面驗收。
-- 已證明合成 800×600 布局與 egui clip bounds，以及新建置的一般原生 3D HUD 煙霧測試；尚未在原生最小視窗、高 DPI／多螢幕或不同 GPU 驅動做桌面驗收。地圖編輯器整體目標仍未完成；保留既有 `AGENTS.md`／`README.md` 未提交變更。
+- CUA 以最新建置將原生視窗縮至約 800×600 client area（外框約 803×632），空白 257×257 地圖切至 3D；HUD 折行置於視口左上窄欄，與右下 Minimap 實際分離，畫面完整可讀，未儲存地圖。
+- `MinimapUi` 記錄 egui area 實際矩形；HUD 最大寬度限制 200 logical points 並在頂端繪製半透明底色。回歸測試同時檢查文字 bounds、clip rect、HUD 與 Minimap 不相交。聚焦測試通過；`cargo check --workspace --locked --offline --target-dir re_workspace/codex-min-window-hud` 通過；完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-min-window-hud -- --test-threads=1 --quiet` 通過（editor app 890 passed／6 ignored）；`cargo build --workspace --locked --offline --target-dir re_workspace/codex-min-window-hud` 與 `git diff --check` 通過，未見 MSVC 連結錯誤。高 DPI／多螢幕與不同 GPU 驅動驗收仍待進行，地圖編輯器整體目標未完成；保留既有 `AGENTS.md`／`README.md` 未提交變更。
 
 ## 2026-10-27 Codex：3D 空地點擊清除物件選取
 - 一般 3D 模式點擊空白地形時，`PickTerrain` 現會同時清除 placement 選取；射線未命中地形的天空點擊送出 `SelectObject(None)`。Ramp 取點保留既有物件選取；場景移動模式、Alt 相機、物件命中與地形筆刷路徑不變。新增真實多影格 egui/App regression，覆蓋物件點選→Ramp 取點保留選取→空地點擊清除且保留取點座標→天空點擊清除。
