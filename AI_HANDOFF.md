@@ -2027,3 +2027,9 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 - 更正上一節啟動觀察：以 TEMP 建置 `against-rome-editor.exe --map "C:\Program Files (x86)\Against Rome\MAPS\MP_001"` 可正常保持視窗執行；先前短時間輪詢時誤將程序判成已結束。`MP_001` 從啟動參數唯讀載入，SDL 顯示 520 個物件。
 - 桌面搜尋 `BauGerPal00` 顯示 40/520；多詞 `T8 #0` 顯示 6/520 且每筆皆為 `#0`／`T8`；不存在字串顯示 0/520 與空結果提示。清除搜尋後以 Alt+F4 結束該 TEMP 建置程序；未按 Safe Save，未修改安裝地圖。
 - 狀態：SDL 篩選有實際零售資料桌面驗收證據；editor-to-game 匯出載入與安裝遊戲 runtime 仍待驗。
+
+## 2026-10-27 Codex / GPT-6 Luna：損毀 SDL 地圖載入防護
+
+- `SdlSceneCatalog::load_directory` 改為回報損毀 `.sdl` 檔及路徑，不再略過解析錯誤；目錄列舉錯誤也會回報。地圖切換前先完整驗證 SDL，新增回歸確認損毀目的地地圖不會替換目前地圖或場景。
+- 驗證：完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-sdl-load-guard-20261027 -- --test-threads=1 --quiet` 結束碼 0（editor app 900 passed／6 ignored，workspace 無失敗）；`cargo check --workspace --locked --offline --target-dir %TEMP%\arm-sdl-load-guard-20261027`、`cargo build --workspace --locked --offline --target-dir %TEMP%\arm-sdl-load-guard-20261027`、`git diff --check` 通過。未做桌面／遊戲驗收。
+- 後續風險：Safe Save 在磁碟交易成功後仍有可失敗的面板 baseline reload，可能回報假失敗或造成 UI 部分更新；需另行修正並補故障注入回歸。

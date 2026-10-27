@@ -48,9 +48,8 @@ impl SdlSceneCatalog {
     pub fn load_directory(map_directory: &Path) -> Result<Vec<MapSceneObject>, String> {
         let mut objects = Vec::new();
         for path in Self::settlement_files(map_directory)? {
-            if let Ok(objs) = Self::load(&path) {
-                objects.extend(objs);
-            }
+            let objs = Self::load(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+            objects.extend(objs);
         }
         Ok(objects)
     }
@@ -134,7 +133,9 @@ impl SdlSceneCatalog {
     fn settlement_files(map_directory: &Path) -> Result<Vec<std::path::PathBuf>, String> {
         let mut files = Vec::new();
         let entries = fs::read_dir(map_directory).map_err(|e| format!("無法讀取地圖目錄: {e}"))?;
-        for entry in entries.flatten() {
+        for entry in entries {
+            let entry =
+                entry.map_err(|e| format!("無法列舉地圖目錄 {}: {e}", map_directory.display()))?;
             let path = entry.path();
             if path.is_file() {
                 if let Some(ext) = path.extension().and_then(|e| e.to_str()) {

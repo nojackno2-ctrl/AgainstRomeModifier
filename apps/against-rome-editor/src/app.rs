@@ -1432,6 +1432,8 @@ impl EditorApp {
                 path.display()
             ));
         }
+        // SDL 場景有損毀檔案時不得靜默載入不完整資料；先驗證，才能保留目前地圖與所有面板。
+        against_rome_maps::SdlSceneCatalog::load_directory(path)?;
         // Validate Day/Night BMP if present
         let daynight_path = path.join("daynight.bmp");
         if daynight_path.is_file() {
@@ -11247,6 +11249,33 @@ angle=0.00
         assert_eq!(app.ambience.zones.len(), 1);
         assert_eq!(app.ambience.zones[0].name, "Zone_A");
         assert_eq!(app.placement.objects()[0].uid, 10001);
+        assert!(!app.has_unsaved_changes());
+    }
+
+    #[test]
+    fn test_map_switch_corrupt_sdl_aborts_and_preserves_map_a() {
+        let dir_a = PendingPanelTemp(temp_map_dir("corrupt_sdl_a"));
+        let dir_b = PendingPanelTemp(temp_map_dir("corrupt_sdl_b"));
+        make_test_map(&dir_a.0, 10001, "Zone_A", "Briefing_A");
+        let mut terrain_b = TerrainSession::create_blank(193, 77);
+        safe_save_map(&dir_b.0, &mut terrain_b).unwrap();
+        std::fs::write(dir_b.0.join("Broken.sdl"), "[settlement]\nname=Broken\n")
+            .unwrap();
+
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(dir_a.0.clone(), load_map(&dir_a.0).unwrap())
+            .unwrap();
+        let old_scene_path = app.scene.map_dir().map(Path::to_path_buf);
+        let old_scene_objects = app.scene.objects().to_vec();
+
+        let error = app
+            .set_loaded_map(dir_b.0.clone(), load_map(&dir_b.0).unwrap())
+            .unwrap_err();
+
+        assert!(error.contains("Broken.sdl"), "{error}");
+        assert_eq!(app.loaded_map_path.as_deref(), Some(dir_a.0.as_path()));
+        assert_eq!(app.scene.map_dir().map(Path::to_path_buf), old_scene_path);
+        assert_eq!(app.scene.objects(), old_scene_objects);
         assert!(!app.has_unsaved_changes());
     }
 
