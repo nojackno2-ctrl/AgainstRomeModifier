@@ -70,3 +70,5 @@
 2026-10-27 補充：唯讀啟動 `Against_Rome.exe --runmode gspy` 後 30 秒仍黑畫面，程序仍回應且沒有新 Application Error。此觀察不證明模式預期畫面或 DirectDraw 根因；待確認 gspy 的正確使用方式後再決定續查。未載入地圖或修改安裝檔。
 
 2026-10-27 隔離 runtime 續驗：editor-saved `ENDL_005` 的 52 檔 staging 經 `--game <TEMP 根目錄> --map ENDL_005 --validate-map --lang zh` 檢查為 0 錯誤、5 個 wave-no-destination 警告。完整 TEMP 遊戲副本啟動與安裝執行檔搭配 TEMP 工作目錄都超過 60 秒黑畫面，沒有遊戲內載入證據。安裝版地圖寫入指令被安全檢查拒絕；未寫入安裝版。事後比較 ENDL_005 原始備份 manifest 為 55 檔、0 差異。
+
+2026-10-27 桌面補驗：最新建置的 3D viewport 以 Ramp 點選兩個 terrain points 後，UI 顯示 `Ramp applied: 140 height samples modified.`；Undo／Redo／Undo 最後回到無未儲存標記。TEMP map 52 檔 SHA-256 與測試 staging 0 差異。按 `Load DATA` 後實際載入 6651 個物件並顯示 sprite；Frame (F) 可定位目前選取物件，但不同位置點擊未觀察到選取 slot 變更，Sprite picking 仍未驗。畫面使用 missing-floortex relief fallback；遊戲 runtime 仍未驗。

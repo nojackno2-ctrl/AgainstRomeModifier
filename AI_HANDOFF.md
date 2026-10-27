@@ -1934,3 +1934,9 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 - 安裝版 `ENDL_005` 備份至 `%TEMP%\arm_ingame_acceptance_20261027_091806\original_ENDL_005`：來源與備份皆 55 檔，逐檔 SHA-256 完全一致。安全檢查拒絕從該 TEMP staging 清除並複製至安裝版測試槽；未重試或改道寫入安裝版。
 - 另建完整 TEMP 遊戲副本並啟動其執行檔，以及用安裝執行檔搭配 TEMP 工作目錄；兩種方式畫面均維持黑色超過 60 秒，程序仍回應，未進入遊戲選單或載入地圖。兩個進程均正常關閉。之後重新比較安裝版 ENDL_005 與原始備份：55 檔、0 差異。
 - 狀態：隔離 staging 通過編輯器語意檢查，但尚未得到遊戲 runtime 接受證據。後續需找到可顯示選單且仍能讓遊戲安全讀取 TEMP 地圖的啟動方式，或在安全檢查允許下按已核對 manifest 的備份／還原流程驗收。
+
+## 2026-10-27 Codex：3D Ramp 實體點擊／復原桌面驗收
+
+- 新啟動 `re_workspace/codex-alpha-pick/debug/against-rome-editor.exe --game <TEMP game root> --map ENDL_005`，實際在 3D viewport 啟用 Ramp。第一點選取訊息為 `(54, 151)`，第二點 `(40, 28)` 後 UI 顯示 `Ramp applied: 140 height samples modified.` 並出現未儲存標記。其後執行 Undo／Redo／Undo，最終 UI 為 `Undo performed.` 且未再顯示 `[Unsaved Changes]`。
+- 測試只操作 TEMP 地圖；未按 Safe Save。staging 與 TEMP map folder 均 52 檔，逐檔 SHA-256 相同、0 差異。初次開啟 Objects 面板時尚未載入 DATA；按 `Load DATA` 後 UI 顯示 `Active objects: 6651 / Capacity: 14000`，3D 場景可見建築／森林 sprite 與 marker，Frame (F) 也能移動畫面至已選 slot 0。其後不同位置點擊未能改變選取 slot，故不宣稱 Sprite picking 通過。畫面使用 `floortex.dat` 缺失 relief fallback。
+- 這次實際點擊成功，修正 2026-10-27 前一筆「Ramp 起點狀態未前進」的觀察：先前座標操作未建立 gesture；本次用 CUA 新鮮截圖後點 viewport 地形，UIA 狀態轉移與 Height 改變訊息均可見。Ramp desktop click／Undo 已驗，透明／不透明 Sprite 點選、多螢幕 DPI、最小尺寸及遊戲 runtime 仍待驗。
