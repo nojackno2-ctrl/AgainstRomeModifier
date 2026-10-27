@@ -2044,3 +2044,8 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 
 - 捨棄確認後先執行切換，成功後才清除原地圖快照；地圖載入失敗保留原地圖、Undo journal 與快照。清除舊快照時不抹除新地圖的復原提示。`failed_discard_load` 聚焦回歸通過，涵蓋損毀 SDL 拒絕及後續成功切換；完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-sdl-load-guard-20261027 -- --test-threads=1 --quiet` 結束碼 0，`cargo check`、`cargo build` workspace 與 `git diff --check` 通過。未做桌面驗收。
 - Luna 唯讀稽核建議提交後同步重試須保留交易產物識別、各面板狀態與外部變更檢查；目前僅有錯誤字串，不能安全地盲目重試所有面板。未實作同步重試。
+
+## 2026-10-27 Codex：捨棄後新復原快照的背景順序
+
+- 發現清除標記持續遮蔽同一地圖後續成功寫入的快照。背景作業加入每路徑序號與完成回報：僅最新寫入成功才解除遮蔽；開啟／檢視前先處理完成回報，失敗仍保留遮蔽與錯誤，包含刪除入列失敗及不同地圖交錯情境。復原聚焦測試 24 passed；最新完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-sdl-load-guard-20261027 -- --test-threads=1 --quiet` 結束碼 0，workspace `cargo check`、`cargo build` 與 `git diff --check` 通過。未做桌面驗收。
+- Luna 唯讀檢視確認 FIFO、舊寫入與後續刪除的順序保護；舊背景作業錯誤仍沿用既有行為提示並重置快照去重狀態。若寫入未完成就重開，當次仍遮蔽快照；完成後須重新開啟或檢視才會顯示。
