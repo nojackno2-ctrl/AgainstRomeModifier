@@ -179,6 +179,38 @@ fn water_surface_slider_clamps_bed_to_a_paintable_height() {
 }
 
 #[test]
+fn water_brush_rejects_zero_surface_but_edits_at_a_positive_surface_below_four() {
+    let (mut app, dir, ctx) = setup();
+    app.active_tool = ActiveTool::Water;
+    app.show_objects = false;
+    app.water_bed = 0;
+    app.water_surface = 0.0;
+    frame(&mut app, &ctx, 0, vec![]);
+    frame(&mut app, &ctx, 0, vec![]);
+    let center = app.last_map_rect.center();
+    let before_heights = app.session.as_ref().unwrap().heights().to_vec();
+    let before_collision = app.session.as_ref().unwrap().collision().to_vec();
+    for pressed in [true, false] {
+        frame(&mut app, &ctx, 0, gui_pointer(center, pressed));
+    }
+    assert!(app.status_is_error, "零水位仍應由 terrain core 拒絕");
+    assert_eq!(app.session.as_ref().unwrap().heights(), before_heights);
+    assert_eq!(app.session.as_ref().unwrap().collision(), before_collision);
+
+    app.status_is_error = false;
+    app.status_message.clear();
+    app.water_surface = 0.5;
+    for pressed in [true, false] {
+        frame(&mut app, &ctx, 0, gui_pointer(center, pressed));
+    }
+    let session = app.session.as_ref().unwrap();
+    assert_ne!(session.heights(), before_heights, "正值低水位應透過 Water 工具修改地形");
+    assert_eq!(session.collision(), before_collision, "此合成圖的碰撞網格預設已阻擋，水位筆畫應只改地形");
+    assert!(!app.status_is_error, "低於 4 的正水位不得被 UI 拒絕：{}", app.status_message);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn batch44_ui_map_properties_checkbox_and_original_readonly() {
     let (mut app, dir, ctx) = setup();
     app.map_properties_open = true;

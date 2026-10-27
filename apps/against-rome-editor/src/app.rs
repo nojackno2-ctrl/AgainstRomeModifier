@@ -3369,9 +3369,6 @@ impl EditorApp {
                                 None,
                                 seed,
                             ),
-                            ActiveTool::Water if self.water_surface < 4.0 => {
-                                Err(against_rome_editor::terrain::Error::InvalidParameters)
-                            }
                             ActiveTool::Water => session_mut
                                 .paint_water(
                                     gx,
@@ -12696,9 +12693,6 @@ impl EditorApp {
                         } else {
                             format!("世界水位：{:.2}；高度圖步距：{}", self.water_surface * self.height_step, self.height_step)
                         });
-                        if self.water_surface < 4.0 {
-                            ui.label(tr(lang, "Water surface too low for the water brush (minimum 4).", "水位過低，無法使用水域筆刷（最低為 4）。"));
-                        }
                     }
                     if self.active_tool == ActiveTool::HeightRoughen {
                         ui.add(
@@ -13155,9 +13149,6 @@ impl EditorApp {
                                         None,
                                         seed,
                                     ),
-                                    ActiveTool::Water if self.water_surface < 4.0 => {
-                                        Err(against_rome_editor::terrain::Error::InvalidParameters)
-                                    }
                                     ActiveTool::Water => session_mut
                                         .paint_water(
                                             grid_x,

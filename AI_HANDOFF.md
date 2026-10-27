@@ -1,3 +1,7 @@
+## 2026-10-27 Codex / GPT-6 Luna：移除無依據的水域最低水位限制
+- 核心 `TerrainSession::paint_water` 契約為 finite、surface > 0、bed < surface；舊 UI 額外拒絕 surface < 4，且 repo 規格未找到此門檻依據。現移除 2D／3D 筆刷的該拒絕與提示；surface = 0 仍由核心拒絕。新增 egui 回歸驗證零水位無寫入、surface = 0.5 可透過 Water 工具改變地形；本例碰撞網格原已阻擋，因此碰撞保持不變。
+- 定向測試通過；`cargo check --workspace --locked --offline --target-dir re_workspace/codex-water-bed-fix` 通過；完整 editor app 887 passed／6 ignored。完整序列 workspace 測試曾因 `ollama_wire_tests::concurrent_inferences_are_serialized_like_csharp_gate` 一項時序斷言失敗（left `[true, false, true, false]`）；將該測試檔序列隔離重跑為 16 passed／0 failed。`cargo build --workspace --locked --offline --target-dir re_workspace/codex-water-bed-fix` 及 `git diff --check` 通過。低水位僅有 egui 合成驗收，未做桌面／遊戲內效果驗收；整體目標未完成。
+
 ## 2026-10-27 Codex / GPT-6 Luna：水域床面滑桿契約修正
 - `apps/against-rome-editor/src/app.rs` 的床面高度上限現在依水面計算為最大整數 `bed < surface`；水面降低時立即夾限目前床面值，UI 不再提供核心 `paint_water` 會拒絕的組合。另保留既有水位最低 4 的工具限制，該門檻的遊戲規則依據仍待確認。
 - `control_history_e2e::water_surface_slider_clamps_bed_to_a_paintable_height` 涵蓋水位邊界、零水位 UI frame、egui 拖低水位、床面夾限，並以受限值實際產生改變高度的水域筆畫。定向案例 1 passed；`cargo check --workspace --locked --offline --target-dir re_workspace/codex-water-bed-fix`、完整序列 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-water-bed-fix -- --test-threads=1 --quiet`（editor app 886 passed／6 ignored，workspace 無失敗）、`cargo build --workspace --locked --offline --target-dir re_workspace/codex-water-bed-fix` 均通過。僅既有 unused 警告；`git diff --check` 通過。未做桌面／遊戲內水域驗收，整體目標未完成。
