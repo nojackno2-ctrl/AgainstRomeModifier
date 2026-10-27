@@ -13,7 +13,8 @@
 ## 2026-10-27 Codex：最小視窗 3D HUD 折行修正
 - 以 egui headless `800×600`、中英語系及 3D／Blended 模式重現 HUD 文字超出窄視口、被 clip rect 截斷的風險。`viewport_3d.rs::render_hud` 現以 viewport 可用寬度排版折行，並依 galley 高度貼齊底部；回歸測試檢查視口內四邊界、實際裁剪矩形與完整說明字串。
 - 聚焦測試 `minimum_window_size_hud_and_controls_remain_unclipped` 通過；`cargo check --workspace --locked --offline --target-dir re_workspace/codex-min-window-hud` 通過；完整序列 workspace 測試通過（editor app 890 passed／6 ignored；其餘 workspace targets 無失敗）；`cargo build --workspace --locked --offline --target-dir re_workspace/codex-min-window-hud` 通過，未見 MSVC 連結錯誤；`git diff --check` 通過。
-- 僅證明合成 800×600 布局與 egui clip bounds；尚未在原生最小視窗、高 DPI／多螢幕或不同 GPU 驅動做桌面驗收。地圖編輯器整體目標仍未完成；保留既有 `AGENTS.md`／`README.md` 未提交變更。
+- CUA 以本次建置啟動原生視窗，空白 257×257 地圖切至 3D 後 HUD 可見；未儲存地圖。調整視窗操作未能確認實際 800×600，因此不算最小尺寸桌面驗收。
+- 已證明合成 800×600 布局與 egui clip bounds，以及新建置的一般原生 3D HUD 煙霧測試；尚未在原生最小視窗、高 DPI／多螢幕或不同 GPU 驅動做桌面驗收。地圖編輯器整體目標仍未完成；保留既有 `AGENTS.md`／`README.md` 未提交變更。
 
 ## 2026-10-27 Codex：3D 空地點擊清除物件選取
 - 一般 3D 模式點擊空白地形時，`PickTerrain` 現會同時清除 placement 選取；射線未命中地形的天空點擊送出 `SelectObject(None)`。Ramp 取點保留既有物件選取；場景移動模式、Alt 相機、物件命中與地形筆刷路徑不變。新增真實多影格 egui/App regression，覆蓋物件點選→Ramp 取點保留選取→空地點擊清除且保留取點座標→天空點擊清除。
