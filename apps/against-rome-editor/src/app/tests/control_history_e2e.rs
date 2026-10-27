@@ -186,7 +186,8 @@ fn water_brush_rejects_zero_surface_but_edits_at_a_positive_surface_below_four()
     app.water_bed = 0;
     app.water_surface = 0.0;
     frame(&mut app, &ctx, 0, vec![]);
-    frame(&mut app, &ctx, 0, vec![]);
+    let zero_out = frame(&mut app, &ctx, 0, vec![]);
+    assert!(gui_find(&zero_out, "Water surface must be above 0 to paint.").is_some());
     let center = app.last_map_rect.center();
     let before_heights = app.session.as_ref().unwrap().heights().to_vec();
     let before_collision = app.session.as_ref().unwrap().collision().to_vec();
@@ -200,6 +201,8 @@ fn water_brush_rejects_zero_surface_but_edits_at_a_positive_surface_below_four()
     app.status_is_error = false;
     app.status_message.clear();
     app.water_surface = 0.5;
+    let positive_out = frame(&mut app, &ctx, 0, vec![]);
+    assert!(gui_find(&positive_out, "Water surface must be above 0 to paint.").is_none());
     for pressed in [true, false] {
         frame(&mut app, &ctx, 0, gui_pointer(center, pressed));
     }

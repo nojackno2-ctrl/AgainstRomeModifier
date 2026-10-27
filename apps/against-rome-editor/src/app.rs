@@ -12693,6 +12693,9 @@ impl EditorApp {
                         } else {
                             format!("世界水位：{:.2}；高度圖步距：{}", self.water_surface * self.height_step, self.height_step)
                         });
+                        if self.water_surface <= 0.0 {
+                            ui.label(tr(lang, "Water surface must be above 0 to paint.", "水位必須大於 0 才能繪製水域。"));
+                        }
                     }
                     if self.active_tool == ActiveTool::HeightRoughen {
                         ui.add(

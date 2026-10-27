@@ -1,3 +1,7 @@
+## 2026-10-27 Codex / GPT-6 Luna：水位為零的水域筆刷提示
+- Water 工具只在 `water_surface <= 0` 顯示繁中／英文提示「水位必須大於 0 才能繪製水域。」；正值低於 4 不顯示此提示，仍由核心契約決定可否繪製。既有 egui 回歸確認零水位無寫入且提示出現，`surface = 0.5` 時提示消失且筆刷改變地形。
+- 定向測試 `water_brush_rejects_zero_surface_but_edits_at_a_positive_surface_below_four` 1 passed；`cargo check --workspace --locked --offline --target-dir re_workspace/codex-water-bed-fix` 與 `cargo build --workspace --locked --offline --target-dir re_workspace/codex-water-bed-fix` 通過，`git diff --check` 通過。未做桌面／遊戲內水域驗收；整體目標未完成。
+
 ## 2026-10-27 Codex / GPT-6 Luna：移除無依據的水域最低水位限制
 - 核心 `TerrainSession::paint_water` 契約為 finite、surface > 0、bed < surface；舊 UI 額外拒絕 surface < 4，且 repo 規格未找到此門檻依據。現移除 2D／3D 筆刷的該拒絕與提示；surface = 0 仍由核心拒絕。新增 egui 回歸驗證零水位無寫入、surface = 0.5 可透過 Water 工具改變地形；本例碰撞網格原已阻擋，因此碰撞保持不變。
 - 定向測試通過；`cargo check --workspace --locked --offline --target-dir re_workspace/codex-water-bed-fix` 通過；完整 editor app 887 passed／6 ignored。完整序列 workspace 測試曾因 `ollama_wire_tests::concurrent_inferences_are_serialized_like_csharp_gate` 一項時序斷言失敗（left `[true, false, true, false]`）；將該測試檔序列隔離重跑為 16 passed／0 failed。`cargo build --workspace --locked --offline --target-dir re_workspace/codex-water-bed-fix` 及 `git diff --check` 通過。低水位僅有 egui 合成驗收，未做桌面／遊戲內效果驗收；整體目標未完成。
