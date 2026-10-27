@@ -1999,3 +1999,14 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 
 - Soundscape 分頁說明已本地化，並在英／繁中明確提示私有 `soundscape.sndz` 草稿不會被遊戲讀取或播放。聚焦 `chinese_ui_has_no_untranslated_literals` 5 passed；`cargo check -p against-rome-editor-app --locked --offline`、`cargo build -p against-rome-editor-app --locked --offline` 及完整 workspace 測試均通過（editor app 896 passed／6 ignored，其餘 targets 無失敗）。
 - 唯讀稽核確認 3D viewport 的 terrain render 固定在 sprites 前繪製，而 sprite picking 只比對 sprite 深度／alpha，沒有 terrain 深度測試；後方物件可能蓋住地形且攔截點擊，會干擾地形編輯。現有 ray height-field 與 LOD 三角形不是完全相同表面，後續遮擋應共用畫面三角形資料並為可見與 picking 增加一致回歸。
+
+## 2026-10-27 Codex：3D 地形深度遮擋初版
+
+- 新增 viewport 專屬低解析度 NDC depth buffer，使用渲染同一 LOD 四邊形與對角切分；以同一 buffer 遮蔽 sprite 水平片段並排除被遮擋的 sprite／marker 拾取，保留選取框 overlay 與 alpha mask。深度樣本上限 1,000,000、每格 2 logical points 起步。尚待編譯、回歸與效能驗證；目前待補遮擋 raster regression。
+- 代理實作未修改檔案：Codex Luna 因 runner setup error 無法啟動 shell；Agy 備援等待背景工作 413 秒後遭取消。父端依唯讀 pipeline 稽核接手實作。
+
+## 2026-10-27 Codex：3D 地形深度遮擋回歸與驗證
+
+- 初次完整測試發現既有 `test_viewport_3d_click_empty_terrain_and_sky_clears_object_selection_regression` 的平地物件錨點被深度格誤判遮擋；加入雙線性深度取樣仍未消除誤差，將共面容差調至 `2.0e-3` 後聚焦回歸通過。地形明顯遮擋／部分可見 sprite 與可選像素、超大 viewport 深度記憶體上限皆有 regression。
+- `cargo check --workspace --locked --offline --target-dir %TEMP%\arm-codex-zip-guard-20261027`、`cargo build --workspace --locked --offline --target-dir %TEMP%\arm-codex-zip-guard-20261027` 及完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-codex-zip-guard-20261027 -- --test-threads=1 --quiet` 均通過；editor app 898 passed／6 ignored，workspace 無失敗。未做桌面互動或安裝版遊戲驗收。
+- 狀態：程式與回歸已驗證，待提交；遮擋精度受低解析度 depth grid 與共面容差影響，視覺驗收仍待後續進行。

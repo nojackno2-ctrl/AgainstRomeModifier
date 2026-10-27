@@ -36,10 +36,10 @@ use against_rome_scene::{
         prepare_scene_frame, BrushCursorOptions, OrderedSpriteDraw, PreparedSceneFrame,
         SceneFrameOptions, BRUSH_CURSOR_COLOR,
     },
-    math::{Vec2 as SceneVec2, Vec3 as SceneVec3},
+    math::{Mat4, Vec2 as SceneVec2, Vec3 as SceneVec3},
     picking::PickableSprite,
     ray_picker::TerrainRayPicker,
-    scene::Sprite,
+    scene::{ground_point, Sprite},
     scene_object::SceneObject,
     terrain::TerrainHeightField,
     AtlasUv,
@@ -66,13 +66,252 @@ pub enum ShadingMode {
     Textured,
 }
 
+// The depth grid is sampled at two logical points; this tolerance avoids treating
+// coplanar ground-anchored sprites as occluded due to screen-space interpolation.
+const TERRAIN_DEPTH_EPSILON: f32 = 2.0e-3;
+const TERRAIN_DEPTH_SAMPLE_STEP: f32 = 2.0;
+const TERRAIN_DEPTH_MAX_SAMPLES: usize = 1_000_000;
+
+/// Low-resolution screen-space depth from the exact LOD triangles used by the terrain painter.
+/// It is shared by sprite clipping and picking so an occluded pixel cannot intercept terrain edits.
+#[derive(Clone, Debug)]
+struct TerrainDepthBuffer {
+    width: usize,
+    height: usize,
+    sample_step: f32,
+    depths: Vec<f32>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct TerrainDepthCacheKey {
+    view_projection: Mat4,
+    viewport: SceneVec2,
+    heights: Vec<u8>,
+    field_width: usize,
+    field_height: usize,
+    height_scale: f32,
+    tile_width: f32,
+    tile_height: f32,
+    lod_step: usize,
+}
+
+impl TerrainDepthBuffer {
+    fn new(viewport: SceneVec2) -> Self {
+        let area = (viewport.x.max(1.0) * viewport.y.max(1.0)) as usize;
+        let sample_step = TERRAIN_DEPTH_SAMPLE_STEP.max(
+            ((area as f32 / TERRAIN_DEPTH_MAX_SAMPLES as f32).sqrt()).ceil(),
+        );
+        let width = (viewport.x.max(1.0) / sample_step).ceil() as usize;
+        let height = (viewport.y.max(1.0) / sample_step).ceil() as usize;
+        Self {
+            width,
+            height,
+            sample_step,
+            depths: vec![f32::INFINITY; width.saturating_mul(height)],
+        }
+    }
+
+    fn depth_at(&self, point: SceneVec2) -> Option<f32> {
+        if !point.x.is_finite() || !point.y.is_finite() || point.x < 0.0 || point.y < 0.0 {
+            return None;
+        }
+        if point.x >= self.width as f32 * self.sample_step
+            || point.y >= self.height as f32 * self.sample_step
+        {
+            return None;
+        }
+        let sample_x = point.x / self.sample_step - 0.5;
+        let sample_y = point.y / self.sample_step - 0.5;
+        let x0 = sample_x.floor().max(0.0) as usize;
+        let y0 = sample_y.floor().max(0.0) as usize;
+        let x1 = (x0 + 1).min(self.width - 1);
+        let y1 = (y0 + 1).min(self.height - 1);
+        let tx = (sample_x - x0 as f32).clamp(0.0, 1.0);
+        let ty = (sample_y - y0 as f32).clamp(0.0, 1.0);
+        let read = |x: usize, y: usize| {
+            let depth = self.depths[y * self.width + x];
+            depth.is_finite().then_some(depth)
+        };
+        if let (Some(top_left), Some(top_right), Some(bottom_left), Some(bottom_right)) =
+            (read(x0, y0), read(x1, y0), read(x0, y1), read(x1, y1))
+        {
+            let top = top_left + (top_right - top_left) * tx;
+            let bottom = bottom_left + (bottom_right - bottom_left) * tx;
+            Some(top + (bottom - top) * ty)
+        } else {
+            read((point.x / self.sample_step).floor() as usize, (point.y / self.sample_step).floor() as usize)
+        }
+    }
+
+    fn is_occluded(&self, point: SceneVec2, object_depth: f32) -> bool {
+        self.depth_at(point)
+            .is_some_and(|terrain_depth| terrain_depth + TERRAIN_DEPTH_EPSILON < object_depth)
+    }
+
+    /// Returns screen-local visible strips for a billboard, sampled at the same resolution as
+    /// picking. Coarse strips bound per-frame mesh generation while preserving partial occlusion.
+    fn visible_strips(&self, rect: Rect, object_depth: f32) -> Vec<Rect> {
+        let x0 = (rect.min.x.max(0.0) / self.sample_step).floor() as usize;
+        let y0 = (rect.min.y.max(0.0) / self.sample_step).floor() as usize;
+        let x1 = (rect.max.x.max(0.0) / self.sample_step).ceil() as usize;
+        let y1 = (rect.max.y.max(0.0) / self.sample_step).ceil() as usize;
+        let x1 = x1.min(self.width);
+        let y1 = y1.min(self.height);
+        let mut strips = Vec::new();
+        for y in y0.min(self.height)..y1 {
+            let mut run_start = None;
+            for x in x0.min(self.width)..=x1 {
+                let visible = if x < x1 {
+                    let point = SceneVec2::new(
+                        (x as f32 + 0.5) * self.sample_step,
+                        (y as f32 + 0.5) * self.sample_step,
+                    );
+                    !self.is_occluded(point, object_depth)
+                } else {
+                    false
+                };
+                match (run_start, visible) {
+                    (None, true) => run_start = Some(x),
+                    (Some(start), false) => {
+                        let strip = Rect::from_min_max(
+                            Pos2::new(start as f32 * self.sample_step, y as f32 * self.sample_step)
+                                .max(rect.min),
+                            Pos2::new(x as f32 * self.sample_step, (y + 1) as f32 * self.sample_step)
+                                .min(rect.max),
+                        );
+                        if strip.is_positive() {
+                            strips.push(strip);
+                        }
+                        run_start = None;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        strips
+    }
+
+    fn rasterize_triangle(&mut self, points: [SceneVec2; 3], depths: [f32; 3]) {
+        let min_x = points.iter().map(|p| p.x).fold(f32::INFINITY, f32::min).max(0.0);
+        let min_y = points.iter().map(|p| p.y).fold(f32::INFINITY, f32::min).max(0.0);
+        let max_x = points.iter().map(|p| p.x).fold(f32::NEG_INFINITY, f32::max)
+            .min(self.width as f32 * self.sample_step);
+        let max_y = points.iter().map(|p| p.y).fold(f32::NEG_INFINITY, f32::max)
+            .min(self.height as f32 * self.sample_step);
+        if !min_x.is_finite() || !min_y.is_finite() || max_x <= min_x || max_y <= min_y {
+            return;
+        }
+        let x0 = (min_x / self.sample_step).floor() as usize;
+        let y0 = (min_y / self.sample_step).floor() as usize;
+        let x1 = (max_x / self.sample_step).ceil().min(self.width as f32) as usize;
+        let y1 = (max_y / self.sample_step).ceil().min(self.height as f32) as usize;
+        let [a, b, c] = points;
+        let denominator = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
+        if !denominator.is_finite() || denominator.abs() <= f32::EPSILON {
+            return;
+        }
+        for y in y0..y1 {
+            for x in x0..x1 {
+                let px = (x as f32 + 0.5) * self.sample_step;
+                let py = (y as f32 + 0.5) * self.sample_step;
+                let wa = ((b.y - c.y) * (px - c.x) + (c.x - b.x) * (py - c.y)) / denominator;
+                let wb = ((c.y - a.y) * (px - c.x) + (a.x - c.x) * (py - c.y)) / denominator;
+                let wc = 1.0 - wa - wb;
+                if wa < -1.0e-5 || wb < -1.0e-5 || wc < -1.0e-5 {
+                    continue;
+                }
+                let depth = wa * depths[0] + wb * depths[1] + wc * depths[2];
+                if depth.is_finite() {
+                    let index = y * self.width + x;
+                    self.depths[index] = self.depths[index].min(depth);
+                }
+            }
+        }
+    }
+}
+
+fn project_world_with_depth(
+    frame: &PreparedSceneFrame,
+    point: SceneVec3,
+) -> Option<(SceneVec2, f32)> {
+    let clip = frame.view_projection_matrix.transform4([point.x, point.y, point.z, 1.0]);
+    if clip[3] <= 1.0e-6 || !clip.iter().all(|value| value.is_finite()) {
+        return None;
+    }
+    let inverse_w = clip[3].recip();
+    let ndc_x = clip[0] * inverse_w;
+    let ndc_y = clip[1] * inverse_w;
+    let depth = clip[2] * inverse_w;
+    Some((
+        SceneVec2::new(
+            (ndc_x * 0.5 + 0.5) * frame.viewport.x,
+            (0.5 - ndc_y * 0.5) * frame.viewport.y,
+        ),
+        depth,
+    ))
+}
+
+fn terrain_grid_steps(dim: usize, step: usize, reverse: bool) -> Vec<usize> {
+    let steps: Vec<_> = if reverse {
+        (0..dim).step_by(step.max(1)).rev().collect()
+    } else {
+        (0..dim).step_by(step.max(1)).collect()
+    };
+    steps
+}
+
+fn terrain_quad_vertices(
+    field: &TerrainHeightField,
+    x: usize,
+    z: usize,
+    step: usize,
+) -> [SceneVec3; 4] {
+    let dim = field.tile_width as usize;
+    let x0 = x as f32;
+    let z0 = z as f32;
+    let x1 = (x + step).min(dim) as f32;
+    let z1 = (z + step).min(dim) as f32;
+    [
+        SceneVec3::new(x0, field.sample_height(x0, z0), z0),
+        SceneVec3::new(x1, field.sample_height(x1, z0), z0),
+        SceneVec3::new(x1, field.sample_height(x1, z1), z1),
+        SceneVec3::new(x0, field.sample_height(x0, z1), z1),
+    ]
+}
+
+fn build_terrain_depth_buffer(
+    frame: &PreparedSceneFrame,
+    field: &TerrainHeightField,
+    lod_step: usize,
+) -> TerrainDepthBuffer {
+    let mut depth = TerrainDepthBuffer::new(frame.viewport);
+    let dim = field.tile_width as usize;
+    let step = lod_step.clamp(1, 8);
+    let x_steps = terrain_grid_steps(dim, step, frame.camera_position.x < frame.camera_target.x);
+    let z_steps = terrain_grid_steps(dim, step, frame.camera_position.z < frame.camera_target.z);
+    for &z in &z_steps {
+        for &x in &x_steps {
+            let vertices = terrain_quad_vertices(field, x, z, step);
+            let Some(projected) = vertices.map(|point| project_world_with_depth(frame, point)).into_iter().collect::<Option<Vec<_>>>() else {
+                continue;
+            };
+            let points = [projected[0].0, projected[1].0, projected[2].0, projected[3].0];
+            let depths = [projected[0].1, projected[1].1, projected[2].1, projected[3].1];
+            depth.rasterize_triangle([points[0], points[1], points[2]], [depths[0], depths[1], depths[2]]);
+            depth.rasterize_triangle([points[0], points[2], points[3]], [depths[0], depths[2], depths[3]]);
+        }
+    }
+    depth
+}
+
 /// Picks the same screen-aligned sprite rectangles that `render_objects` draws, in painter order.
 /// The returned index is the object index in `PreparedSceneFrame::ordered_sprites`.
 fn pick_rendered_sprite_at(
     point: SceneVec2,
     ordered_sprites: &[OrderedSpriteDraw],
     pickable_sprites: &[Option<PickableSprite<'_>>],
-    mut project_anchor: impl FnMut(SceneVec3) -> Option<SceneVec2>,
+    terrain_depth: Option<&TerrainDepthBuffer>,
+    mut project_anchor: impl FnMut(SceneVec3) -> Option<(SceneVec2, f32)>,
     alpha_test: bool,
 ) -> Option<usize> {
     for ordered in ordered_sprites.iter().rev() {
@@ -82,7 +321,7 @@ fn pick_rendered_sprite_at(
         else {
             continue;
         };
-        let Some(anchor) = project_anchor(ordered.anchor) else {
+        let Some((anchor, object_depth)) = project_anchor(ordered.anchor) else {
             continue;
         };
 
@@ -110,7 +349,9 @@ fn pick_rendered_sprite_at(
         let py = ((local_y / draw.height) * sprite.height as f32)
             .floor()
             .clamp(0.0, (sprite.height - 1) as f32) as u32;
-        if !alpha_test || sprite.is_opaque(px, py) {
+        if (!alpha_test || sprite.is_opaque(px, py))
+            && !terrain_depth.is_some_and(|depth| depth.is_occluded(point, object_depth))
+        {
             return Some(ordered.object_index);
         }
     }
@@ -123,6 +364,7 @@ fn pick_rendered_object_at(
     objects: &[SceneObject],
     pickable_sprites: &[Option<PickableSprite<'_>>],
     heights: &TerrainHeightField,
+    terrain_depth: Option<&TerrainDepthBuffer>,
     marker_radius: f32,
     alpha_test: bool,
 ) -> Option<usize> {
@@ -130,7 +372,8 @@ fn pick_rendered_object_at(
         point,
         &frame.ordered_sprites,
         pickable_sprites,
-        |anchor| frame.project_world_to_screen(anchor).map(|p| SceneVec2::new(p.x, p.y)),
+        terrain_depth,
+        |anchor| project_world_with_depth(frame, anchor),
         alpha_test,
     ) {
         return Some(index);
@@ -155,7 +398,15 @@ fn pick_rendered_object_at(
             }
         })
         .collect();
-    frame.pick_object(point, objects, &marker_sprites, heights, marker_radius)
+    let picked = frame.pick_object(point, objects, &marker_sprites, heights, marker_radius)?;
+    let object = objects.get(picked)?;
+    let marker_anchor = ground_point(object.position(), heights, 0.25);
+    let object_depth = project_world_with_depth(frame, marker_anchor)?.1;
+    if terrain_depth.is_some_and(|depth| depth.is_occluded(point, object_depth)) {
+        None
+    } else {
+        Some(picked)
+    }
 }
 
 /// Action produced by viewport interaction to be executed by EditorApp.
@@ -304,6 +555,7 @@ pub struct Viewport3d {
     pub is_dragging_terrain: bool,
     pub last_rect: Option<Rect>,
     pub english: bool,
+    terrain_depth_cache: Option<(TerrainDepthCacheKey, Arc<TerrainDepthBuffer>)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -421,6 +673,7 @@ impl Viewport3d {
             drag_started_on_object: false,
             is_dragging_terrain: false,
             last_rect: None,
+            terrain_depth_cache: None,
         }
     }
 
@@ -447,6 +700,33 @@ impl Viewport3d {
             self.type_names = type_names;
             self.invalidate_object_sprite_atlas();
         }
+    }
+
+    fn terrain_depth_buffer_for(
+        &mut self,
+        frame: &PreparedSceneFrame,
+        field: &TerrainHeightField,
+        session: &TerrainSession,
+    ) -> Arc<TerrainDepthBuffer> {
+        let key = TerrainDepthCacheKey {
+            view_projection: frame.view_projection_matrix,
+            viewport: frame.viewport,
+            heights: session.heights().to_vec(),
+            field_width: field.width(),
+            field_height: field.height(),
+            height_scale: field.height_scale,
+            tile_width: field.tile_width,
+            tile_height: field.tile_height,
+            lod_step: self.mesh_lod_step.clamp(1, 8),
+        };
+        if let Some((cached_key, buffer)) = &self.terrain_depth_cache {
+            if *cached_key == key {
+                return Arc::clone(buffer);
+            }
+        }
+        let buffer = Arc::new(build_terrain_depth_buffer(frame, field, key.lod_step));
+        self.terrain_depth_cache = Some((key, Arc::clone(&buffer)));
+        buffer
     }
 
     fn invalidate_object_sprite_atlas(&mut self) {
@@ -736,7 +1016,7 @@ impl Viewport3d {
     ///
     /// Returns `None` if an object was picked (object-selection priority) or if ray-cast picking misses the terrain.
     pub fn try_pick_terrain_grid(
-        &self,
+        &mut self,
         screen_pt: Pos2,
         viewport_rect: Rect,
         session: &TerrainSession,
@@ -749,6 +1029,7 @@ impl Viewport3d {
         let local_x = screen_pt.x - viewport_rect.min.x;
         let local_y = screen_pt.y - viewport_rect.min.y;
         let screen_vec = SceneVec2::new(local_x, local_y);
+        let terrain_depth = self.terrain_depth_buffer_for(frame, field, session);
 
         // Object priority: if hitting an object, terrain pick is rejected
         if self.show_objects {
@@ -758,6 +1039,7 @@ impl Viewport3d {
                 scene_objects,
                 pickable_sprites,
                 field,
+                Some(&terrain_depth),
                 Self::OBJECT_PICK_RADIUS,
                 self.atlas_texture.is_some(),
             )
@@ -1146,6 +1428,7 @@ impl Viewport3d {
                 return action;
             }
         };
+        let terrain_depth = self.terrain_depth_buffer_for(&frame, &field, session);
 
         // 9. Ray Picking & Object Detection
         let pointer_pos = response
@@ -1167,6 +1450,7 @@ impl Viewport3d {
                     &scene_objects[..pickable_count],
                     &pickable_sprites[..pickable_count],
                     &field,
+                    Some(&terrain_depth),
                     Self::OBJECT_PICK_RADIUS,
                     self.atlas_texture.is_some(),
                 );
@@ -1418,6 +1702,7 @@ impl Viewport3d {
                 &painter,
                 rect,
                 &frame,
+                &terrain_depth,
                 objects,
                 &scene_objects,
                 selected_object,
@@ -1488,26 +1773,52 @@ impl Viewport3d {
         painter: &egui::Painter,
         rect: Rect,
         frame: &PreparedSceneFrame,
+        terrain_depth: &TerrainDepthBuffer,
         raw_objects: &[WorldObject],
         scene_objects: &[SceneObject],
         selected_object: Option<(usize, u32)>,
     ) {
         // 1. Render ordered sprites
         for ordered in &frame.ordered_sprites {
-            if let Some(screen_pt) = frame.project_world_to_screen(ordered.anchor) {
+            if let Some((screen_pt, object_depth)) = project_world_with_depth(frame, ordered.anchor) {
                 let p = Pos2::new(rect.min.x + screen_pt.x, rect.min.y + screen_pt.y);
                 let s = ordered.sprite;
                 let left = p.x - s.anchor_x;
                 let top = p.y - s.anchor_y;
                 let sprite_rect =
                     Rect::from_min_size(Pos2::new(left, top), egui::Vec2::new(s.width, s.height));
+                let local_sprite_rect = Rect::from_min_size(
+                    Pos2::new(left - rect.min.x, top - rect.min.y),
+                    egui::Vec2::new(s.width, s.height),
+                );
+                if !sprite_rect.intersects(rect) {
+                    continue;
+                }
+                let visible_strips = terrain_depth.visible_strips(local_sprite_rect, object_depth);
 
                 if let Some(ref texture) = self.atlas_texture {
-                    let uv_rect = Rect::from_min_max(
-                        Pos2::new(s.uv.u0, s.uv.v0),
-                        Pos2::new(s.uv.u1, s.uv.v1),
-                    );
-                    painter.image(texture.id(), sprite_rect, uv_rect, Color32::WHITE);
+                    for strip in &visible_strips {
+                        let x0 = (strip.min.x - local_sprite_rect.min.x) / s.width;
+                        let x1 = (strip.max.x - local_sprite_rect.min.x) / s.width;
+                        let y0 = (strip.min.y - local_sprite_rect.min.y) / s.height;
+                        let y1 = (strip.max.y - local_sprite_rect.min.y) / s.height;
+                        let uv_rect = Rect::from_min_max(
+                            Pos2::new(
+                                s.uv.u0 + x0 * (s.uv.u1 - s.uv.u0),
+                                s.uv.v0 + y0 * (s.uv.v1 - s.uv.v0),
+                            ),
+                            Pos2::new(
+                                s.uv.u0 + x1 * (s.uv.u1 - s.uv.u0),
+                                s.uv.v0 + y1 * (s.uv.v1 - s.uv.v0),
+                            ),
+                        );
+                        painter.image(
+                            texture.id(),
+                            strip.translate(rect.min.to_vec2()),
+                            uv_rect,
+                            Color32::WHITE,
+                        );
+                    }
                 } else {
                     // Safe placeholder billboard when sprite is resolved but atlas texture is not yet on GPU
                     let raw = raw_objects.get(ordered.object_index);
@@ -1519,8 +1830,9 @@ impl Viewport3d {
                         (col[2] * 255.0) as u8,
                         170,
                     );
-                    painter.rect_filled(sprite_rect, 2.0, color);
-                    painter.rect_stroke(sprite_rect, 2.0, Stroke::new(1.0_f32, Color32::BLACK));
+                    for strip in &visible_strips {
+                        painter.rect_filled(strip.translate(rect.min.to_vec2()), 2.0, color);
+                    }
                 }
 
                 // Selection outline around sprite
@@ -1868,25 +2180,8 @@ impl Viewport3d {
     ) {
         let step = self.mesh_lod_step.clamp(1, 8);
         let dim = field.tile_width as usize;
-
-        // Determine back-to-front iteration order based on camera position relative to target
-        let cam_pos = self.camera.position();
-        let target = self.camera.target;
-
-        let x_rev = cam_pos.x < target.x;
-        let z_rev = cam_pos.z < target.z;
-
-        let x_steps: Vec<usize> = if x_rev {
-            (0..dim).step_by(step).rev().collect()
-        } else {
-            (0..dim).step_by(step).collect()
-        };
-
-        let z_steps: Vec<usize> = if z_rev {
-            (0..dim).step_by(step).rev().collect()
-        } else {
-            (0..dim).step_by(step).collect()
-        };
+        let x_steps = terrain_grid_steps(dim, step, frame.camera_position.x < frame.camera_target.x);
+        let z_steps = terrain_grid_steps(dim, step, frame.camera_position.z < frame.camera_target.z);
 
         let sun_dir = SceneVec3::new(0.577, 0.707, 0.408).normalized();
         let grid_stroke = if self.show_grid {
@@ -1906,20 +2201,9 @@ impl Viewport3d {
 
         for &z in &z_steps {
             for &x in &x_steps {
-                let x0 = x as f32;
-                let z0 = z as f32;
-                let x1 = (x + step).min(dim) as f32;
-                let z1 = (z + step).min(dim) as f32;
-
-                let h0 = field.sample_height(x0, z0);
-                let h1 = field.sample_height(x1, z0);
-                let h2 = field.sample_height(x1, z1);
-                let h3 = field.sample_height(x0, z1);
-
-                let p0 = SceneVec3::new(x0, h0, z0);
-                let p1 = SceneVec3::new(x1, h1, z0);
-                let p2 = SceneVec3::new(x1, h2, z1);
-                let p3 = SceneVec3::new(x0, h3, z1);
+                let [p0, p1, p2, p3] = terrain_quad_vertices(field, x, z, step);
+                let (x0, z0, x1, z1) = (p0.x, p0.z, p1.x, p3.z);
+                let (h0, h1, h2, h3) = (p0.y, p1.y, p2.y, p3.y);
 
                 // Project 4 corners
                 let sp0 = match frame.project_world_to_screen(p0) {
@@ -2416,7 +2700,7 @@ mod tests {
             PickableSprite::with_alpha_mask(4, 4, 2.0, 2.0, Arc::from([0u8; 16]));
         let sprites = vec![Some(opaque.clone()), Some(transparent)];
         let ordered = vec![ordered_test_sprite(0, 2.0), ordered_test_sprite(1, 1.0)];
-        let project_anchor = |_| Some(SceneVec2::new(50.0, 50.0));
+        let project_anchor = |_| Some((SceneVec2::new(50.0, 50.0), 0.5));
 
         // Painter draws the nearer object last. Its transparent pixel exposes the opaque
         // background object at the exact same screen-space point.
@@ -2425,6 +2709,7 @@ mod tests {
                 SceneVec2::new(48.5, 48.5),
                 &ordered,
                 &sprites,
+                None,
                 project_anchor,
                 true,
             ),
@@ -2444,6 +2729,7 @@ mod tests {
                 SceneVec2::new(48.5, 48.5),
                 &ordered,
                 &sprites,
+                None,
                 project_anchor,
                 true,
             ),
@@ -2461,12 +2747,91 @@ mod tests {
                     2.0,
                     Arc::from([0u8; 16]),
                 ))],
+                None,
                 project_anchor,
                 false,
             ),
             Some(1),
             "placeholder sprites are rectangular until the atlas texture is available"
         );
+    }
+
+    #[test]
+    fn terrain_depth_occludes_full_sprite_and_only_visible_partial_pixels_pick() {
+        let sprite = PickableSprite::with_alpha_mask(4, 4, 4.0, 4.0, Arc::from([255u8; 16]));
+        let ordered = vec![ordered_test_sprite(0, 0.5)];
+        let sprites = vec![Some(sprite)];
+        let project_anchor = |_| Some((SceneVec2::new(50.0, 50.0), 0.5));
+
+        let mut fully_occluded = TerrainDepthBuffer::new(SceneVec2::new(64.0, 64.0));
+        fully_occluded.rasterize_triangle(
+            [SceneVec2::new(0.0, 0.0), SceneVec2::new(64.0, 0.0), SceneVec2::new(64.0, 64.0)],
+            [0.2; 3],
+        );
+        fully_occluded.rasterize_triangle(
+            [SceneVec2::new(0.0, 0.0), SceneVec2::new(64.0, 64.0), SceneVec2::new(0.0, 64.0)],
+            [0.2; 3],
+        );
+        assert!(fully_occluded.visible_strips(Rect::from_min_max(Pos2::new(48.0, 48.0), Pos2::new(52.0, 52.0)), 0.5).is_empty());
+        assert_eq!(
+            pick_rendered_sprite_at(
+                SceneVec2::new(49.0, 49.0),
+                &ordered,
+                &sprites,
+                Some(&fully_occluded),
+                project_anchor,
+                true,
+            ),
+            None,
+            "a fully terrain-occluded object must not block the terrain tool"
+        );
+
+        let mut partial = TerrainDepthBuffer::new(SceneVec2::new(64.0, 64.0));
+        partial.rasterize_triangle(
+            [SceneVec2::new(44.0, 44.0), SceneVec2::new(50.0, 44.0), SceneVec2::new(50.0, 52.0)],
+            [0.2; 3],
+        );
+        partial.rasterize_triangle(
+            [SceneVec2::new(44.0, 44.0), SceneVec2::new(50.0, 52.0), SceneVec2::new(44.0, 52.0)],
+            [0.2; 3],
+        );
+        let strips = partial.visible_strips(
+            Rect::from_min_max(Pos2::new(48.0, 48.0), Pos2::new(52.0, 52.0)),
+            0.5,
+        );
+        assert!(!strips.is_empty());
+        assert!(strips.iter().all(|strip| strip.min.x >= 50.0 && strip.max.x <= 52.0));
+        assert_eq!(
+            pick_rendered_sprite_at(
+                SceneVec2::new(49.0, 49.0),
+                &ordered,
+                &sprites,
+                Some(&partial),
+                project_anchor,
+                true,
+            ),
+            None,
+            "occluded pixels must pass through to terrain or farther objects"
+        );
+        assert_eq!(
+            pick_rendered_sprite_at(
+                SceneVec2::new(51.0, 49.0),
+                &ordered,
+                &sprites,
+                Some(&partial),
+                project_anchor,
+                true,
+            ),
+            Some(0),
+            "visible opaque pixels remain selectable"
+        );
+    }
+
+    #[test]
+    fn terrain_depth_buffer_bounds_memory_for_large_viewports() {
+        let depth = TerrainDepthBuffer::new(SceneVec2::new(100_000.0, 100_000.0));
+        assert!(depth.depths.len() <= TERRAIN_DEPTH_MAX_SAMPLES);
+        assert!(depth.sample_step >= TERRAIN_DEPTH_SAMPLE_STEP);
     }
 
     fn make_test_world_object(
@@ -3543,7 +3908,7 @@ mod tests {
     fn test_discrete_terrain_pick_coordinate_payload() {
         let session = TerrainSession::create_blank(257, 32);
         let field = Viewport3d::build_height_field(&session, 6.0, 4.0).unwrap();
-        let vp = Viewport3d::new();
+        let mut vp = Viewport3d::new();
         let viewport_rect = Rect::from_min_size(Pos2::ZERO, egui::Vec2::new(800.0, 600.0));
 
         let (scene_objs, pickables, sprites) = vp.convert_world_objects(&[]);
