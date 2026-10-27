@@ -1962,3 +1962,9 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 - 回歸案例涵蓋 dirty terrain/scenario 阻擋、Safe Save 後 ZIP payload hash、外部來源地圖、package report dirty 不阻擋、地圖切換及確認期間來源變更保護。
 - 驗證：`cargo check --workspace --locked --offline --target-dir re_workspace/codex-unsaved-export` 通過；`cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-unsaved-export -- --test-threads=1 --quiet` 通過（editor app 893 passed、6 ignored，workspace 無失敗）；`cargo build --workspace --locked --offline --target-dir re_workspace/codex-unsaved-export` 通過；`git diff --check` 通過。僅有既有測試未使用變數警告。
 - 限制：未做 GUI 視覺驗收。Phase 6 遊戲地圖載入本日仍黑畫面 120 秒；測試槽已從 TEMP 備份還原，55 檔及登錄檔 hash 均核對相同；runtime 載入仍未驗證。
+
+## 2026-10-27 Codex / GPT-6 Luna：3D sprite 點選對齊畫面與透明穿透
+
+- `viewport_3d.rs` 過去以 3D 投影框反算 sprite 像素，但實際畫面是投影錨點定位的固定螢幕矩形；點選現在依照同一錨點、尺寸、alpha mask 與 painter 順序命中。透明前景可穿透選到後方物件；atlas 尚未上 GPU 時，placeholder 依實際不透明矩形命中。marker fallback 保留，sprite 不再重複走舊投影框。
+- Luna 唯讀複核也確認舊 scene test 的 anchor 實際落在不透明像素，未覆蓋透明點擊。新增 app picker regression 覆蓋前景透明／不透明、層次順序與 atlas placeholder；真實桌面透明像素點擊仍未驗收。
+- 驗證：定向測試 `rendered_billboard_pick_uses_screen_pixels_and_passes_through_transparency` 通過；`cargo check --workspace --locked --offline --target-dir re_workspace/codex-billboard-pick` 通過；`cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir re_workspace/codex-billboard-pick -- --test-threads=1 --quiet` 通過（editor app 894 passed、6 ignored，workspace 無失敗）；`cargo build --workspace --locked --offline --target-dir re_workspace/codex-billboard-pick` 與 `git diff --check` 通過。存在未修改的測試 unused warnings。

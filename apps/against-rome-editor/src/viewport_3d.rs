@@ -33,8 +33,8 @@ use against_rome_placement::WorldObject;
 use against_rome_scene::{
     camera::EditorCamera,
     draw_list::{
-        prepare_scene_frame, BrushCursorOptions, PreparedSceneFrame, SceneFrameOptions,
-        BRUSH_CURSOR_COLOR,
+        prepare_scene_frame, BrushCursorOptions, OrderedSpriteDraw, PreparedSceneFrame,
+        SceneFrameOptions, BRUSH_CURSOR_COLOR,
     },
     math::{Vec2 as SceneVec2, Vec3 as SceneVec3},
     picking::PickableSprite,
@@ -64,6 +64,98 @@ pub enum ShadingMode {
     Collision,
     /// Textured ground tiles mapped via FloorTextureAtlas
     Textured,
+}
+
+/// Picks the same screen-aligned sprite rectangles that `render_objects` draws, in painter order.
+/// The returned index is the object index in `PreparedSceneFrame::ordered_sprites`.
+fn pick_rendered_sprite_at(
+    point: SceneVec2,
+    ordered_sprites: &[OrderedSpriteDraw],
+    pickable_sprites: &[Option<PickableSprite<'_>>],
+    mut project_anchor: impl FnMut(SceneVec3) -> Option<SceneVec2>,
+    alpha_test: bool,
+) -> Option<usize> {
+    for ordered in ordered_sprites.iter().rev() {
+        let Some(sprite) = pickable_sprites
+            .get(ordered.object_index)
+            .and_then(Option::as_ref)
+        else {
+            continue;
+        };
+        let Some(anchor) = project_anchor(ordered.anchor) else {
+            continue;
+        };
+
+        let draw = ordered.sprite;
+        if !draw.width.is_finite()
+            || !draw.height.is_finite()
+            || draw.width <= 0.0
+            || draw.height <= 0.0
+            || sprite.width == 0
+            || sprite.height == 0
+        {
+            continue;
+        }
+        let left = anchor.x - draw.anchor_x;
+        let top = anchor.y - draw.anchor_y;
+        let local_x = point.x - left;
+        let local_y = point.y - top;
+        if local_x < 0.0 || local_x >= draw.width || local_y < 0.0 || local_y >= draw.height {
+            continue;
+        }
+
+        let px = ((local_x / draw.width) * sprite.width as f32)
+            .floor()
+            .clamp(0.0, (sprite.width - 1) as f32) as u32;
+        let py = ((local_y / draw.height) * sprite.height as f32)
+            .floor()
+            .clamp(0.0, (sprite.height - 1) as f32) as u32;
+        if !alpha_test || sprite.is_opaque(px, py) {
+            return Some(ordered.object_index);
+        }
+    }
+    None
+}
+
+fn pick_rendered_object_at(
+    point: SceneVec2,
+    frame: &PreparedSceneFrame,
+    objects: &[SceneObject],
+    pickable_sprites: &[Option<PickableSprite<'_>>],
+    heights: &TerrainHeightField,
+    marker_radius: f32,
+    alpha_test: bool,
+) -> Option<usize> {
+    if let Some(index) = pick_rendered_sprite_at(
+        point,
+        &frame.ordered_sprites,
+        pickable_sprites,
+        |anchor| frame.project_world_to_screen(anchor).map(|p| SceneVec2::new(p.x, p.y)),
+        alpha_test,
+    ) {
+        return Some(index);
+    }
+
+    // Retain marker picking for objects without a rendered sprite. Zero-sized pickables
+    // suppress the older 3D sprite projection for objects handled by the billboard picker.
+    let mut has_rendered_sprite = vec![false; pickable_sprites.len()];
+    for ordered in &frame.ordered_sprites {
+        if let Some(rendered) = has_rendered_sprite.get_mut(ordered.object_index) {
+            *rendered = true;
+        }
+    }
+    let marker_sprites: Vec<_> = pickable_sprites
+        .iter()
+        .enumerate()
+        .map(|(index, sprite)| {
+            if has_rendered_sprite[index] || sprite.is_some() {
+                Some(PickableSprite::new(0, 0, 0.0, 0.0, None))
+            } else {
+                sprite.clone()
+            }
+        })
+        .collect();
+    frame.pick_object(point, objects, &marker_sprites, heights, marker_radius)
 }
 
 /// Action produced by viewport interaction to be executed by EditorApp.
@@ -660,15 +752,16 @@ impl Viewport3d {
 
         // Object priority: if hitting an object, terrain pick is rejected
         if self.show_objects {
-            if frame
-                .pick_object(
-                    screen_vec,
-                    scene_objects,
-                    pickable_sprites,
-                    field,
-                    Self::OBJECT_PICK_RADIUS,
-                )
-                .is_some()
+            if pick_rendered_object_at(
+                screen_vec,
+                frame,
+                scene_objects,
+                pickable_sprites,
+                field,
+                Self::OBJECT_PICK_RADIUS,
+                self.atlas_texture.is_some(),
+            )
+            .is_some()
             {
                 return None;
             }
@@ -1068,12 +1161,14 @@ impl Viewport3d {
 
             // 9a. Object Picking (priority over terrain brush)
             if self.show_objects {
-                picked_obj_idx = frame.pick_object(
+                picked_obj_idx = pick_rendered_object_at(
                     screen_pt,
+                    &frame,
                     &scene_objects[..pickable_count],
                     &pickable_sprites[..pickable_count],
                     &field,
                     Self::OBJECT_PICK_RADIUS,
+                    self.atlas_texture.is_some(),
                 );
             }
 
@@ -2293,7 +2388,86 @@ mod tests {
     use super::*;
     use against_rome_placement::WorldObject;
     use against_rome_scene::camera::TerrainRay;
+    use against_rome_scene::{draw_list::OrderedSpriteDraw, scene::Sprite};
     use against_rome_textures::NativeSprite;
+
+    fn ordered_test_sprite(object_index: usize, depth: f32) -> OrderedSpriteDraw {
+        OrderedSpriteDraw {
+            object_index,
+            depth,
+            anchor: SceneVec3::new(0.0, 0.0, 0.0),
+            native_y: 0.0,
+            sprite: Sprite {
+                width: 4.0,
+                height: 4.0,
+                anchor_x: 2.0,
+                anchor_y: 2.0,
+                uv: AtlasUv::default(),
+            },
+            first_vertex: object_index * 6,
+            vertex_count: 6,
+        }
+    }
+
+    #[test]
+    fn rendered_billboard_pick_uses_screen_pixels_and_passes_through_transparency() {
+        let opaque = PickableSprite::with_alpha_mask(4, 4, 2.0, 2.0, Arc::from([255u8; 16]));
+        let transparent =
+            PickableSprite::with_alpha_mask(4, 4, 2.0, 2.0, Arc::from([0u8; 16]));
+        let sprites = vec![Some(opaque.clone()), Some(transparent)];
+        let ordered = vec![ordered_test_sprite(0, 2.0), ordered_test_sprite(1, 1.0)];
+        let project_anchor = |_| Some(SceneVec2::new(50.0, 50.0));
+
+        // Painter draws the nearer object last. Its transparent pixel exposes the opaque
+        // background object at the exact same screen-space point.
+        assert_eq!(
+            pick_rendered_sprite_at(
+                SceneVec2::new(48.5, 48.5),
+                &ordered,
+                &sprites,
+                project_anchor,
+                true,
+            ),
+            Some(0)
+        );
+
+        let opaque_foreground = PickableSprite::with_alpha_mask(
+            4,
+            4,
+            2.0,
+            2.0,
+            Arc::from([255u8; 16]),
+        );
+        let sprites = vec![Some(opaque.clone()), Some(opaque_foreground)];
+        assert_eq!(
+            pick_rendered_sprite_at(
+                SceneVec2::new(48.5, 48.5),
+                &ordered,
+                &sprites,
+                project_anchor,
+                true,
+            ),
+            Some(1)
+        );
+
+        assert_eq!(
+            pick_rendered_sprite_at(
+                SceneVec2::new(48.5, 48.5),
+                &ordered,
+                &vec![Some(opaque), Some(PickableSprite::with_alpha_mask(
+                    4,
+                    4,
+                    2.0,
+                    2.0,
+                    Arc::from([0u8; 16]),
+                ))],
+                project_anchor,
+                false,
+            ),
+            Some(1),
+            "placeholder sprites are rectangular until the atlas texture is available"
+        );
+    }
 
     fn make_test_world_object(
         slot: usize,
