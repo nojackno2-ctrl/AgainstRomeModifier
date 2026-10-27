@@ -2009,4 +2009,9 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 
 - 初次完整測試發現既有 `test_viewport_3d_click_empty_terrain_and_sky_clears_object_selection_regression` 的平地物件錨點被深度格誤判遮擋；加入雙線性深度取樣仍未消除誤差，將共面容差調至 `2.0e-3` 後聚焦回歸通過。地形明顯遮擋／部分可見 sprite 與可選像素、超大 viewport 深度記憶體上限皆有 regression。
 - `cargo check --workspace --locked --offline --target-dir %TEMP%\arm-codex-zip-guard-20261027`、`cargo build --workspace --locked --offline --target-dir %TEMP%\arm-codex-zip-guard-20261027` 及完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-codex-zip-guard-20261027 -- --test-threads=1 --quiet` 均通過；editor app 898 passed／6 ignored，workspace 無失敗。未做桌面互動或安裝版遊戲驗收。
-- 狀態：程式與回歸已驗證，待提交；遮擋精度受低解析度 depth grid 與共面容差影響，視覺驗收仍待後續進行。
+- 狀態：已於 `53c2579` 提交並推送；遮擋精度受低解析度 depth grid 與共面容差影響，實際零售 DATA sprite 遮擋驗收仍待後續進行。
+
+## 2026-10-27 Codex：3D 遮擋提交與零售地圖唯讀載入
+
+- 前述 3D 地形深度遮擋已提交並推送 `53c2579`；`HEAD` 與 `origin/主要開發` 同步。最新建置以 `--map C:\Program Files (x86)\Against Rome\MAPS\ENDL_001` 啟動後，再從 UI 唯讀載入 `MP_001`；SDL 場景面板顯示 520 個物件，3D relief terrain 與 `Atlas: 144 tiles` 可見。編輯器程序已關閉，未操作 Safe Save，未修改安裝地圖。
+- 本次只證明零售地圖可由編輯器讀取並顯示 SDL 清單／地形；尚未驗證編輯器匯出地圖能由遊戲載入，也未驗證深度遮擋對零售 DATA sprite 的實際效果。原先 `ENDL_001` 的 DATA object 數為 0，不能作 sprite 遮擋驗收證據。
