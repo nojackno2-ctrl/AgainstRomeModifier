@@ -2039,3 +2039,8 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 - 磁碟交易成功後若 baseline／面板重新載入失敗，記錄各面板錯誤並提示檔案已儲存；保留同步阻擋狀態、既有復原快照與 Undo journal，阻止再次儲存或匯出目前地圖，直到地圖重新載入。復原計時器在阻擋期間不覆寫既有快照；捨棄確認會說明快照也會被清除。
 - 聚焦故障注入及乾淨面板阻擋測試均通過；首次測試因測試事件缺少 action 而驗證失敗，補齊有效 action 後通過。最新版完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-sdl-load-guard-20261027 -- --test-threads=1 --quiet` 結束碼 0；`cargo check --workspace --locked --offline --target-dir %TEMP%\arm-postcommit-save-sync-20261027`、同參數 `cargo build` 與 `git diff --check` 通過。
 - 限制：此防護未自動修復失敗的面板同步；保留的舊快照可能因地圖來源指紋變更而無法直接復原，且既有快照不涵蓋所有面板。未做桌面或遊戲驗收。
+
+## 2026-10-27 Codex：地圖載入失敗時保留復原資料
+
+- 捨棄確認後先執行切換，成功後才清除原地圖快照；地圖載入失敗保留原地圖、Undo journal 與快照。清除舊快照時不抹除新地圖的復原提示。`failed_discard_load` 聚焦回歸通過，涵蓋損毀 SDL 拒絕及後續成功切換；完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-sdl-load-guard-20261027 -- --test-threads=1 --quiet` 結束碼 0，`cargo check`、`cargo build` workspace 與 `git diff --check` 通過。未做桌面驗收。
+- Luna 唯讀稽核建議提交後同步重試須保留交易產物識別、各面板狀態與外部變更檢查；目前僅有錯誤字串，不能安全地盲目重試所有面板。未實作同步重試。

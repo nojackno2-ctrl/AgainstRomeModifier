@@ -1823,20 +1823,20 @@ impl EditorApp {
         self.pending_action = Some(PendingAction::BuildBlank(intent));
     }
 
-    fn perform_action(&mut self, action: PendingAction, ctx: &egui::Context) {
+    fn perform_action(&mut self, action: PendingAction, ctx: &egui::Context) -> bool {
         match action {
             PendingAction::Load(path) => match load_map(&path) {
                 Ok(loaded) => {
                     if let Err(error) = self.install_loaded_map(path, loaded) {
                         self.status_message = format!("Load failed: {error}");
                         self.status_is_error = true;
-                        return;
+                        return false;
                     }
                 }
                 Err(error) => {
                     self.status_message = format!("Load failed: {error}");
                     self.status_is_error = true;
-                    return;
+                    return false;
                 }
             },
             PendingAction::Blank(size) => {
@@ -1860,7 +1860,7 @@ impl EditorApp {
                         self.status_is_error = true;
                         self.maps.status_message = format!("平坦範本建置失敗: {error}");
                         self.maps.status_is_error = true;
-                        return;
+                        return false;
                     }
                 }
             }
@@ -1876,7 +1876,7 @@ impl EditorApp {
                         self.status_is_error = true;
                         self.maps.status_message = format!("建置失敗: {error}");
                         self.maps.status_is_error = true;
-                        return;
+                        return false;
                     }
                 }
             }
@@ -1884,7 +1884,7 @@ impl EditorApp {
                 self.reset_journal_epoch();
                 self.close_allowed = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                return;
+                return true;
             }
         }
         self.is_painting = false;
@@ -1892,6 +1892,30 @@ impl EditorApp {
         self.ramp_selecting = false;
         self.ramp_start = None;
         self.texture_dirty = true;
+        true
+    }
+
+    fn discard_and_perform_action(&mut self, action: PendingAction, ctx: &egui::Context) {
+        let previous_map = self.loaded_map_path.clone();
+        if !self.perform_action(action, ctx) {
+            return;
+        }
+        if let Some(previous_map) = previous_map {
+            let same_snapshot = self.recovery.root.as_ref().is_some_and(|root| {
+                self.loaded_map_path.as_ref().is_some_and(|current| {
+                    crate::recovery::snapshot_path(root, current)
+                        == crate::recovery::snapshot_path(root, &previous_map)
+                })
+            });
+            let result = if same_snapshot {
+                self.recovery.clear(&previous_map)
+            } else {
+                self.recovery.delete_snapshot(&previous_map)
+            };
+            if let Err(e) = result {
+                self.set_status(format!("Recovery cleanup failed / 復原檔清除失敗：{e}"), true);
+            }
+        }
     }
 
     pub fn handle_pending_action(&mut self, ctx: &egui::Context) {
@@ -1926,11 +1950,8 @@ impl EditorApp {
                 });
             });
         if discard {
-            self.reset_journal_epoch();
-            self.clear_recovery();
-            self.recovery_deferred = false;
             let action = self.pending_action.take().unwrap();
-            self.perform_action(action, ctx);
+            self.discard_and_perform_action(action, ctx);
         } else if cancel {
             self.pending_action = None;
         }

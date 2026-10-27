@@ -399,6 +399,42 @@ mod tests {
         assert!(!a.undo_journal.can_undo());
     }
     #[test]
+    fn failed_discard_load_keeps_current_recovery_and_success_preserves_new_offer() {
+        let (mut a, root) = app();
+        let map_a = a.loaded_map_path.clone().unwrap();
+        edit(&mut a);
+        a.collect_pilot_receipts();
+        let journal = a.undo_journal.clone();
+        let pending = a.recovery_pending();
+        a.recovery.save(&map_a, true, pending).unwrap();
+        a.recovery.flush();
+        let snapshot_a = snapshot_path(a.recovery.root.as_ref().unwrap(), &map_a);
+        let snapshot_a_bytes = std::fs::read(&snapshot_a).unwrap();
+
+        let map_b = root.0.join("map_b");
+        std::fs::create_dir_all(&map_b).unwrap();
+        crate::storage::safe_save_map(&map_b, &mut TerrainSession::create_blank(5, 32)).unwrap();
+        std::fs::write(map_b.join("Broken.sdl"), "[settlement]\nname=Broken\n").unwrap();
+        let ctx = egui::Context::default();
+        a.discard_and_perform_action(PendingAction::Load(map_b.clone()), &ctx);
+        a.recovery.flush();
+        assert!(a.status_is_error);
+        assert_eq!(a.loaded_map_path.as_deref(), Some(map_a.as_path()));
+        assert_eq!(a.undo_journal, journal);
+        assert!(a.has_unsaved_changes());
+        assert_eq!(std::fs::read(&snapshot_a).unwrap(), snapshot_a_bytes);
+
+        std::fs::remove_file(map_b.join("Broken.sdl")).unwrap();
+        let snapshot_b = snapshot_path(a.recovery.root.as_ref().unwrap(), &map_b);
+        crate::recovery::write(&snapshot_b, &manifest(&map_b, &fingerprint(&map_b).unwrap(), a.recovery_pending())).unwrap();
+        a.discard_and_perform_action(PendingAction::Load(map_b.clone()), &ctx);
+        a.recovery.flush();
+        assert_eq!(a.loaded_map_path.as_deref(), Some(map_b.as_path()));
+        assert!(!snapshot_a.exists());
+        assert!(snapshot_b.exists());
+        assert!(matches!(a.recovery.offer, Some(Ok(_))));
+    }
+    #[test]
     fn committed_save_with_failed_panel_refresh_keeps_dirty_state_and_recovery() {
         let (mut a, _root) = app();
         let map = a.loaded_map_path.clone().unwrap();

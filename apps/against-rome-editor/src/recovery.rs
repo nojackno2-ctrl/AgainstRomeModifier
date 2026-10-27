@@ -315,6 +315,10 @@ impl Recovery {
     pub fn clear(&mut self, map: &Path) -> Result<(), String> {
         self.last = None;
         self.offer = None;
+        self.delete_snapshot(map)
+    }
+    /// 刪除其他地圖的快照，不改變目前地圖的復原提示與自動儲存狀態。
+    pub(crate) fn delete_snapshot(&mut self, map: &Path) -> Result<(), String> {
         if let Some(root) = &self.root {
             let path = snapshot_path(root, map);
             // 刪除尚在背景排隊時，立即重開也不得重新提示已捨棄的快照。
