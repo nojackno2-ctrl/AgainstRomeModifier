@@ -12,6 +12,21 @@ struct Desktop {
     editor: EditorApp,
     frames_left: Option<u8>,
 }
+
+fn native_startup_error_message(error: &str) -> String {
+    format!(
+        "無法啟動 Against Rome 地圖編輯器視窗。\n\n原始錯誤：\n{error}\n\n建議：確認顯示卡驅動程式支援 OpenGL，更新驅動程式後在本機桌面重新啟動；若使用遠端桌面或虛擬顯示環境，請改用一般桌面工作階段。若問題持續，請回報上方完整錯誤。\n\nFailed to start the editor window. Check that your graphics driver supports OpenGL, update it, and retry in a local desktop session. If you use Remote Desktop or a virtual display, retry in a regular desktop session. If it still fails, report the full error above."
+    )
+}
+
+fn show_native_startup_error(error: &str) {
+    rfd::MessageDialog::new()
+        .set_title("Against Rome Map Editor — 啟動失敗 / Startup Failed")
+        .set_description(native_startup_error_message(error))
+        .set_level(rfd::MessageLevel::Error)
+        .set_buttons(rfd::MessageButtons::Ok)
+        .show();
+}
 impl eframe::App for Desktop {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         eframe::App::update(&mut self.editor, ctx, frame);
@@ -101,7 +116,7 @@ fn run() -> Result<(), String> {
             .with_min_inner_size([800.0, 600.0]),
         ..Default::default()
     };
-    eframe::run_native(
+    if let Err(error) = eframe::run_native(
         "Against Rome Map Editor — Rust",
         native_options,
         Box::new(move |cc| {
@@ -115,8 +130,10 @@ fn run() -> Result<(), String> {
                 frames_left: options.smoke_test.then_some(3),
             })
         }),
-    )
-    .map_err(|e| e.to_string())?;
+    ) {
+        show_native_startup_error(&error.to_string());
+        return Err(error.to_string());
+    }
     if options.smoke_test {
         println!("Native desktop smoke test completed: three UI updates executed.");
     }
@@ -127,5 +144,21 @@ fn main() {
     if let Err(error) = run() {
         eprintln!("{error}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::native_startup_error_message;
+
+    #[test]
+    fn native_startup_error_message_keeps_cause_and_actionable_guidance() {
+        let message =
+            native_startup_error_message("WGL: The driver does not appear to support OpenGL");
+
+        assert!(message.contains("WGL: The driver does not appear to support OpenGL"));
+        assert!(message.contains("更新驅動程式"));
+        assert!(message.contains("本機桌面"));
+        assert!(message.contains("report the full error"));
     }
 }
