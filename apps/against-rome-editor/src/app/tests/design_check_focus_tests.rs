@@ -1,9 +1,18 @@
 use super::*;
 use crate::undo_journal::{SubsystemId, UndoTarget};
 use against_rome_scenario::{Action, BciImage, Event, ScenarioDocument};
+use uuid::Uuid;
 
 fn fixture() -> (EditorApp, PathBuf) {
-    let root = temp_map_dir("design_check_focus");
+    let game_root = temp_map_dir("design_check_game");
+    let root = game_root.join("MAPS/design_check_focus");
+    let clak = game_root.join("SYSTEM/CLAK");
+    std::fs::create_dir_all(&clak).unwrap();
+    std::fs::write(
+        clak.join("cl_scint.ini"),
+        "[ObjDefName]\nwolf=FigGerInf02_Zweihandaxt\nbear=FigGerInf02_Zweihandaxt\n",
+    )
+    .unwrap();
     std::fs::create_dir_all(root.join("SCRIPT")).unwrap();
     std::fs::write(
         root.join("SCRIPT/ak_level.bci"),
@@ -21,6 +30,26 @@ fn fixture() -> (EditorApp, PathBuf) {
                 ..Default::default()
             })
             .collect(),
+        spawns: vec![
+            against_rome_scenario::Spawn {
+                id: Uuid::from_u128(0x1000_2000),
+                alias: "wolf".into(),
+                x: 1024.0,
+                y: 10.0,
+                z: 2048.0,
+                count: 1,
+                ..Default::default()
+            },
+            against_rome_scenario::Spawn {
+                id: Uuid::from_u128(0x3000_4000),
+                alias: "bear".into(),
+                x: 4096.0,
+                y: 15.0,
+                z: 8192.0,
+                count: 1,
+                ..Default::default()
+            },
+        ],
         ..Default::default()
     };
     std::fs::write(root.join("arm_scenario.json"), document.to_json().unwrap()).unwrap();
@@ -30,7 +59,7 @@ fn fixture() -> (EditorApp, PathBuf) {
     app.scenario.load_session(&root).unwrap();
     app.last_canvas_rect = Rect::from_min_size(Pos2::new(30.0, 70.0), Vec2::new(800.0, 600.0));
     app.zoom = 2.0;
-    (app, root)
+    (app, game_root)
 }
 
 /// 定位只能修改檢視與選取，不得改寫地圖內容、髒狀態或歷史。
@@ -233,5 +262,43 @@ fn design_check_focus_preserves_existing_dirty_edits_and_undo_history() {
         assert_eq!(app.viewport_3d.camera.target.z, 48.0);
     });
     assert_eq!(save_artifact_snapshot(&root), disk);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn design_check_focus_selects_spawns_and_data_objects_with_viewport_centering() {
+    let (mut app, root) = fixture();
+    app.view_mode = ViewMode::View3D;
+
+    // 1. 測試劇本生成物件 ID 定位：選取生成物、同步開啟 Spawns 面板並在 3D 視圖置中
+    assert_navigation_only(&mut app, |app| {
+        app.spawn_ui.open = false;
+        app.design_check.object_request = Some(Uuid::from_u128(0x1000_2000));
+        app.consume_design_check_focus();
+        assert!(app.design_check.object_request.is_none());
+        assert!(app.spawn_ui.open);
+        assert_eq!(app.spawn_ui.selected_coordinates(), Some((1024.0, 2048.0)));
+        assert_eq!(app.viewport_3d.camera.target.x, 4.0);
+        assert_eq!(app.viewport_3d.camera.target.z, 8.0);
+    });
+
+    // 2. 測試 DATA 物件 ID (編碼為 1 << 127 | slot << 32 | uid)：選取 placement 物件、開啟 Objects 面板並置中
+    let (mut app_data, root_data, map_data) = spawn_save_tests::fixture("focus_placement", &[(232, None)]);
+    app_data.placement.load_session(&map_data).unwrap();
+    assert!(app_data.placement.is_loaded());
+    let (slot, uid) = (0usize, 1u32);
+    let data_id = Uuid::from_u128((1u128 << 127) | ((slot as u128) << 32) | u128::from(uid));
+    app_data.view_mode = ViewMode::View3D;
+
+    assert_navigation_only(&mut app_data, |app| {
+        app.placement.open = false;
+        app.design_check.object_request = Some(data_id);
+        app.consume_design_check_focus();
+        assert!(app.design_check.object_request.is_none());
+        assert!(app.placement.open);
+        assert_eq!(app.placement.selected_object(), Some((slot, uid)));
+    });
+
+    std::fs::remove_dir_all(root_data).unwrap();
     std::fs::remove_dir_all(root).unwrap();
 }

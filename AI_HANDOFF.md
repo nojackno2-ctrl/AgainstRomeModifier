@@ -1,3 +1,17 @@
+## 2026-10-30 Agy：設計檢查物件與劇本生成物定位選取連動（已驗證）
+- 依設計者導覽與編輯流程缺口，實作 Design Check 面板「前往／Locate」與物件選取系統的完整雙向連動：
+  1. `object_request` 欄位與定位契約：`DesignCheckUi` 新增 `object_request: Option<Uuid>`；擴充 `IssueRow::is_locatable`，除既有世界座標與事件索引外，將具備 `object_id` 的項目納入可定位條件，並統一「前往」按鈕與「定位」按鈕狀態。匯出 Markdown 報告同步納入物件識別碼。
+  2. DATA 物件與劇本生成物解碼選取：`consume_design_check_focus` 判定物件類型：
+     - 若為高位為 1 的 DATA 物件編碼（`1 << 127 | slot << 32 | uid`），解析 slot 與 uid，呼叫 `PlacementUi::select_object` 選取物件、開啟 Objects 面板，並於 3D 視圖呈現包圍盒高亮；若問題無座標則自 placement 解析物件世界座標進行 2D 畫布與 3D 視角置中。
+     - 若為劇本生成物 UUID，透過 `SpawnPlacementUi::select_by_scenario_id` 精準選取生成物並開啟 Spawns 面板；若為未載入別名型錄之 foreign 物件則開啟 Scenario 面板並自動導引至生成座標。
+     - 補充事件問題座標回退機制：事件問題若未附帶直接世界座標，自動定位至該事件首個有效座標動作。
+  3. `family-link` 檢查座標補齊：`data_candidate_issues_impl` 對有限座標之家族物件自動附帶世界座標，避免無座標導致導覽中斷。
+- 已驗證：
+  - `design_check_ui` 19 passed：涵蓋篩選器、雙語標籤、Markdown 匯出、選取清理與定位狀態重設。
+  - `design_check_focus_tests` 6 passed：涵蓋 2D/3D 座標置中、事件索引選取、髒狀態與 Undo 歷史保護、DATA 物件選取與面板連動、劇本生成物選取與視圖定位。
+  - 完整 `cargo test --workspace --locked` 通過（exit 0，無任何失敗）。
+- 未驗證：未做原生桌面視窗人工點擊操作與遊戲內驗收。
+
 ## 2026-10-30 Agy：地景區域工具 3D 視圖框選與預覽（已驗證）
 - 依前次交接下一步「補景觀工具 3D 區域取點／預覽」，實作設計者在 3D 視圖中直接框選地貌區域並進行規劃預覽：
   1. `LandscapeRegionPointer` 與事件流：`Viewport3d` 新增 `landscape_pick` 模式，在啟用地景區域工具時攔截拖曳手勢，防止誤觸發地形高程筆刷 (`Paint`/`CommitStroke`) 或物件選取，將 Primary 點擊／拖曳／釋放轉換為圖塊座標事件，並支援右鍵或 Esc 取消。

@@ -2706,15 +2706,74 @@ impl EditorApp {
         self.status_is_error = false;
     }
 
-    /// 消耗設計檢查問題清單的定位請求。
+    /// 消耗設計檢查問題清單的定位請求（支援座標、劇本事件、DATA 放置物件與生成物）。
     fn consume_design_check_focus(&mut self) {
-        if let Some((x, z)) = self.design_check.focus_request.take() {
+        let mut focus_pos = self.design_check.focus_request.take();
+        if let Some(object_id) = self.design_check.object_request.take() {
+            if !object_id.is_nil() {
+                let val = object_id.as_u128();
+                if (val >> 127) == 1 {
+                    let slot = ((val & !(1 << 127)) >> 32) as usize;
+                    let uid = (val & 0xFFFF_FFFF) as u32;
+                    if self.placement.is_loaded() {
+                        self.placement.select_object(Some((slot, uid)));
+                        self.placement.open = true;
+                        if focus_pos.is_none() {
+                            if let Some(obj) = self
+                                .placement
+                                .objects()
+                                .iter()
+                                .find(|o| o.slot == slot && o.uid == uid)
+                            {
+                                if obj.position[0].is_finite() && obj.position[2].is_finite() {
+                                    focus_pos = Some((obj.position[0], obj.position[2]));
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    self.autoload_scenario_if_needed();
+                    if self.scenario.is_loaded() {
+                        self.spawn_ui.sync_with_document(&self.scenario, self.loaded_map_path.as_deref());
+                        if self.spawn_ui.select_by_scenario_id(object_id) {
+                            self.spawn_ui.open = true;
+                            if focus_pos.is_none() {
+                                focus_pos = self.spawn_ui.selected_coordinates();
+                            }
+                        } else if let Some(spawn_pos) = self
+                            .scenario
+                            .document()
+                            .spawns
+                            .iter()
+                            .find(|s| s.id == object_id)
+                            .map(|s| (s.x, s.z))
+                        {
+                            self.scenario.open = true;
+                            if focus_pos.is_none() && spawn_pos.0.is_finite() && spawn_pos.1.is_finite() {
+                                focus_pos = Some(spawn_pos);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if let Some((x, z)) = focus_pos {
             self.focus_world_position(x, z);
         }
         if let Some(event_index) = self.design_check.event_request.take() {
             if let Ok(event_index) = usize::try_from(event_index) {
                 if event_index < self.scenario.document().events.len() {
                     self.scenario.selected = event_index;
+                    if focus_pos.is_none() {
+                        if let Some(event) = self.scenario.document().events.get(event_index) {
+                            for action in &event.actions {
+                                if action.x.is_finite() && action.z.is_finite() && (action.x != 0.0 || action.z != 0.0) {
+                                    self.focus_world_position(action.x, action.z);
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 }
             }
             self.scenario.open = true;
@@ -12639,7 +12698,7 @@ angle=0.00
         app.design_check.focus_request = Some((8192.0, 8192.0));
         app.design_check.event_request = Some(2);
         app.consume_design_check_focus();
-        assert!(app.design_check.focus_request.is_none() && app.design_check.event_request.is_none());
+        assert!(app.design_check.focus_request.is_none() && app.design_check.event_request.is_none() && app.design_check.object_request.is_none());
         assert!(app.scenario.open, "event issues reveal the scenario panel");
         assert!(app.pan.length() < 0.01, "map centre needs no pan");
     }

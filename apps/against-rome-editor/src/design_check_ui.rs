@@ -64,6 +64,10 @@ fn data_candidate_issues_impl(
             let mut issue = MapIssue::new(MapIssueSeverity::Error, "family-link",
                 format!("DATA 家族連結無效：{error}"), format!("Invalid DATA family links: {error}"));
             issue.object_id = id;
+            if object.position[0].is_finite() && object.position[2].is_finite() {
+                issue.world_x = Some(object.position[0]);
+                issue.world_z = Some(object.position[2]);
+            }
             issues.push(issue);
         }
         if let Some(stencil) = resolver.as_mut().and_then(|r| r.resolve_building(i32::from(object.type_id))) {
@@ -131,13 +135,26 @@ impl IssueRow {
             (MapIssueSeverity::Warning, _) => "警告",
         }
     }
+
+    /// Whether this issue can be located/focused in the viewport, scenario panel, or objects/spawns panel.
+    pub fn is_locatable(&self) -> bool {
+        self.focus_world().is_some() || self.event_index >= 0 || !self.object_id.is_nil()
+    }
 }
 
-/// 有完整有效座標時提供直接前往入口，沿用既有定位流程。
+/// 若問題具備座標、劇本事件或放置物件，提供直接前往入口。
 fn issue_go_to(ui: &mut egui::Ui, row: &IssueRow, lang: AppLanguage) -> Option<egui::Response> {
-    row.focus_world()?;
-    Some(ui.small_button(tr(lang, "Go to", "前往"))
-        .on_hover_text(tr(lang, "Center the 2D canvas on this issue", "將 2D 畫布置中於此問題位置")))
+    if !row.is_locatable() {
+        return None;
+    }
+    Some(
+        ui.small_button(tr(lang, "Go to", "前往"))
+            .on_hover_text(tr(
+                lang,
+                "Locate this issue in the viewport, scenario, or objects panel",
+                "在視圖、劇本或物件面板定位此問題",
+            )),
+    )
 }
 
 impl From<&MapIssue> for IssueRow {
@@ -387,6 +404,8 @@ pub struct DesignCheckUi {
     pub focus_request: Option<(f32, f32)>,
     /// Scenario event index the app should reveal in the scenario panel.
     pub event_request: Option<i32>,
+    /// Placed object ID the app should select in the placement/spawns panel.
+    pub object_request: Option<Uuid>,
     /// Whether to show errors in the issue list (default: true).
     pub show_errors: bool,
     /// Whether to show warnings in the issue list (default: true).
@@ -413,6 +432,7 @@ impl Default for DesignCheckUi {
             selected: None,
             focus_request: None,
             event_request: None,
+            object_request: None,
             show_errors: true,
             show_warnings: true,
             search: String::new(),
@@ -487,7 +507,7 @@ impl DesignCheckUi {
             .enumerate()
             .filter(|(_, r)| {
                 self.is_severity_visible(r.severity)
-                    && (!self.locatable_only || r.focus_world().is_some() || r.event_index >= 0)
+                    && (!self.locatable_only || r.is_locatable())
                     && (query.is_empty()
                         || [&r.code, &r.chinese, &r.english]
                             .iter()
@@ -545,6 +565,9 @@ pub fn generate_markdown_report(
                     if row.event_index >= 0 {
                         out.push_str(&format!("- **Scenario Event**: #{}\n", row.event_index));
                     }
+                    if !row.object_id.is_nil() {
+                        out.push_str(&format!("- **Object ID**: `{}`\n", row.object_id));
+                    }
                     out.push('\n');
                 }
             }
@@ -583,6 +606,9 @@ pub fn generate_markdown_report(
                     }
                     if row.event_index >= 0 {
                         out.push_str(&format!("- **劇本事件**：第 {} 項\n", row.event_index));
+                    }
+                    if !row.object_id.is_nil() {
+                        out.push_str(&format!("- **物件 ID**：`{}`\n", row.object_id));
                     }
                     out.push('\n');
                 }
@@ -815,7 +841,7 @@ impl EditorApp {
                     }
                     let can_locate = selected
                         .and_then(|i| rows.get(i))
-                        .is_some_and(|r| r.focus_world().is_some() || r.event_index >= 0);
+                        .is_some_and(|r| r.is_locatable());
                     if ui
                         .add_enabled(can_locate, egui::Button::new(tr(lang, "Locate", "定位")))
                         .clicked()
@@ -956,6 +982,9 @@ impl EditorApp {
             if row.event_index >= 0 {
                 self.design_check.event_request = Some(row.event_index);
             }
+            if !row.object_id.is_nil() {
+                self.design_check.object_request = Some(row.object_id);
+            }
         }
         self.design_check.open = open;
         if export_report {
@@ -1042,6 +1071,7 @@ mod tests {
         assert_eq!(app.design_check.selected, None);
         assert_eq!(app.design_check.focus_request, None);
         assert_eq!(app.design_check.event_request, None);
+        assert_eq!(app.design_check.object_request, None);
         assert_eq!(app.design_check.report, report);
         assert!(output.platform_output.copied_text.is_empty());
     }

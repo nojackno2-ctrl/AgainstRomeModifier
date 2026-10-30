@@ -313,6 +313,31 @@ impl SpawnPlacementUi {
     pub fn is_data_bound_index(&self, index: usize) -> bool {
         self.session.get(index).is_some_and(|o| self.bound.contains(&o.scenario_id))
     }
+    /// Selects a placed object by its index. Returns true if within bounds.
+    pub fn select_index(&mut self, index: usize) -> bool {
+        if index < self.session.count() {
+            self.selection.clear();
+            self.selection.insert(index);
+            self.anchor = Some(index);
+            self.active = true;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Selects a placed object by its persistent scenario ID. Returns true if found and selected.
+    pub fn select_by_scenario_id(&mut self, id: Uuid) -> bool {
+        if id.is_nil() {
+            return false;
+        }
+        if let Some(index) = self.session.objects().iter().position(|o| o.scenario_id == id) {
+            self.select_index(index)
+        } else {
+            false
+        }
+    }
+
     pub fn select_type(&mut self, name_def: &str) {
         self.selected_type = Some(name_def.to_string());
     }
