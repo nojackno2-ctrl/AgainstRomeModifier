@@ -1,3 +1,8 @@
+## 2026-10-30 Codex：建置目錄改放 C 槽
+- D 槽先前僅剩約 15 MB；執行 `cargo clean --target-dir target` 並清除已確認的 Cargo 建置目錄後，D 槽可用空間約 830 GiB。
+- 後續測試與建置請使用位於 C 槽的 `--target-dir`，例如 `--target-dir %TEMP%\against-rome-target`，並先確認 `%TEMP%` 位於 C 槽；保留逆向資料與非建置檔案。
+- 本次僅清理建置產物，未重新執行建置或測試。
+
 ## 2026-10-30 Codex：水位變更後的河流規劃
 - 地景工作室同步水位時，撤銷使用舊水位的河流規劃及待套用請求，提示重新規劃；相同水位保留規劃。
 - 已驗證：聚焦測試 1 passed；正常 TEMP 下 `cargo check --workspace --locked`、`cargo test --workspace --locked`（287 組、2799 passed、0 failed、23 ignored）及 `cargo build --workspace --locked` 均通過。首次誤設工具鏈目錄；另因 D 槽空間不足導致連結與重試失敗，改用 TEMP 建置目錄及單工作後通過。
