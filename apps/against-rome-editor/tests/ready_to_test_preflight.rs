@@ -201,7 +201,7 @@ fn test_generate_and_copy_test_instructions_contains_map_details() {
     // 驗證中文指引格式
     let zh = app.generate_test_instructions(AppLanguage::TraditionalChinese);
     assert!(zh.contains("# 遊戲內驗收清單：ENDL_005"));
-    assert!(zh.contains("MAPS/ENDL_005"));
+    assert!(zh.contains("尚未載入地圖"));
     assert!(zh.contains("%TEMP%"));
     assert!(zh.contains("Cavalry Raid"));
     assert!(zh.contains("2:00"));
@@ -258,7 +258,8 @@ fn readiness_matches_design_check_and_does_not_claim_a_save() {
     assert_eq!(report.design_warnings, design.warning_count());
     for lang in [AppLanguage::English, AppLanguage::TraditionalChinese] {
         let text = app.generate_test_instructions(lang);
-        assert!(text.contains("MAPS/ENDL_005"));
+        assert!(text.contains(if lang == AppLanguage::English { "No map is loaded" } else { "尚未載入地圖" }));
+        assert!(!text.contains("MAPS/ENDL_005"));
         assert!(!text.contains("PrivateDesigner"));
         assert!(!text.contains("Safe Save completed"));
         assert!(!text.contains("Errors: 0"));
