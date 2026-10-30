@@ -1610,6 +1610,9 @@ impl ScenarioUi {
             ui.colored_label(egui::Color32::YELLOW, tl(en,
                 "已選事件被篩選隱藏；下方仍編輯原本選取的事件。",
                 "The selected event is hidden by filters; the editor below keeps that selection."));
+            if ui.button(tl(en, "顯示已選事件", "Show selected event")).clicked() {
+                self.browser.clear_filters();
+            }
         }
         for i in indices {
             let event = &self.document.events[i];
@@ -2682,6 +2685,22 @@ mod tests {
             assert!(click(&mut ui, &ctx, tl(en, "複製顯示清單", "Copy visible events")).platform_output.copied_text.is_empty());
             assert_eq!(state_bytes(&ui.document, &ui.camera).unwrap(), before);
             assert_eq!(ui.dirty(), dirty);
+            assert!(ui.take_history_receipts().is_empty());
+            // 隱藏事件可透過實際點擊重新顯示，且不改動文件與歷史。
+            ui.selected = 2;
+            ui.browser = EventBrowser {
+                search: "no matches".into(), team: Some(7), kind: Some(4),
+                enabled_only: true, time_order: true, ..Default::default()
+            };
+            assert!(selection_hidden(ui.selected, &ui.document.events, &ui.browser.indices(&ui.document.events)));
+            click(&mut ui, &ctx, tl(en, "顯示已選事件", "Show selected event"));
+            assert!(!selection_hidden(ui.selected, &ui.document.events, &ui.browser.indices(&ui.document.events)));
+            assert!(ui.browser.time_order);
+            assert_eq!(ui.browser.indices(&ui.document.events), vec![3, 1, 2, 0]);
+            assert_eq!(ui.selected, 2);
+            assert_eq!(state_bytes(&ui.document, &ui.camera).unwrap(), before);
+            assert_eq!(ui.dirty(), dirty);
+            assert!(!ui.can_undo_events() && !ui.can_redo_events());
             assert!(ui.take_history_receipts().is_empty());
         }
     }

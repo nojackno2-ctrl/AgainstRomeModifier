@@ -1,3 +1,7 @@
+## 2026-10-30 Codex：顯示被篩選隱藏的已選事件（已驗證）
+- 依交接「事件篩選可能隱藏跳轉列」補雙語「顯示已選事件」按鈕；清除篩選並保留排序、選取、文件與歷史，擴充既有 egui 真實點擊回歸。
+- 本機模型委派逾時且未改檔，改由 Codex 實作；一般 Shell 初始化失敗，升權程序可用。聚焦雙語 egui 點擊回歸 1 passed；`cargo check --workspace --locked`、`cargo test --workspace --locked`、`cargo build --workspace --locked` 均 exit 0，無 MSVC 連結錯誤；`git diff --check` 通過。日誌 `%TEMP%/arm-show-selected-{check,focused,test,build}.log`。未做桌面／遊戲驗收。
+
 ## 2026-10-30 Agy：設計檢查勢力起始部隊與主堡一鍵補齊（已驗證）
 - 依設計者建立或編輯地圖時，若缺乏各勢力起始部隊或基地主堡（`team-no-units`、`team-no-main-house`），無法正常遊玩且需在地圖 16384x16384 廣大空間手動搜尋與擺放之缺口，實作一鍵快速修正與定位支援：
   1. 快速修正演算法：
