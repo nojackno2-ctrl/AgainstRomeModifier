@@ -2768,7 +2768,7 @@ impl EditorApp {
         if let Some(event_index) = self.design_check.event_request.take() {
             if let Ok(event_index) = usize::try_from(event_index) {
                 if event_index < self.scenario.document().events.len() {
-                    self.scenario.selected = event_index;
+                    self.scenario.reveal_event(event_index);
                     if focus_pos.is_none() {
                         if let Some(event) = self.scenario.document().events.get(event_index) {
                             for action in &event.actions {

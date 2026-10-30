@@ -1,3 +1,7 @@
+## 2026-10-30 Codex：設計檢查事件定位顯示
+- Design Check 定位被篩選隱藏的事件時自動清除篩選，保留時間排序；可見目標保留篩選，無效索引不變更狀態。
+- 聚焦測試 1 passed；首輪因測試直接替換事件已為 dirty，改比較操作前後狀態。`cargo check --workspace --locked`、`cargo test --workspace --locked`（287 組、2798 passed、0 failed、23 ignored）及 `cargo build --workspace --locked` 均通過；`git diff --check` 通過。使用正常 TEMP；桌面與遊戲內未驗證。
+
 ## 2026-10-30 Codex：測試暫存來源調查
 - .terrain-test-temp/ 含多個不同套件的測試產物；版本控制檔案及近期提交未找到此路徑；先前測試將 TEMP／TMP 指向儲存庫根目錄，產生此目錄，並非程式碼問題。已加入忽略規則並保留既有目錄；需要非預設暫存目錄時，請使用 %TEMP% 下的目錄，不要使用儲存庫根目錄或 re_workspace。
 - 設計者功能缺口與獨立提交尚待完成。

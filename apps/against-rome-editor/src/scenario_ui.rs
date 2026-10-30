@@ -470,6 +470,15 @@ impl ScenarioUi {
             if self.events.replace_all(&current).is_ok() { self.record_event_commit(&before); }
         }
     }
+    pub(crate) fn reveal_event(&mut self, index: usize) {
+        if index >= self.document.events.len() {
+            return;
+        }
+        self.selected = index;
+        if !self.browser.indices(&self.document.events).contains(&index) {
+            self.browser.clear_filters();
+        }
+    }
     fn clamp_selected(&mut self) {
         self.selected = self.selected.min(self.document.events.len().saturating_sub(1));
     }
@@ -2437,6 +2446,27 @@ mod tests {
             Event { name: "End".into(), delay_seconds: 0,
                 actions: vec![Action { kind: 4, text: "Defeat text".into(), ..Default::default() }], ..Default::default() },
         ]
+    }
+    #[test]
+    fn locate_event_reveals_hidden_selection_without_changing_document() {
+        let mut ui = ScenarioUi::default();
+        ui.document.events = browser_events();
+        let before = ui.document.events.clone();
+        let dirty_before = ui.dirty();
+        ui.browser.search = "no matching event".into();
+        ui.browser.time_order = true;
+        ui.reveal_event(2);
+        assert_eq!(ui.selected, 2);
+        assert!(ui.browser.indices(&ui.document.events).contains(&2));
+        assert!(ui.browser.time_order);
+        assert_eq!(ui.document.events, before);
+        assert_eq!(ui.dirty(), dirty_before);
+        ui.browser.search = ui.document.events[2].name.clone();
+        ui.reveal_event(2);
+        assert!(!ui.browser.search.is_empty());
+        ui.reveal_event(usize::MAX);
+        assert_eq!(ui.selected, 2);
+        assert!(!ui.browser.search.is_empty());
     }
     #[test]
     fn event_browser_combined_filters_and_case_insensitive_search() {
