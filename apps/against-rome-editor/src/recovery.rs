@@ -67,20 +67,32 @@ pub fn fingerprint(map: &Path) -> Result<Value, String> {
         "smooth.bmp",
     ] {
         let path = map.join(name);
-        let value = match std::fs::metadata(&path) {
-            Ok(m) => json!([
-                m.len(),
-                m.modified()
+        let (len, modified) = match std::fs::metadata(&path) {
+            Ok(m) => {
+                let mtime = m.modified()
                     .map_err(|e| e.to_string())?
                     .duration_since(UNIX_EPOCH)
                     .map_err(|e| e.to_string())?
                     .as_nanos()
-                    .to_string()
-            ]),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Value::Null,
+                    .to_string();
+                (m.len(), mtime)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                result.insert(name.into(), Value::Null);
+                continue;
+            }
             Err(e) => return Err(e.to_string()),
         };
-        result.insert(name.into(), value);
+        let bytes = match std::fs::read(&path) {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                result.insert(name.into(), Value::Null);
+                continue;
+            }
+            Err(e) => return Err(e.to_string()),
+        };
+        let sha = against_rome_data::sha256::sha256_hex(&bytes);
+        result.insert(name.into(), json!([len, modified, sha]));
     }
     Ok(Value::Object(result))
 }
@@ -741,5 +753,48 @@ mod tests {
         r.flush();
         assert!(r.poll().is_some());
         assert!(r.last.is_none());
+    }
+    #[test]
+    fn fingerprint_includes_content_sha256_and_detects_same_length_modification() {
+        let temp = Temp::new();
+        let map = &temp.0;
+        let file = map.join("boden.ini");
+        std::fs::write(&file, b"heightmapstep=1.000\n").unwrap();
+        let original_modified = std::fs::metadata(&file).unwrap().modified().unwrap();
+        let fp_original = fingerprint(map).unwrap();
+
+        // 驗證指紋為 [len, mtime_nanos, sha256_hex] 三元組
+        let entry = &fp_original["boden.ini"];
+        assert!(entry.is_array());
+        let arr = entry.as_array().unwrap();
+        assert_eq!(arr.len(), 3);
+        assert_eq!(arr[0].as_u64().unwrap(), 20);
+        let sha_hex = arr[2].as_str().unwrap();
+        assert_eq!(sha_hex.len(), 64);
+        assert_eq!(sha_hex, against_rome_data::sha256::sha256_hex(b"heightmapstep=1.000\n"));
+
+        // 外部進行同長度 (20 bytes) 的覆寫修改
+        std::fs::write(&file, b"heightmapstep=9.999\n").unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&file)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(original_modified))
+            .unwrap();
+        let fp_modified = fingerprint(map).unwrap();
+        assert_ne!(fp_original, fp_modified);
+        let arr_modified = fp_modified["boden.ini"].as_array().unwrap();
+        assert_eq!(arr_modified[0].as_u64().unwrap(), 20); // 長度維持一致
+        assert_eq!(arr[1], arr_modified[1]); // 修改時間亦維持一致，舊指紋會漏判
+        assert_ne!(arr[2], arr_modified[2]); // 內容 SHA-256 改變
+
+        // 建立原始基準的復原快照，驗證以變更後的磁碟指紋讀取會回報來源已變更並阻擋復原
+        let path = snapshot_path(map, map);
+        let pending = json!({"terrain":{"vertex_size":2,"collision_size":1,"heights":[0,0,0,0],"passability":[0]},"water":[0.0,0],"reset_auxiliary_layers":false,"camera_pending":false,"camera_dirty":false,"omitted_panels":[],"campaign_camera":against_rome_campaign::cinematics::MapStartCamera::default()});
+        let manifest_val = manifest(map, &fp_original, pending);
+        write(&path, &manifest_val).unwrap();
+
+        let err = read(map, map, &fp_modified).unwrap_err();
+        assert!(err.contains("source changed") || err.contains("地圖來源已變更"));
     }
 }

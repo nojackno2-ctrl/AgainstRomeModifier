@@ -2075,5 +2075,11 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 ## 2026-10-27 Codex：背景寫入中的復原候選
 
 - 地圖重開時若最新快照仍在背景寫入，顯示同一已排入佇列的候選並暫停復原按鈕；等待期間每 200 ms 更新，完成後重新檢查來源指紋與已落盤檔案，寫入失敗則顯示錯誤。依地圖與作業序號處理晚到回報，避免捨棄或切圖後重現舊提示。復原相關測試 28 passed；完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-sdl-load-guard-20261027 -- --test-threads=1 --quiet` 結束碼 0，workspace `cargo check`、`cargo build` 與 `git diff --check` 通過。未做桌面驗收。
-- Luna 唯讀稽核確認須防止未完成的候選直接復原、晚到回報跨地圖影響提示，以及來源指紋變更後覆蓋新編輯；現有指紋仍為檔案大小與修改時間，不是內容雜湊。
+- Luna 唯讀稽核確認須防止未完成的候選直接復原、晚到回報跨地圖影響提示，以及來源指紋變更後覆蓋新編輯；大小與修改時間指紋的限制已由下列 2026-10-30 內容雜湊變更解決。
 - 依使用者要求正常關閉 8 個先前桌面測試編輯器程序（PID 5312、5968、10268、12776、15512、34856、38528、40096）；均已結束，未強制終止。
+
+## 2026-10-30 Codex／Agy：復原來源內容雜湊
+
+- `recovery.rs::fingerprint` 在既有大小／修改時間之外加入 SHA-256；缺檔維持 null，其他讀取錯誤拒絕。回歸測試固定修改時間並維持 20 bytes，確認外部內容變更仍被識別、舊快照拒絕復原。Agy 實作後由 Codex 補強時間戳斷言與複核。
+- 已驗證：Agy 初驗通過；Codex 補強後依序 `cargo check --workspace --locked`、定向回歸、`cargo test --workspace --locked`、`cargo build --workspace --locked` 均 exit 0；完整測試 287 組、2769 passed／0 failed／23 ignored，無 MSVC 連結錯誤，`git diff --check` 通過。日誌 `%TEMP%\arm-20261030-fingerprint-parent-{check,focused,test,build}.log`。
+- 限制／未驗證：舊版只有兩欄指紋的快照會保留但拒絕復原，不自動信任或遷移；讀取期間外部修改的競態未完全消除。未做 GUI／遊戲驗收或大型地圖雜湊效能量測。
