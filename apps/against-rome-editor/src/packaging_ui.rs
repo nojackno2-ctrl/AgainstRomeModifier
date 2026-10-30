@@ -11,6 +11,8 @@ use against_rome_packaging::{
 };
 use against_rome_scenario::model::{ScenarioDocument, Spawn};
 use crate::layout_io::{LayoutDialogKind, LayoutFilePicker};
+
+pub type LayoutFolderPicker = Box<dyn Fn(&str) -> Option<PathBuf> + Send + Sync>;
 use eframe::egui::{self, Color32, Vec2};
 use std::path::{Component, Path, PathBuf};
 
@@ -135,7 +137,7 @@ pub struct PackagingUi {
     pub layer_coverage: Vec<(&'static str, LayerState)>,
     pub diff_verdict: Option<DiffVerdict>,
     // Frozen with the baseline; never re-read it during comparison.
-    baseline_scenario: Option<ScenarioDocument>,
+    pub baseline_scenario: Option<ScenarioDocument>,
 
     // --- Budget Profiler state ---
     pub budget_report: Option<MapBudgetReport>,
@@ -146,6 +148,7 @@ pub struct PackagingUi {
     // File picker injection (layout_picker and export_picker supported interchangeably)
     pub layout_picker: Option<LayoutFilePicker>,
     pub export_picker: Option<LayoutFilePicker>,
+    pub folder_picker: Option<LayoutFolderPicker>,
 
     // Dirty / guards / overwrite confirmation
     pub dirty: bool,
@@ -192,6 +195,7 @@ impl Default for PackagingUi {
             english: false,
             layout_picker: None,
             export_picker: None,
+            folder_picker: None,
             dirty: false,
             pending_discard: false,
             pending_overwrite_confirm: false,
@@ -299,6 +303,38 @@ impl PackagingUi {
         let kind = LayoutDialogKind::Save { suggested_name };
         if let Some(path) = self.pick_export_file(&kind) {
             self.output_zip_input = path.to_string_lossy().to_string();
+        }
+    }
+
+    pub fn browse_map_dir(&mut self) {
+        let title = if self.english {
+            "Select Source Map Folder / 選擇來源地圖資料夾"
+        } else {
+            "選擇來源地圖資料夾 / Select Source Map Folder"
+        };
+        let picked = if let Some(picker) = self.folder_picker.as_ref() {
+            picker(title)
+        } else {
+            rfd::FileDialog::new().set_title(title).pick_folder()
+        };
+        if let Some(path) = picked {
+            self.map_dir_input = path.to_string_lossy().to_string();
+        }
+    }
+
+    pub fn browse_baseline_dir(&mut self) {
+        let title = if self.english {
+            "Select Saved Baseline Map Folder / 選擇儲存的基準地圖資料夾"
+        } else {
+            "選擇儲存的基準地圖資料夾 / Select Saved Baseline Map Folder"
+        };
+        let picked = if let Some(picker) = self.folder_picker.as_ref() {
+            picker(title)
+        } else {
+            rfd::FileDialog::new().set_title(title).pick_folder()
+        };
+        if let Some(path) = picked {
+            self.baseline_dir_input = path.to_string_lossy().to_string();
         }
     }
 
@@ -489,6 +525,50 @@ impl PackagingUi {
         self.baseline_availability = availability;
         self.baseline_source = Some(BaselineSource::Memory);
         self.baseline_scenario = None;
+        self.status_message = format!("Captured baseline snapshot '{}'.", label);
+        self.status_is_error = false;
+    }
+
+    /// Captures the actual live sessions at Capture time as the baseline, including live
+    /// textures, objects, and scenario.
+    pub fn capture_baseline_from_live_sessions(
+        &mut self,
+        label: &str,
+        dimension: usize,
+        heights: Option<&[u8]>,
+        collision: Option<&[u8]>,
+        live: LiveDiffSessions<'_>,
+    ) {
+        let (mut snap, mut av) = memory_snapshot(label, dimension, heights, collision, None);
+        match (
+            live.textures.tile_dimension(),
+            live.textures.session_textures(),
+        ) {
+            (Some(d), Some(textures)) if d > 0 && d.checked_mul(d) == Some(textures.len()) => {
+                snap.tile_dimension = d;
+                snap.textures = Some(textures.to_vec());
+                av.textures = None;
+            }
+            _ => {
+                av.textures =
+                    Some("live texture session missing or grid dimensions inconsistent".into())
+            }
+        }
+        if live.placement.is_loaded() {
+            capture_objects(&mut snap, &mut av, &live.placement.objects());
+        }
+        let scenario = live.scenario.cloned();
+        if let Some(doc) = &scenario {
+            snap.events = Some(doc.events.clone());
+            av.events = None;
+            av.spawns = None;
+            av.data_slots = None;
+        }
+        bind_object_metadata(&mut snap, &mut av, scenario.as_ref());
+        self.baseline_scenario = scenario;
+        self.baseline_snapshot = Some(snap);
+        self.baseline_availability = av;
+        self.baseline_source = Some(BaselineSource::Memory);
         self.status_message = format!("Captured baseline snapshot '{}'.", label);
         self.status_is_error = false;
     }
@@ -976,7 +1056,15 @@ impl PackagingUi {
             .spacing([12.0, 6.0])
             .show(ui, |ui| {
                 ui.label(tl(self.english, "來源地圖資料夾：", "Source Map Folder:"));
-                ui.text_edit_singleline(&mut self.map_dir_input);
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.map_dir_input)
+                            .desired_width(280.0),
+                    );
+                    if ui.button(tl(self.english, "瀏覽…", "Browse…")).clicked() {
+                        self.browse_map_dir();
+                    }
+                });
                 ui.end_row();
 
                 ui.label(tl(self.english, "輸出 ZIP 路徑：", "Output ZIP Path:"));
@@ -1093,12 +1181,12 @@ impl PackagingUi {
                 ))
                 .clicked()
             {
-                self.capture_baseline_from_memory(
+                self.capture_baseline_from_live_sessions(
                     "Working Baseline",
                     dimension,
                     heights,
                     collision,
-                    None,
+                    live,
                 );
             }
             if ui
@@ -1124,7 +1212,16 @@ impl PackagingUi {
                 "儲存的基準地圖資料夾：",
                 "Saved baseline map folder:",
             ));
-            ui.text_edit_singleline(&mut self.baseline_dir_input);
+            ui.add(
+                egui::TextEdit::singleline(&mut self.baseline_dir_input)
+                    .desired_width(280.0),
+            );
+            if ui
+                .button(tl(self.english, "瀏覽…", "Browse…"))
+                .clicked()
+            {
+                self.browse_baseline_dir();
+            }
             if ui
                 .button(tl(self.english, "載入已儲存基準", "Load Saved Baseline"))
                 .clicked()
@@ -1135,22 +1232,38 @@ impl PackagingUi {
         });
         if let Some(src) = &self.baseline_source {
             match src {
-                BaselineSource::Memory => ui.label(tl(
-                    self.english,
-                    "基準：記憶體快照（僅高度圖／阻擋）。",
-                    "Baseline: in-memory (heightmap/collision only).",
-                )),
-                BaselineSource::SavedMap(p) => ui.label(if self.english {
-                    format!(
-                        "Baseline: saved map {} (current layers are captured from live editor sessions).",
-                        p.display()
-                    )
-                } else {
-                    format!(
-                        "基準：已儲存地圖 {}（目前圖層從編輯工作階段擷取）。",
-                        p.display()
-                    )
-                }),
+                BaselineSource::Memory => {
+                    let has_live = self.baseline_scenario.is_some()
+                        || self.baseline_availability.textures.is_none()
+                        || self.baseline_availability.objects.is_none();
+                    let text = if has_live {
+                        tl(
+                            self.english,
+                            "基準：記憶體快照（包含編輯工作階段）。",
+                            "Baseline: working memory snapshot (captured live sessions).",
+                        )
+                    } else {
+                        tl(
+                            self.english,
+                            "基準：記憶體快照（僅高度圖／阻擋）。",
+                            "Baseline: in-memory (heightmap/collision only).",
+                        )
+                    };
+                    ui.label(text);
+                }
+                BaselineSource::SavedMap(p) => {
+                    ui.label(if self.english {
+                        format!(
+                            "Baseline: saved map {} (current layers are captured from live editor sessions).",
+                            p.display()
+                        )
+                    } else {
+                        format!(
+                            "基準：已儲存地圖 {}（目前圖層從編輯工作階段擷取）。",
+                            p.display()
+                        )
+                    });
+                }
             };
         }
         for (name, state) in &self.layer_coverage {

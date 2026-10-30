@@ -1110,3 +1110,83 @@ fn each_missing_live_session_is_unavailable_despite_complete_disk_layers() {
     }
     assert_eq!(before, folder_bytes(&map));
 }
+
+
+#[test]
+fn test_browse_map_dir_and_baseline_dir_with_injected_picker() {
+    let mut ui = PackagingUi::default();
+    ui.folder_picker = Some(Box::new(|title| {
+        if title.contains("來源地圖") || title.contains("Source Map") {
+            Some(PathBuf::from(r"C:\Custom\SourceMap"))
+        } else if title.contains("基準地圖") || title.contains("Baseline") {
+            Some(PathBuf::from(r"C:\Custom\BaselineMap"))
+        } else {
+            None
+        }
+    }));
+
+    ui.browse_map_dir();
+    assert_eq!(ui.map_dir_input, r"C:\Custom\SourceMap");
+
+    ui.browse_baseline_dir();
+    assert_eq!(ui.baseline_dir_input, r"C:\Custom\BaselineMap");
+
+    // Cancelling preserves existing input
+    ui.folder_picker = Some(Box::new(|_| None));
+    ui.browse_map_dir();
+    assert_eq!(ui.map_dir_input, r"C:\Custom\SourceMap");
+    ui.browse_baseline_dir();
+    assert_eq!(ui.baseline_dir_input, r"C:\Custom\BaselineMap");
+}
+
+#[test]
+fn test_capture_baseline_from_live_sessions_captures_all_layers_and_detects_edits() {
+    let tmp = Temp::new();
+    let map = tmp.sub("live_baseline");
+    write_map(&map, &BASE);
+    let s = Sessions::load(&map);
+    let h = memory_heights();
+    let c = [0u8; 16];
+
+    let mut ui = PackagingUi::default();
+    ui.capture_baseline_from_live_sessions(
+        "Working Baseline",
+        5,
+        Some(&h),
+        Some(&c),
+        LiveDiffSessions {
+            textures: &s.textures,
+            placement: &s.placement,
+            scenario: s.scenario.is_loaded().then(|| s.scenario.document()),
+        },
+    );
+
+    assert_eq!(ui.baseline_source, Some(BaselineSource::Memory));
+    assert!(ui.baseline_snapshot.is_some());
+    assert!(ui.baseline_scenario.is_some());
+    assert!(ui.baseline_availability.textures.is_none());
+    assert!(ui.baseline_availability.objects.is_none());
+    assert!(ui.baseline_availability.events.is_none());
+    assert!(ui.baseline_availability.spawns.is_none());
+    assert!(ui.baseline_availability.data_slots.is_none());
+
+    // Comparing against identical live sessions reports Identical across all layers
+    s.compare(&mut ui, &h, &c);
+    assert_eq!(ui.diff_verdict, Some(DiffVerdict::Identical));
+    assert!(ui.layer_coverage.iter().all(|(_, state)| *state == LayerState::Compared));
+
+    // Modifying an object in memory triggers Differences without touching disk
+    let mut modified_s = Sessions::load(&map);
+    modified_s
+        .placement
+        .store_mut()
+        .unwrap()
+        .translate_family(0, 1, [100.0, 0.0, 0.0])
+        .unwrap();
+
+    modified_s.compare(&mut ui, &h, &c);
+    assert_eq!(ui.diff_verdict, Some(DiffVerdict::Differences));
+    let report = ui.diff_report.as_ref().unwrap();
+    assert_eq!(report.objects.modified.len(), 1);
+    assert_eq!(report.objects.modified[0].baseline.slot, 0);
+}

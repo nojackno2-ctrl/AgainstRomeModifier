@@ -2042,6 +2042,12 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 - 2026-10-30 Codex（第二階段實作與驗證完成）：新增 `app_post_commit_sync.rs`／`app_post_commit_sync_tests.rs` 與中英「Retry panel sync／重試面板同步」按鈕。提交前以完整位元組加交易產物固定真值，涵蓋地圖內未改寫的 DATA／SCRIPT／SDL 及外部 aliases；保留原圖路徑、失敗面板草稿與相機／spawn 合併 final_document，僅重試失敗項目。外部同長度變更、來源切換、新增面板編輯、來源讀取失敗皆拒絕；成功項目不再重載，其他新草稿保留。全部成功才清 warning／換 journal epoch／重建復原來源與快照；舊 epoch（含期間全域 Undo）結束，不改草稿內容。DATA 草稿使用原始 bytes 避免 JSON 展開。
 - 驗證結果：`cargo test -p against-rome-editor-app --lib app_post_commit_sync --locked` 12 passed；`cargo test --workspace --locked` 全數通過（0 failed）；`cargo check --workspace --locked` 通過；`git diff --check` 通過。未驗證：未做實體原生視窗桌面操作或遊戲內驗收。
 
+## 2026-10-30 Codex：Map Diff 即時工作階段基準擷取與資料夾瀏覽對話框
+
+- 修正 `packaging_ui.rs` 中 Map Diff 原先僅以純高度圖／碰撞建立記憶體基準快照、丟棄即時材質／物件／劇本工作階段的限制；新增 `capture_baseline_from_live_sessions`，在使用者點擊「擷取目前狀態為基準快照」時完整固定 live textures、placement objects 與 scenario events/spawns/data_slots，支援即時記憶體編輯狀態間的全圖層完整比對。
+- 新增 `LayoutFolderPicker` 抽象與 `browse_map_dir`、`browse_baseline_dir` 方法，並在「來源地圖資料夾」與「儲存的基準地圖資料夾」輸入框旁新增雙語「瀏覽… / Browse…」按鈕，支援原生目錄選擇對話框與 headless 注入測試。
+- 驗證結果：`cargo test -p against-rome-editor-app --test packaging_map_diff --locked` 通過（29 passed，含新增的資料夾瀏覽／取消保留輸入、完整 live session 基準擷取與記憶體物件修改即時比對測試）；`cargo test -p against-rome-editor-app --lib packaging_ui --locked` 通過（10 passed）；完整 `cargo test --workspace --locked` 全數通過（0 failed）；`git diff --check` 通過。未驗證：未做實體原生視窗人工點擊測試。
+
 ## 2026-10-27 Codex：地圖載入失敗時保留復原資料
 
 - 捨棄確認後先執行切換，成功後才清除原地圖快照；地圖載入失敗保留原地圖、Undo journal 與快照。清除舊快照時不抹除新地圖的復原提示。`failed_discard_load` 聚焦回歸通過，涵蓋損毀 SDL 拒絕及後續成功切換；完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-sdl-load-guard-20261027 -- --test-threads=1 --quiet` 結束碼 0，`cargo check`、`cargo build` workspace 與 `git diff --check` 通過。未做桌面驗收。
