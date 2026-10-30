@@ -1,3 +1,8 @@
+## 2026-10-30 Codex：Spawn DATA 目錄載入失敗
+- 需要預建 DATA 時，資料目錄載入錯誤會以雙語拒絕 Safe Save，保留編輯，不再靜默改用腳本建築。
+- 已驗證：專項回歸、`cargo check --workspace --locked`、`cargo test --workspace --locked`、`cargo build --workspace --locked` 通過。
+- 未驗證：實際桌面操作與遊戲內行為；未修改安裝的遊戲。
+
 ## 2026-10-30 Codex：勝負目標快速修正的玩家目標驗證
 - 修正失敗條件誤選非部隊生成物；缺少玩家主堡與部隊時先回報錯誤，避免先新增勝利事件。玩家有部隊時選取部隊作為失敗目標。
 - 已驗證：`cargo test -p against-rome-editor-app --lib design_check_objective_fix_requires_a_player_unit_or_main_house --locked`：1 passed。`cargo check --workspace --locked`、`cargo test --workspace --locked`、`cargo build --workspace --locked` 均通過，未見 MSVC 連結錯誤。

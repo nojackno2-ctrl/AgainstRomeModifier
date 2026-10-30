@@ -5263,14 +5263,9 @@ impl EditorApp {
             .ok_or_else(|| "the map folder is not inside a game MAPS directory".to_string())
             .and_then(SpawnDataCatalog::from_game);
         let kit = self.spawn_ui.pending_starter_kit();
-        let catalog = match catalog {
-            Ok(catalog) => catalog,
-            // Without game catalogs nothing can be bound to DATA: keep the C#-less script
-            // fallback for new buildings, but never edit around existing DATA bindings or a
-            // staged starter kit (which must be imported, never silently dropped).
-            Err(_) if previous.data_slots.is_empty() && kit.is_none() => return Ok(None),
-            Err(e) => return Err(format!("Spawn DATA: game catalogs unavailable: {e}")),
-        };
+        let catalog = catalog.map_err(|e| format!(
+            "Spawn DATA: game catalogs unavailable / 生成物件 DATA 的遊戲資料目錄無法載入：{e}"
+        ))?;
         // Starter kit import (C# `ImportPendingStarterKit`) is validated against the live terrain.
         let session = self.session.as_ref();
         let terrain = session.map(|s| against_rome_maps::spawn_data::StarterKitTerrain {

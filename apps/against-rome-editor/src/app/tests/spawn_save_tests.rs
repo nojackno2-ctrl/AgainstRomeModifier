@@ -894,6 +894,23 @@ fn landscape_points_follow_nature_edits_and_feed_the_spawn_panel() {
 }
 
 #[test]
+fn missing_spawn_data_catalog_rejects_save_and_preserves_edits() {
+    let (mut app, root, _map) = fixture("missing_catalog", &[]);
+    place_house(&mut app, (12, 12), 0);
+    std::fs::remove_file(root.join("SYSTEM/DATA_MP/DEFAULTS/objdef.dau")).unwrap();
+    std::fs::create_dir(root.join("SYSTEM/DATA_MP/DEFAULTS/objdef.dau")).unwrap();
+    let before = save_file_snapshot(&root);
+    app.safe_save_current();
+    assert!(app.status_is_error, "{}", app.status_message);
+    assert!(app.status_message.contains("game catalogs unavailable"), "{}", app.status_message);
+    assert!(app.status_message.contains("遊戲資料目錄無法載入"), "{}", app.status_message);
+    assert_eq!(save_file_snapshot(&root), before);
+    assert!(app.scenario.dirty());
+    assert_eq!(app.scenario.document().spawns.len(), 1);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn building_without_any_template_falls_back_to_a_construction_site() {
     let (mut app, root, map) = fixture("notemplate", &[]);
     // BauRomOther has no objdef id and no official/current template: script creation fallback.
