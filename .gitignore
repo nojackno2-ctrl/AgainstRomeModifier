@@ -63,3 +63,5 @@ TEMP/
 **/target/
 native/against-rome-data/target/
 .claude/settings.local.json
+
+/.terrain-test-temp/
