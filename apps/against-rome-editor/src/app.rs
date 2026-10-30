@@ -2677,19 +2677,23 @@ impl EditorApp {
         self.status_is_error = false;
     }
 
-    /// Centers the 2D canvas on a world position (C# `LocateMapIssue` -> `FocusTile`).
+    /// 將目前的 2D 畫布或 3D 鏡頭定位至世界座標。
     pub fn focus_world_position(&mut self, world_x: f32, world_z: f32) {
         if !(world_x.is_finite() && world_z.is_finite()) {
             return;
         }
-        let canvas = self.last_canvas_rect;
-        let side = canvas.width().min(canvas.height()) * self.zoom;
-        let world = self.nature_dimension() as f32 * 256.0;
-        // map_rect centre = canvas centre + pan; the point sits at (norm - 0.5) * side from it.
-        self.pan = Vec2::new(
-            -(world_x / world - 0.5) * side,
-            -(world_z / world - 0.5) * side,
-        );
+        if self.view_mode == ViewMode::View3D {
+            self.viewport_3d.center_on_world(world_x, world_z);
+        } else {
+            let canvas = self.last_canvas_rect;
+            let side = canvas.width().min(canvas.height()) * self.zoom;
+            let world = self.nature_dimension() as f32 * 256.0;
+            // 地圖中心為畫布中心加上 pan，目標距中心為 (norm - 0.5) * side。
+            self.pan = Vec2::new(
+                -(world_x / world - 0.5) * side,
+                -(world_z / world - 0.5) * side,
+            );
+        }
         self.status_message = format!(
             "Focused tile ({:.1}, {:.1}).",
             world_x / 256.0,
@@ -2698,12 +2702,17 @@ impl EditorApp {
         self.status_is_error = false;
     }
 
-    /// Applies a Locate request from the Design Check issue list.
+    /// 消耗設計檢查問題清單的定位請求。
     fn consume_design_check_focus(&mut self) {
         if let Some((x, z)) = self.design_check.focus_request.take() {
             self.focus_world_position(x, z);
         }
-        if self.design_check.event_request.take().is_some() {
+        if let Some(event_index) = self.design_check.event_request.take() {
+            if let Ok(event_index) = usize::try_from(event_index) {
+                if event_index < self.scenario.document().events.len() {
+                    self.scenario.selected = event_index;
+                }
+            }
             self.scenario.open = true;
         }
     }
@@ -5682,6 +5691,7 @@ mod tests {
     mod batch11_tests;
     mod batch13_tests;
     mod batch14_tests;
+    mod design_check_focus_tests;
     mod save_blockers_tests;
     mod unified_undo_tests;
     mod control_history_e2e;

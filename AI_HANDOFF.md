@@ -1,3 +1,8 @@
+## 2026-10-30 Codex／Agy：設計者事件導覽與驗證定位（已驗證）
+- 本輪限兩項：事件瀏覽器的篩選結果導覽／複製，以及 Design Check 前往的 3D 相機與事件選取連動；依交接「持續端到端測試」方向補編輯流程，不再擴充儲存安全。
+- 已確認：起始工作樹乾淨，HEAD `69e67d1`；`focus_world_position` 僅更新 2D pan，`consume_design_check_focus` 丟棄事件索引。Agy／Codex 分工不重疊檔案，Codex 父端負責審查與完整驗證。
+- 已驗證：Agy 實作事件瀏覽器、Codex 實作定位與父端審查；剪貼簿測試以真實 egui 點擊驗證。瀏覽器 7 passed、定位 5 passed；父端最終 `cargo check --workspace --locked`、`cargo test --workspace --locked`、`cargo build --workspace --locked` 均 exit 0；287 組、2777 passed／0 failed／23 ignored（editor app 944 passed／6 ignored），無 MSVC 連結錯誤，`git diff --check` 通過。日誌 `%TEMP%/arm-designer-{check-final,test-final,build}.log`。父端測試補強曾誤改舊測試期待值，首輪 1 failed，精確還原後完整重跑通過。
+- 環境：一般 shell／首次 Codex 子程序遇到既有 `helper_unknown_error: setup refresh had errors`，改用可用升權程序／Agy；後續 Codex 定位實作成功。未做 GUI／遊戲驗收；事件篩選可能隱藏跳轉列，但編輯區與提示仍顯示。下一步可補景觀工具 3D 區域取點／預覽，遊戲匯出載入驗收仍待完成。
 ## 2026-10-27 Codex：安裝版遊戲延遲啟動畫面複查
 - 以 CUA 從 `C:\Program Files (x86)\Against Rome\Against_Rome.exe` 啟動安裝版；第一張截圖為黑畫面，約一分鐘後同一程序顯示俄文主選單，再開啟歷史地圖清單時場景背景及文字均正常繪出。此次未選地圖、未載入或儲存地圖，未改安裝檔。主程式雜湊仍為 `6AC85239EA3B87A4357ED8CE09A1818E68C09FE3C00E8D98831F473577B719BF`；退出後 PID 42436 已不存在。
 - 啟動黑畫面期間 PID 42436 在 10 秒內 CPU 累增約 18.9 秒；其中一執行緒連續 5 秒消耗約 4.89 CPU 秒，23 個執行緒，15 次 GPU Engine utilization 取樣皆 0%。模組包含 `ddraw.dll`、NVIDIA `nvd3dum.dll`／`nvldumd.dll`、`ds_andll.dll`、`Quartz.dll`、`D3DIM700.DLL`、`mpg2splt.ax`、`msmpeg2adec.dll`。這表示啟動時曾有 CPU 工作但尚無 stack 證據可判定原因；可能只是較長啟動期，不能沿用「持續黑屏」作結論。`wpr -status` 顯示未錄製；本機只找到 `wpr.exe`，未找到 cdb／WinDbg／ProcDump。沒有對安裝版地圖或設定寫入。

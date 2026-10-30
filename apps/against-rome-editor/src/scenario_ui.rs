@@ -199,6 +199,10 @@ struct EventBrowser {
     time_order: bool,
 }
 impl EventBrowser {
+    /// 清除搜尋文字但保留其他篩選與排序條件。
+    pub fn clear_search(&mut self) {
+        self.search.clear();
+    }
     /// 清除篩選但保留排序，方便停用篩選結果後重新查看全部。
     fn clear_filters(&mut self) {
         let time_order = self.time_order;
@@ -258,6 +262,43 @@ fn event_summary(event: &Event, en: bool) -> String {
 }
 fn selection_hidden(selected: usize, events: &[Event], indices: &[usize]) -> bool {
     selected < events.len() && !indices.contains(&selected)
+}
+/// 在目前篩選結果中計算相鄰（上一個／下一個）事件索引；若無選取或超出範圍則循環跳至首項或末項。
+pub(crate) fn adjacent_event(visible: &[usize], selected: usize, forward: bool) -> usize {
+    if visible.is_empty() {
+        return selected;
+    }
+    let pos = visible.iter().position(|&i| i == selected);
+    let next = match (pos, forward) {
+        (Some(i), true) => (i + 1) % visible.len(),
+        (Some(0) | None, false) => visible.len() - 1,
+        (Some(i), false) => i - 1,
+        (None, true) => 0,
+    };
+    visible[next]
+}
+/// 產生單一事件的純文字詳細摘要，方便複製至剪貼簿或企劃文件。
+pub(crate) fn format_event_detail(event: &Event, en: bool) -> String {
+    let state = if event.enabled {
+        tl(en, "啟用", "Enabled")
+    } else {
+        tl(en, "停用", "Disabled")
+    };
+    format!(
+        "{}: {} [{state}] - {}",
+        tl(en, "事件", "Event"),
+        event.name,
+        event_summary(event, en)
+    )
+}
+/// 產生所有目前篩選可見事件的清單文字，供剪貼簿或文件比對使用。
+pub(crate) fn visible_events_text(events: &[Event], indices: &[usize], en: bool) -> String {
+    indices
+        .iter()
+        .filter_map(|&i| events.get(i))
+        .map(|e| format_event_detail(e, en))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 fn state_bytes(d: &ScenarioDocument, c: &StartCamera) -> Result<Vec<u8>> {
     serde_json::to_vec(&(d, c)).map_err(|e| e.to_string())
@@ -1478,6 +1519,9 @@ impl ScenarioUi {
         ui.horizontal_wrapped(|ui| {
             ui.label(tl(en, "搜尋事件名稱／動作文字／別名", "Search event name / action text / alias"));
             ui.text_edit_singleline(&mut browser.search);
+            if ui.small_button(tl(en, "清除搜尋", "Clear search")).clicked() {
+                browser.clear_search();
+            }
         });
         ui.horizontal_wrapped(|ui| {
             ui.label(tl(en, "隊伍", "Team"));
@@ -1529,6 +1573,37 @@ impl ScenarioUi {
                         Err(e) => self.error = Some(e),
                     }
                 }
+            }
+        });
+        ui.horizontal_wrapped(|ui| {
+            if ui
+                .add_enabled(!indices.is_empty(), egui::Button::new(tl(en, "上一個事件", "Previous event")))
+                .clicked()
+            {
+                self.selected = adjacent_event(&indices, self.selected, false);
+            }
+            if ui
+                .add_enabled(!indices.is_empty(), egui::Button::new(tl(en, "下一個事件", "Next event")))
+                .clicked()
+            {
+                self.selected = adjacent_event(&indices, self.selected, true);
+            }
+            let has_selected = self.document.events.get(self.selected).is_some();
+            if ui
+                .add_enabled(has_selected, egui::Button::new(tl(en, "複製選取事件", "Copy selected event")))
+                .clicked()
+            {
+                if let Some(event) = self.document.events.get(self.selected) {
+                    let text = format_event_detail(event, en);
+                    ui.output_mut(|o| o.copied_text = text);
+                }
+            }
+            if ui
+                .add_enabled(!indices.is_empty(), egui::Button::new(tl(en, "複製顯示清單", "Copy visible events")))
+                .clicked()
+            {
+                let text = visible_events_text(&self.document.events, &indices, en);
+                ui.output_mut(|o| o.copied_text = text);
             }
         });
         if selection_hidden(self.selected, &self.document.events, &indices) {
@@ -2492,6 +2567,123 @@ mod tests {
             }
         }
         fs::remove_dir_all(p).unwrap();
+    }
+    #[test]
+    fn event_browser_adjacent_navigation_cyclic() {
+        // 空清單時維持原本選取
+        assert_eq!(adjacent_event(&[], 42, true), 42);
+        assert_eq!(adjacent_event(&[], 42, false), 42);
+
+        let visible = vec![1, 3, 7];
+        // 正常前進與後退
+        assert_eq!(adjacent_event(&visible, 1, true), 3);
+        assert_eq!(adjacent_event(&visible, 3, true), 7);
+        assert_eq!(adjacent_event(&visible, 3, false), 1);
+
+        // 邊界循環
+        assert_eq!(adjacent_event(&visible, 7, true), 1);
+        assert_eq!(adjacent_event(&visible, 1, false), 7);
+
+        // 未選中或不在可見清單中的項目，前進至首項、後退至末項
+        assert_eq!(adjacent_event(&visible, 99, true), 1);
+        assert_eq!(adjacent_event(&visible, 99, false), 7);
+    }
+
+    #[test]
+    fn event_browser_copy_and_detail_formatting_bilingual() {
+        let events = browser_events();
+        // 繁體中文格式驗證
+        let zh_detail_enabled = format_event_detail(&events[0], false);
+        assert!(zh_detail_enabled.starts_with("事件: Late Guard [啟用] - "));
+        assert!(zh_detail_enabled.contains("延遲 2:05 / 重複"));
+        assert!(zh_detail_enabled.contains("訊息: Hold POSITION"));
+
+        let zh_detail_disabled = format_event_detail(&events[2], false);
+        assert!(zh_detail_disabled.starts_with("事件: Disabled [停用] - "));
+        assert!(zh_detail_disabled.contains("勝利: Victory text"));
+
+        // 英文格式驗證
+        let en_detail_enabled = format_event_detail(&events[0], true);
+        assert!(en_detail_enabled.starts_with("Event: Late Guard [Enabled] - "));
+        assert!(en_detail_enabled.contains("Delay 2:05 / repeat"));
+        assert!(en_detail_enabled.contains("Message: Hold POSITION"));
+
+        let en_detail_disabled = format_event_detail(&events[2], true);
+        assert!(en_detail_disabled.starts_with("Event: Disabled [Disabled] - "));
+        assert!(en_detail_disabled.contains("Victory: Victory text"));
+
+        // 可見清單組合文字
+        let indices = vec![0, 2];
+        let zh_list = visible_events_text(&events, &indices, false);
+        assert_eq!(zh_list, format!("{}\n{}", zh_detail_enabled, zh_detail_disabled));
+
+        let en_list = visible_events_text(&events, &indices, true);
+        assert_eq!(en_list, format!("{}\n{}", en_detail_enabled, en_detail_disabled));
+
+        // 空可見清單為空字串
+        assert_eq!(visible_events_text(&events, &[], false), "");
+    }
+
+    #[test]
+    fn event_browser_clear_search_and_clipboard_interactions() {
+        fn frame(ui: &mut ScenarioUi, ctx: &egui::Context, events: Vec<egui::Event>) -> egui::FullOutput {
+            ctx.run(egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 900.0))),
+                events,
+                ..Default::default()
+            }, |ctx| {
+                egui::CentralPanel::default().show(ctx, |panel| ui.show_event_browser(panel));
+            })
+        }
+        fn click(ui: &mut ScenarioUi, ctx: &egui::Context, label: &str) -> egui::FullOutput {
+            frame(ui, ctx, vec![]);
+            let output = frame(ui, ctx, vec![]);
+            let pos = output.shapes.iter().find_map(|shape| match &shape.shape {
+                egui::epaint::Shape::Text(text) if text.galley.text() == label =>
+                    Some(text.pos + text.galley.size() * 0.5),
+                _ => None,
+            }).expect("按鈕應完整顯示");
+            let pointer = |pressed| vec![egui::Event::PointerMoved(pos), egui::Event::PointerButton {
+                pos, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE,
+            }];
+            frame(ui, ctx, pointer(true));
+            frame(ui, ctx, pointer(false))
+        }
+        for en in [false, true] {
+            let mut ui = ScenarioUi::default();
+            ui.document.events = browser_events();
+            ui.english = en;
+            ui.selected = 0;
+            ui.browser.time_order = true;
+            ui.browser.enabled_only = true;
+            ui.browser.search = "Guard".into();
+            let before = state_bytes(&ui.document, &ui.camera).unwrap();
+            let dirty = ui.dirty();
+            let ctx = egui::Context::default();
+            assert!(frame(&mut ui, &ctx, vec![]).platform_output.copied_text.is_empty());
+            click(&mut ui, &ctx, tl(en, "清除搜尋", "Clear search"));
+            assert!(ui.browser.search.is_empty());
+            assert!(ui.browser.time_order && ui.browser.enabled_only);
+            // 依時間排序的可見事件為 3、1、0；從 0 向前會循環至 3。
+            let indices = ui.browser.indices(&ui.document.events);
+            assert_eq!(indices, vec![3, 1, 0]);
+            click(&mut ui, &ctx, tl(en, "下一個事件", "Next event"));
+            assert_eq!(ui.selected, 3);
+            click(&mut ui, &ctx, tl(en, "上一個事件", "Previous event"));
+            assert_eq!(ui.selected, 0);
+            let expected = format_event_detail(&ui.document.events[0], en);
+            assert_eq!(click(&mut ui, &ctx, tl(en, "複製選取事件", "Copy selected event")).platform_output.copied_text, expected);
+            let expected = visible_events_text(&ui.document.events, &indices, en);
+            assert_eq!(click(&mut ui, &ctx, tl(en, "複製顯示清單", "Copy visible events")).platform_output.copied_text, expected);
+            ui.browser.search = "no matching event".into();
+            let selected = ui.selected;
+            assert!(click(&mut ui, &ctx, tl(en, "下一個事件", "Next event")).platform_output.copied_text.is_empty());
+            assert_eq!(ui.selected, selected);
+            assert!(click(&mut ui, &ctx, tl(en, "複製顯示清單", "Copy visible events")).platform_output.copied_text.is_empty());
+            assert_eq!(state_bytes(&ui.document, &ui.camera).unwrap(), before);
+            assert_eq!(ui.dirty(), dirty);
+            assert!(ui.take_history_receipts().is_empty());
+        }
     }
     #[test]
     fn objective_presets_equivalence_and_name_collisions() {
