@@ -410,6 +410,14 @@ fn pick_rendered_object_at(
     }
 }
 
+/// Live preview information for a spawn being placed in 3D.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpawnGhostInfo {
+    pub display_name: String,
+    pub team: i32,
+    pub angle: f32,
+}
+
 /// Action produced by viewport interaction to be executed by EditorApp.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ViewportAction {
@@ -430,9 +438,24 @@ pub enum ViewportAction {
     },
     /// Cancel a pending two-point terrain selection.
     CancelTerrainPick,
+    /// A spawn was placed at the clicked terrain tile.
+    PlaceSpawnAtTile {
+        tile_x: i32,
+        tile_y: i32,
+    },
+    /// Cancel active spawn placement mode.
+    CancelSpawnPlacement,
 }
 
 impl ViewportAction {
+    /// Returns the picked terrain grid coordinates `(grid_x, grid_y)` if this is a `PickTerrain` action.
+    #[inline]
+    pub fn placed_spawn_tile(&self) -> Option<(i32, i32)> {
+        match *self {
+            Self::PlaceSpawnAtTile { tile_x, tile_y } => Some((tile_x, tile_y)),
+            _ => None,
+        }
+    }
     /// Returns the picked terrain grid coordinates `(grid_x, grid_y)` if this is a `PickTerrain` action.
     #[inline]
     pub fn picked_terrain(&self) -> Option<(f32, f32)> {
@@ -548,6 +571,10 @@ pub struct Viewport3d {
     scene_dragging: bool,
     /// Landscape region mode: presses/drags select a tile rectangle instead of painting terrain.
     pub landscape_pick: bool,
+    /// Spawn placement mode: left-click places a spawn on the hovered terrain tile; right-click/Esc cancels.
+    pub spawn_place_mode: bool,
+    /// Live preview information for the spawn being placed.
+    pub spawn_ghost: Option<SpawnGhostInfo>,
     /// Persisted selection rectangle to render on the 3D surface.
     pub landscape_selection: Option<TileRect>,
     /// Live in-progress drag rectangle to render on the 3D surface.
@@ -655,6 +682,8 @@ impl Viewport3d {
             scene_events: Vec::new(),
             scene_dragging: false,
             landscape_pick: false,
+            spawn_place_mode: false,
+            spawn_ghost: None,
             landscape_selection: None,
             landscape_drag: None,
             landscape_plan_cells: None,
@@ -1485,7 +1514,7 @@ impl Viewport3d {
             // Remember the gesture origin on press. The first drag frame may already
             // be outside the sprite's pick radius; testing only the current hit would
             // then turn an object-origin drag into a terrain brush stroke.
-            if rect.contains(pos)
+            if pointer_pos.is_some_and(|p| rect.contains(p))
                 && ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary))
             {
                 self.drag_started_on_object = picked_obj_idx.is_some();
@@ -1507,7 +1536,7 @@ impl Viewport3d {
                 self.hover_grid = Some((gx, gy));
 
                 // Left click & drag interaction:
-                if !is_alt_down && !self.terrain_pick_mode && !self.scene_pick && !self.landscape_pick {
+                if !is_alt_down && !self.terrain_pick_mode && !self.scene_pick && !self.landscape_pick && !self.spawn_place_mode {
                     let is_primary_clicked = response.clicked_by(egui::PointerButton::Primary)
                         || (rect.contains(pos)
                             && ctx
@@ -1556,10 +1585,10 @@ impl Viewport3d {
                 self.hover_grid = None;
                 // Ray did not hit terrain, but check if user clicked an object extending outside terrain:
                 let is_primary_clicked = response.clicked_by(egui::PointerButton::Primary)
-                    || ((rect.contains(pos) || response.hovered())
+                    || ((pointer_pos.is_some_and(|p| rect.contains(p)) || response.hovered())
                         && ctx.input(|i| i.pointer.button_clicked(egui::PointerButton::Primary))
                         && !response.dragged());
-                if !is_alt_down && !self.terrain_pick_mode && !self.scene_pick && !self.landscape_pick && is_primary_clicked {
+                if !is_alt_down && !self.terrain_pick_mode && !self.scene_pick && !self.landscape_pick && !self.spawn_place_mode && is_primary_clicked {
                     if let Some(idx) = picked_obj_idx {
                         let raw = &objects[idx];
                         action = ViewportAction::SelectObject(Some((raw.slot, raw.uid)));
@@ -1667,13 +1696,35 @@ impl Viewport3d {
             self.landscape_dragging = false;
         }
 
+        // 9e. Spawn placement mode: left click places a spawn on the hovered terrain tile; right-click/Esc cancels.
+        if self.spawn_place_mode && !is_alt_down {
+            if response.clicked_by(egui::PointerButton::Secondary)
+                || ctx.input(|i| i.key_pressed(egui::Key::Escape))
+            {
+                action = ViewportAction::CancelSpawnPlacement;
+            } else {
+                let is_primary_clicked = response.clicked_by(egui::PointerButton::Primary)
+                    || ((pointer_pos.is_some_and(|p| rect.contains(p)) || response.hovered())
+                        && ctx.input(|i| i.pointer.button_clicked(egui::PointerButton::Primary))
+                        && !response.dragged());
+                if is_primary_clicked {
+                    if let Some((tx, ty)) = self.hover_tile {
+                        action = ViewportAction::PlaceSpawnAtTile {
+                            tile_x: tx,
+                            tile_y: ty,
+                        };
+                    }
+                }
+            }
+        }
+
         // Ramp endpoints use the continuous terrain hit grid, matching the 2D canvas.
         // `hover_tile` is the coarser 64x64 terrain/material cell and would snap 257x257
         // height-grid endpoints to every fourth vertex.
         let terrain_pick_grid = self.hover_grid;
         // Capture only presses inside this canvas; a release outside or in the sky
         // must not reuse the last valid terrain coordinate.
-        if self.terrain_pick_mode {
+        if self.terrain_pick_mode && !self.spawn_place_mode {
             if response.clicked_by(egui::PointerButton::Secondary) {
                 self.terrain_pick_press = None;
                 action = ViewportAction::CancelTerrainPick;
@@ -1738,6 +1789,7 @@ impl Viewport3d {
             self.is_dragging_terrain = false;
             if !self.terrain_pick_mode
                 && !self.landscape_pick
+                && !self.spawn_place_mode
                 && !is_alt_down
                 && was_dragging_terrain
                 && !was_dragging_object
@@ -1812,6 +1864,9 @@ impl Viewport3d {
 
         // 13b. Render Landscape Region Overlay & Plan Preview (3D)
         self.render_landscape_overlay(&painter, rect, &frame, &field);
+
+        // 13c. Render Spawn Placement Ghost Preview (3D)
+        self.render_spawn_ghost(&painter, rect, &frame, &field);
 
         // 14. Render Hit Point Indicator (when not hovering an object)
         if self.hover_object.is_none() {
@@ -2186,7 +2241,13 @@ impl Viewport3d {
         } else {
             ""
         };
-        let controls_str = if self.landscape_pick {
+        let controls_str = if self.spawn_place_mode {
+            if self.english {
+                "Controls: Left-click: Place spawn | Right-click/Esc: Cancel placement | Right-drag: Orbit | Middle/Alt-drag: Pan | Wheel: Zoom"
+            } else {
+                "操作指南：左鍵：放置生成物件 | 右鍵/Esc：取消放置 | 右鍵拖曳：旋轉視角 | 中鍵/Alt+左鍵拖曳：平移 | 滾輪：縮放"
+            }
+        } else if self.landscape_pick {
             if self.english {
                 "Controls: Right-drag: Orbit | Middle/Alt-drag: Pan | Wheel: Zoom | Left-drag: Select landscape region | Right-click/Esc: Cancel"
             } else {
@@ -2544,6 +2605,95 @@ impl Viewport3d {
                 screen_pts,
                 Stroke::new(line_width, color),
             ));
+        }
+    }
+
+    /// Renders live 3D preview of a spawn being placed, including terrain tile highlight, facing indicator, and label badge.
+    fn render_spawn_ghost(
+        &self,
+        painter: &egui::Painter,
+        rect: Rect,
+        frame: &PreparedSceneFrame,
+        field: &TerrainHeightField,
+    ) {
+        if !self.spawn_place_mode {
+            return;
+        }
+        let Some(tile) = self.hover_tile else {
+            return;
+        };
+        let team = self.spawn_ghost.as_ref().map_or(0, |g| g.team);
+        let color_arr = against_rome_scene::draw_list::team_color(team);
+        let team_color = Color32::from_rgb(
+            (color_arr[0] * 255.0) as u8,
+            (color_arr[1] * 255.0) as u8,
+            (color_arr[2] * 255.0) as u8,
+        );
+
+        // 1. Render 3D tile perimeter highlight on terrain surface
+        let single_tile = TileRect {
+            min_x: tile.0,
+            min_y: tile.1,
+            max_x: tile.0,
+            max_y: tile.1,
+        };
+        Self::render_tile_rect_perimeter(
+            painter,
+            rect,
+            frame,
+            field,
+            &single_tile,
+            team_color,
+            2.5,
+        );
+
+        // 2. Render center disc and orientation indicator
+        let cx = tile.0 as f32 + 0.5;
+        let cy = tile.1 as f32 + 0.5;
+        let center_world = SceneVec3::new(
+            cx,
+            field.sample_height(cx, cy) + 0.25,
+            cy,
+        );
+        if let Some(s_center) = frame.project_world_to_screen(center_world) {
+            let center_pt = Pos2::new(rect.min.x + s_center.x, rect.min.y + s_center.y);
+            if rect.contains(center_pt) {
+                // Disc
+                painter.circle_filled(center_pt, 7.0, team_color.gamma_multiply(0.75));
+                painter.circle_stroke(center_pt, 7.0, Stroke::new(1.5_f32, Color32::WHITE));
+
+                // Facing direction pointer
+                let angle = self.spawn_ghost.as_ref().map_or(0.0, |g| g.angle);
+                let rad = angle.to_radians();
+                let tip_world = SceneVec3::new(
+                    cx + rad.sin() * 0.45,
+                    field.sample_height(cx + rad.sin() * 0.45, cy - rad.cos() * 0.45) + 0.25,
+                    cy - rad.cos() * 0.45,
+                );
+                if let Some(s_tip) = frame.project_world_to_screen(tip_world) {
+                    let tip_pt = Pos2::new(rect.min.x + s_tip.x, rect.min.y + s_tip.y);
+                    painter.line_segment([center_pt, tip_pt], Stroke::new(3.0_f32, Color32::WHITE));
+                    painter.line_segment([center_pt, tip_pt], Stroke::new(1.5_f32, team_color));
+                    painter.circle_filled(tip_pt, 3.5, Color32::WHITE);
+                }
+
+                // Name & Team label badge
+                if let Some(ref ghost) = self.spawn_ghost {
+                    if !ghost.display_name.is_empty() {
+                        let label = format!("{} (T{})", ghost.display_name, ghost.team);
+                        let badge_pos = center_pt + egui::vec2(0.0, -22.0);
+                        let galley = painter.layout_no_wrap(
+                            label,
+                            egui::FontId::proportional(12.0),
+                            Color32::WHITE,
+                        );
+                        let badge_rect = Rect::from_center_size(badge_pos, galley.size() + egui::vec2(10.0, 6.0));
+                        painter.rect_filled(badge_rect, 3.0, Color32::from_black_alpha(200));
+                        painter.rect_stroke(badge_rect, 3.0, Stroke::new(1.5_f32, team_color));
+                        painter.galley(badge_rect.min + egui::vec2(5.0, 3.0), galley, Color32::WHITE);
+                    }
+                }
+            }
         }
     }
 
@@ -4670,6 +4820,130 @@ mod troop_tests {
             assert!(
                 text.contains(if english { "Select landscape region" } else { "框選地景區域" }),
                 "HUD controls should mention landscape region selection: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn viewport_3d_spawn_placement_picking_emits_place_action_and_suppresses_brush() {
+        let mut vp = Viewport3d::new();
+        vp.spawn_place_mode = true;
+        vp.spawn_ghost = Some(SpawnGhostInfo {
+            display_name: "Roman Legion".to_string(),
+            team: 1,
+            angle: 90.0,
+        });
+        let session = TerrainSession::create_blank(33, 32);
+
+        let ctx = egui::Context::default();
+        let viewport_size = egui::vec2(600.0, 400.0);
+
+        let drive_frame = |vp: &mut Viewport3d, events: Vec<egui::Event>| -> ViewportAction {
+            let mut recorded = ViewportAction::None;
+            let raw_input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, viewport_size)),
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run(raw_input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    recorded = vp.show(ui, ctx, &session, 1.0, 0.0, 2.0, &[], None);
+                });
+            });
+            recorded
+        };
+
+        // Frame 0: initialize viewport rect and camera
+        drive_frame(&mut vp, vec![]);
+        let rect = vp.last_rect.expect("viewport rect should be set");
+        let field = Viewport3d::build_height_field(&session, 1.0, 1.0).unwrap();
+        let frame = vp.prepare_frame(rect.size(), &field, 0.0, 2.0, &[], &[]).unwrap();
+        let target_pos = {
+            let p = frame
+                .project_world_to_screen(SceneVec3::new(4.0, field.sample_height(4.0, 4.0), 4.0))
+                .expect("terrain point projects to screen");
+            rect.min + egui::vec2(p.x, p.y)
+        };
+
+        // Frame 1: Hover over terrain point
+        let act1 = drive_frame(&mut vp, vec![egui::Event::PointerMoved(target_pos)]);
+        assert_eq!(act1, ViewportAction::None);
+        assert!(vp.hover_tile.is_some(), "terrain ray hit should establish hover_tile");
+        let (_tx, _ty) = vp.hover_tile.unwrap();
+
+        // Frame 2: Primary click on terrain -> emits PlaceSpawnAtTile, suppressing brush Paint
+        let click_events = vec![
+            egui::Event::PointerButton {
+                pos: target_pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: Default::default(),
+            },
+            egui::Event::PointerButton {
+                pos: target_pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: Default::default(),
+            },
+        ];
+        let act2 = drive_frame(&mut vp, click_events);
+        assert!(
+            matches!(act2, ViewportAction::PlaceSpawnAtTile { .. }),
+            "primary click in spawn_place_mode must emit PlaceSpawnAtTile instead of brush Paint: {act2:?}"
+        );
+        let (placed_x, placed_y) = act2.placed_spawn_tile().expect("placed tile");
+        assert_eq!(Some((placed_x, placed_y)), vp.hover_tile);
+        assert_ne!(act2, ViewportAction::CommitStroke);
+
+        // Frame 3: Secondary click -> emits CancelSpawnPlacement
+        let cancel_events = vec![
+            egui::Event::PointerButton {
+                pos: target_pos,
+                button: egui::PointerButton::Secondary,
+                pressed: true,
+                modifiers: Default::default(),
+            },
+            egui::Event::PointerButton {
+                pos: target_pos,
+                button: egui::PointerButton::Secondary,
+                pressed: false,
+                modifiers: Default::default(),
+            },
+        ];
+        let act3 = drive_frame(&mut vp, cancel_events);
+        assert_eq!(
+            act3,
+            ViewportAction::CancelSpawnPlacement,
+            "secondary click must emit CancelSpawnPlacement"
+        );
+    }
+
+    #[test]
+    fn viewport_3d_renders_spawn_placement_ghost_and_hud_controls_without_panic() {
+        let mut vp = Viewport3d::new();
+        vp.spawn_place_mode = true;
+        vp.spawn_ghost = Some(SpawnGhostInfo {
+            display_name: "Roman Legion".to_string(),
+            team: 2,
+            angle: 180.0,
+        });
+        vp.hover_tile = Some((16, 16));
+        let session = TerrainSession::create_blank(33, 32);
+
+        for english in [true, false] {
+            vp.english = english;
+            let text = crate::batch20_localization_tests::render(|ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let _ = vp.show(ui, ctx, &session, 1.0, 0.0, 2.0, &[], None);
+                });
+            });
+            assert!(
+                text.contains(if english { "Place spawn" } else { "放置生成物件" }),
+                "HUD controls should mention spawn placement: {text}"
+            );
+            assert!(
+                text.contains(if english { "Cancel placement" } else { "取消放置" }),
+                "HUD controls should mention cancellation: {text}"
             );
         }
     }

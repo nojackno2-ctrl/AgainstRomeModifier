@@ -341,6 +341,18 @@ impl SpawnPlacementUi {
     pub fn select_type(&mut self, name_def: &str) {
         self.selected_type = Some(name_def.to_string());
     }
+    pub fn selected_type(&self) -> Option<&str> {
+        self.selected_type.as_deref()
+    }
+    pub fn team(&self) -> i32 {
+        self.team
+    }
+    pub fn count(&self) -> i32 {
+        self.count
+    }
+    pub fn angle(&self) -> i32 {
+        self.angle
+    }
     pub fn set_placement_values(&mut self, team: i32, count: i32, angle: i32) {
         self.team = team;
         self.count = count;
@@ -355,7 +367,7 @@ impl SpawnPlacementUi {
         self.status_error = error;
     }
 
-    fn selected_catalog_type(&self) -> Option<&SdlObjectType> {
+    pub fn selected_catalog_type(&self) -> Option<&SdlObjectType> {
         let name = self.selected_type.as_deref()?;
         self.catalog.iter().find(|t| t.name_def == name)
     }

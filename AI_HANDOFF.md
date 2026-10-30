@@ -1,3 +1,16 @@
+## 2026-10-30 Agy：3D 視圖生成物件放置模式與即時預覽（已驗證）
+- 依設計者在 3D 視圖中無法直接放置物件／部隊、且誤點擊會誤觸發高程筆刷破壞地形之關鍵缺口，實作 3D 視圖生成物件放置模式與即時預覽：
+  1. `ViewportAction::PlaceSpawnAtTile` 與取消動作：`ViewportAction` 擴充 `PlaceSpawnAtTile { tile_x, tile_y }` 與 `CancelSpawnPlacement`；`Viewport3d` 引入 `spawn_place_mode` 與 `spawn_ghost: Option<SpawnGhostInfo>`。當放置模式啟動時攔截 Primary 點擊並直接送出選中圖塊座標，阻擋地形筆刷 (`Paint`/`CommitStroke`) 與物件選取；按右鍵或 Esc 觸發取消放置。
+  2. 3D 即時投影預覽（`render_spawn_ghost`）：在 3D 視圖中依滑鼠懸停圖塊在地形表面繪製隊伍代表色之選取邊界框、中心圓盤、依當前角度 (`angle`) 計算之朝向指針與端點高亮，並在上方顯示浮動名稱與隊伍標籤徽章 (`{display_name} (T{team})`)；HUD 即時反映中英雙語放置與取消操作指南。
+  3. 雙向連動與狀態列回饋：`EditorApp::handle_viewport_3d_action` 連動 `SpawnPlacementUi::place_at_tile` 進行生成物新增與劇本儲存 dirty 標記，保持地形高程完全不變，狀態列即時回饋放置座標與結果；右鍵/Esc 取消退出放置模式；`refresh_troop_objects` 自動偵測生成物變更並即時在 3D 呈現陣形展開。
+- 已驗證：
+  - 新增 `viewport_3d` 3D 生成放置點選、筆刷阻擋與右鍵取消測試（`viewport_3d_spawn_placement_picking_emits_place_action_and_suppresses_brush`）。
+  - 新增 `viewport_3d` 3D 預覽、朝向指針與 HUD 雙語操作說明測試（`viewport_3d_renders_spawn_placement_ghost_and_hud_controls_without_panic`）。
+  - 新增 `app.rs` 端到端整合測試：驗證 3D 視圖點選圖塊生成物件、隊伍與角度寫入、地形高程與筆刷隔離保護、狀態列同步及取消放置（`test_viewport_3d_spawn_placement_and_cancellation_workflow`）。
+  - `viewport_3d` 40 項單元與無頭測試全數通過；`spawn_placement_ui` 8 項測試通過。
+  - 完整 `cargo test --workspace --locked` 通過（exit 0，無任何失敗）。
+- 未驗證：原生視窗桌面實際滑鼠點擊放置體驗與遊戲內載入渲染仍待進一步驗收。
+
 ## 2026-10-30 Agy：設計檢查物件與劇本生成物定位選取連動（已驗證）
 - 依設計者導覽與編輯流程缺口，實作 Design Check 面板「前往／Locate」與物件選取系統的完整雙向連動：
   1. `object_request` 欄位與定位契約：`DesignCheckUi` 新增 `object_request: Option<Uuid>`；擴充 `IssueRow::is_locatable`，除既有世界座標與事件索引外，將具備 `object_id` 的項目納入可定位條件，並統一「前往」按鈕與「定位」按鈕狀態。匯出 Markdown 報告同步納入物件識別碼。

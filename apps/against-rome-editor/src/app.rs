@@ -3469,6 +3469,39 @@ impl EditorApp {
     pub fn handle_viewport_3d_action(&mut self, action: ViewportAction) {
         match action {
             ViewportAction::None => {}
+            ViewportAction::PlaceSpawnAtTile { tile_x, tile_y } => {
+                if self.current_map_is_original() {
+                    return;
+                }
+                if self.spawn_ui.place_mode() && self.pending_action.is_none() {
+                    let Some(session) = self.session.as_ref() else {
+                        return;
+                    };
+                    let cx = SpawnContext {
+                        lang: self.loc.current_language(),
+                        heights: Some(session.heights()),
+                        vertex_size: session.vertex_size,
+                        height_step: self.height_step,
+                        read_only: self.current_map_is_original(),
+                    };
+                    self.spawn_ui.set_active(true);
+                    self.spawn_ui.place_at_tile(&mut self.scenario, &cx, tile_x, tile_y);
+                    let (msg, is_err) = self.spawn_ui.status();
+                    if !msg.is_empty() {
+                        self.status_message = msg.to_string();
+                        self.status_is_error = is_err;
+                    }
+                }
+            }
+            ViewportAction::CancelSpawnPlacement => {
+                self.spawn_ui.set_place_mode(false);
+                self.status_message = tr(
+                    self.lang(),
+                    "Placement cancelled.",
+                    "已取消放置模式。",
+                ).into();
+                self.status_is_error = false;
+            }
             ViewportAction::CancelTerrainPick => {
                 if self.ramp_selecting {
                     self.cancel_ramp_selection();
@@ -10582,6 +10615,66 @@ angle=0.00
     }
 
     #[test]
+    fn test_viewport_3d_spawn_placement_and_cancellation_workflow() {
+        let (mut app, dir, _original) = start_camera_app(false);
+        app.scenario.load_session(&dir).unwrap();
+        app.spawn_ui.sync_with_document(&app.scenario, Some(&dir));
+        app.view_mode = ViewMode::View3D;
+        app.spawn_ui.open = true;
+
+        let sample_type = against_rome_maps::sdl_objects::SdlObjectType::new(
+            "FigRomSoldat",
+            7,
+            against_rome_maps::sdl_objects::SdlObjectCategory::Figure,
+            "Rom",
+            3,
+            std::collections::HashMap::new(),
+        );
+        app.spawn_ui.set_catalog(vec![sample_type]);
+        app.spawn_ui.select_type("FigRomSoldat");
+        app.spawn_ui.set_placement_values(1, 5, 90);
+        app.spawn_ui.set_place_mode(true);
+
+        assert!(app.spawn_ui.place_mode());
+        assert_eq!(app.scenario.document().spawns.len(), 0);
+
+        let baseline_heights = app.session.as_ref().unwrap().heights().to_vec();
+
+        // 1. Place spawn at tile (12, 14) via 3D viewport action
+        app.handle_viewport_3d_action(ViewportAction::PlaceSpawnAtTile {
+            tile_x: 12,
+            tile_y: 14,
+        });
+
+        // Verify spawn was created
+        assert_eq!(app.scenario.document().spawns.len(), 1);
+        let spawn = &app.scenario.document().spawns[0];
+        assert_eq!(spawn.alias, "FigRomSoldat");
+        assert_eq!(spawn.team, 1);
+        assert_eq!(spawn.count, 5);
+        assert_eq!(spawn.angle, 90);
+        assert!(app.has_unsaved_changes());
+
+        // Terrain heights and painting must NOT be affected
+        assert!(!app.is_painting);
+        assert_eq!(app.session.as_ref().unwrap().heights(), baseline_heights.as_slice());
+
+        // Status message was updated
+        assert!(app.status_message.contains("12") && app.status_message.contains("14"));
+        assert!(!app.status_is_error);
+
+        // Place mode remains active for subsequent placements
+        assert!(app.spawn_ui.place_mode());
+
+        // 2. Cancel placement via secondary click / Esc action
+        app.handle_viewport_3d_action(ViewportAction::CancelSpawnPlacement);
+        assert!(!app.spawn_ui.place_mode());
+        assert!(app.status_message.contains("取消") || app.status_message.contains("cancelled"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn test_viewport_3d_camera_manipulation() {
         let mut app = EditorApp::initial_state();
         let initial_yaw = app.viewport_3d.camera.yaw_degrees();
@@ -13574,6 +13667,25 @@ impl EditorApp {
                     self.viewport_3d.landscape_selection = self.landscape.region.selection;
                     self.viewport_3d.landscape_drag = self.landscape.region.drag.rect();
                     self.viewport_3d.landscape_plan_cells = self.landscape.region.plan.as_ref().map(|p| p.cells.clone());
+                    self.viewport_3d.spawn_place_mode = self.spawn_ui.place_mode();
+                    self.viewport_3d.spawn_ghost = if self.spawn_ui.place_mode() {
+                        let team = self.spawn_ui.team();
+                        let angle = self.spawn_ui.angle() as f32;
+                        let display_name = if let Some(ty) = self.spawn_ui.selected_catalog_type() {
+                            crate::spawn_placement::object_display_name(ty, self.lang() == AppLanguage::English)
+                        } else if let Some(raw) = self.spawn_ui.selected_type() {
+                            raw.to_string()
+                        } else {
+                            String::new()
+                        };
+                        Some(crate::viewport_3d::SpawnGhostInfo {
+                            display_name,
+                            team,
+                            angle,
+                        })
+                    } else {
+                        None
+                    };
                     let action = self.viewport_3d.show(
                         ui,
                         ctx,
