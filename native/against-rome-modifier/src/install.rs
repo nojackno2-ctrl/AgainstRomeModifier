@@ -63,9 +63,25 @@ impl InstallResources {
         third_party: Option<&Path>,
         trace_dll: Option<&Path>,
     ) -> Self {
+        Self::discover_with_boundary(exe_dir, third_party, trace_dll, None)
+    }
+
+    /// 限制測試資源搜尋範圍；正式探索不設定邊界。
+    #[doc(hidden)]
+    pub fn discover_with_boundary(
+        exe_dir: Option<&Path>,
+        third_party: Option<&Path>,
+        trace_dll: Option<&Path>,
+        boundary: Option<&Path>,
+    ) -> Self {
         let mut roots: Vec<PathBuf> = third_party.map(Path::to_path_buf).into_iter().collect();
         if let Some(dir) = exe_dir {
-            roots.extend(dir.ancestors().take(5).map(|p| p.join("ThirdParty")));
+            roots.extend(
+                dir.ancestors()
+                    .take(5)
+                    .take_while(|p| boundary.map_or(true, |b| p.starts_with(b)))
+                    .map(|p| p.join("ThirdParty")),
+            );
         }
         let dgvoodoo = roots
             .iter()
@@ -94,7 +110,10 @@ impl InstallResources {
                     candidates.push(dir.join("ThirdParty/argm-trace/winmm.dll"));
                     candidates.push(dir.join("winmm.dll"));
                 }
-                for root in dir.ancestors() {
+                for root in dir
+                    .ancestors()
+                    .take_while(|p| boundary.map_or(true, |b| p.starts_with(b)))
+                {
                     for target in [
                         "re_workspace/rust-rewrite-targets/native-against-rome-trace",
                         "re_workspace/target-against-rome-trace",

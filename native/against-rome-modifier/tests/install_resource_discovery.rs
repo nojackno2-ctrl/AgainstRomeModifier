@@ -3,7 +3,6 @@ use against_rome_modifier::install::{ArgmTraceFeature, DgVoodooFeature, InstallR
 use std::{
     fs,
     path::{Path, PathBuf},
-
 };
 
 struct Temp(PathBuf);
@@ -26,7 +25,7 @@ impl Temp {
         self.0.join(relative)
     }
     fn discover(&self, exe_dir: &Path) -> InstallResources {
-        InstallResources::discover_with(Some(exe_dir), None, None)
+        InstallResources::discover_with_boundary(Some(exe_dir), None, None, Some(&self.0))
     }
 }
 impl Drop for Temp {
@@ -66,8 +65,12 @@ fn explicit_trace_override_wins_over_package_and_build() {
     );
     let dg = t.dg("custom");
     t.put("custom/argm-trace/winmm.dll", b"legacy cpp");
-    let resources =
-        InstallResources::discover_with(Some(&t.0.join("app")), Some(&dg), Some(&explicit));
+    let resources = InstallResources::discover_with_boundary(
+        Some(&t.0.join("app")),
+        Some(&dg),
+        Some(&explicit),
+        Some(&t.0),
+    );
     assert_eq!(resources.argm_winmm, b"explicit rust");
     assert_eq!(resources.dgvoodoo.len(), 4);
 }
@@ -77,7 +80,12 @@ fn missing_explicit_trace_does_not_fall_back() {
     let t = Temp::new();
     t.put("app/ThirdParty/argm-trace/winmm.dll", b"packaged rust");
     for path in [t.0.join("missing.dll"), t.0.join("app")] {
-        let resources = InstallResources::discover_with(Some(&t.0.join("app")), None, Some(&path));
+        let resources = InstallResources::discover_with_boundary(
+            Some(&t.0.join("app")),
+            None,
+            Some(&path),
+            Some(&t.0),
+        );
         assert!(resources.argm_winmm.is_empty());
         assert!(ArgmTraceFeature::plan(&t.0, true, &resources).is_err());
     }
@@ -107,7 +115,12 @@ fn ancestor_and_third_party_override_never_implicitly_supply_trace() {
     let dg = t.dg("ThirdParty");
     t.put("ThirdParty/argm-trace/winmm.dll", b"legacy cpp");
     for explicit_dg in [None, Some(dg.as_path())] {
-        let resources = InstallResources::discover_with(Some(&t.0.join("app")), explicit_dg, None);
+        let resources = InstallResources::discover_with_boundary(
+            Some(&t.0.join("app")),
+            explicit_dg,
+            None,
+            Some(&t.0),
+        );
         assert!(resources.argm_winmm.is_empty());
         assert_eq!(resources.dgvoodoo.len(), 4);
         assert!(ArgmTraceFeature::plan(&t.0, true, &resources).is_err());
@@ -170,7 +183,14 @@ fn dgvoodoo_override_precedes_app_and_incomplete_bundle_falls_back() {
     let custom = t.dg("custom");
     t.dg("app/ThirdParty");
     t.put("custom/dgVoodoo2/D3D8.dll", b"custom dg");
-    let resolve = || InstallResources::discover_with(Some(&t.0.join("app")), Some(&custom), None);
+    let resolve = || {
+        InstallResources::discover_with_boundary(
+            Some(&t.0.join("app")),
+            Some(&custom),
+            None,
+            Some(&t.0),
+        )
+    };
     assert_eq!(resolve().dgvoodoo["D3D8.dll"], b"custom dg");
     fs::remove_file(custom.join("dgVoodoo2/DDraw.dll")).unwrap();
     assert_eq!(resolve().dgvoodoo["D3D8.dll"], b"D3D8.dll");
@@ -194,7 +214,29 @@ fn no_discovery_inputs_yields_no_resources() {
     assert!(resources.dgvoodoo.is_empty());
 }
 
+#[test]
+fn fixture_boundary_excludes_ancestor_resources() {
+    let t = Temp::new();
+    t.dg("ThirdParty");
+    t.put(
+        "re_workspace/target-against-rome-trace/i686-pc-windows-msvc/release/winmm.dll",
+        b"ancestor trace",
+    );
+    let fixture = t.0.join("fixture");
+    let exe = fixture.join("app");
+    fs::create_dir_all(&exe).unwrap();
+    let unbounded = InstallResources::discover_with(Some(&exe), None, None);
+    assert_eq!(unbounded.dgvoodoo.len(), 4);
+    assert_eq!(unbounded.argm_winmm, b"ancestor trace");
+    let bounded = InstallResources::discover_with_boundary(Some(&exe), None, None, Some(&fixture));
+    assert!(bounded.dgvoodoo.is_empty());
+    assert!(bounded.argm_winmm.is_empty());
+}
+
 #[cfg(test)]
 mod temp_fixture {
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/temp_unique.rs"));
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/temp_unique.rs"
+    ));
 }

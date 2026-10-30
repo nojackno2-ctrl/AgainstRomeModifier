@@ -1,3 +1,7 @@
+## 2026-10-30 Codex：資源探索測試隔離
+- install_resource_discovery 的四項測試會讀取 fixture 上層的 dgVoodoo 或 trace，造成非決定性失敗；已加入 fixture 搜尋邊界及上層污染回歸測試，正式探索維持原有行為。
+- 驗證：正常 TEMP 下 `cargo check --workspace --locked`、`cargo test --workspace --locked`（2795 passed、0 failed、23 ignored；資源探索 13 passed）與 `cargo build --workspace --locked` 均通過。首次測試因前一輪同時執行造成 MSVC LNK1104，停止前一輪後依序重跑通過。
+
 ## 2026-10-30 Codex：空白場景選擇可用槽位
 - 新增「尋找可用槽位」，沿用地圖目錄的空槽搜尋；失敗保留原槽位，搜尋不建立地圖。
 - 已驗證：`cargo test -p against-rome-editor-app --lib blank_map_finds_free_slot_without_creating_a_map --locked` 通過；`cargo check --workspace --locked` 通過。`cargo test --workspace --locked` 與 `cargo build --workspace --locked` 通過。首次測試因儲存庫內 TEMP 的祖先資源干擾而有 4 項失敗；以指向該 TEMP 的獨立磁碟根目錄重跑後通過。
