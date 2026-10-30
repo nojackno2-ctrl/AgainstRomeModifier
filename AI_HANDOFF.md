@@ -1,3 +1,8 @@
+## 2026-10-30 Codex：放置隊伍自動相容
+- 選取放置類型、設定參數及放置前，依物件類型調整隊伍範圍；有效隊伍保留。
+- 已驗證：專項測試 1 passed；更新整合測試後，cargo check --workspace --locked、cargo test --workspace --locked、cargo build --workspace --locked 均通過。首次完整測試因舊測試仍預期拒絕無效隊伍而失敗，已依新行為更新並重跑通過。
+- 未驗證：實際 GUI 操作與遊戲內載入；未修改已安裝遊戲。
+
 ## 2026-10-30 Codex：資源探索測試隔離
 - install_resource_discovery 的四項測試會讀取 fixture 上層的 dgVoodoo 或 trace，造成非決定性失敗；已加入 fixture 搜尋邊界及上層污染回歸測試，正式探索維持原有行為。
 - 驗證：正常 TEMP 下 `cargo check --workspace --locked`、`cargo test --workspace --locked`（2795 passed、0 failed、23 ignored；資源探索 13 passed）與 `cargo build --workspace --locked` 均通過。首次測試因前一輪同時執行造成 MSVC LNK1104，停止前一輪後依序重跑通過。

@@ -560,12 +560,12 @@ fn clicking_a_tile_places_a_script_spawn_with_terrain_height() {
 }
 
 #[test]
-fn invalid_team_and_read_only_and_missing_type_refuse_without_changes() {
+fn incompatible_team_is_adjusted_and_read_only_and_missing_type_refuse() {
     let mut f = Fixture::new("refuse");
     f.ui.set_placement_values(9, 5, 0);
     f.place("FigRomLeg", (1, 1));
-    assert!(f.scenario.document().spawns.is_empty());
-    assert!(f.ui.status().1 && f.ui.status().0.contains("team between 0 and 7"));
+    assert_eq!(f.scenario.document().spawns.len(), 1);
+    assert_eq!(f.scenario.document().spawns[0].team, 7);
 
     let heights = f.heights.clone();
     let cx = SpawnContext { lang: Language::English, heights: Some(&heights), vertex_size: 65, height_step: 4.0, read_only: true };
@@ -573,7 +573,7 @@ fn invalid_team_and_read_only_and_missing_type_refuse_without_changes() {
     ui.select_type("BauRomHaus");
     ui.set_placement_values(0, 1, 0);
     ui.place_at_tile(&mut f.scenario, &cx, 1, 1);
-    assert!(f.scenario.document().spawns.is_empty());
+    assert_eq!(f.scenario.document().spawns.len(), 1);
     assert!(ui.status().0.contains("read-only"));
     f.ui = ui;
 

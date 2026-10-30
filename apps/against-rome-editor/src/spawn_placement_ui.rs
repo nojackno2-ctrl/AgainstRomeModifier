@@ -340,6 +340,14 @@ impl SpawnPlacementUi {
 
     pub fn select_type(&mut self, name_def: &str) {
         self.selected_type = Some(name_def.to_string());
+        self.clamp_placement_team();
+    }
+
+    fn clamp_placement_team(&mut self) {
+        if let Some(object_type) = self.selected_catalog_type() {
+            let (min, max) = team_range(object_type);
+            self.team = self.team.clamp(min, max);
+        }
     }
     pub fn selected_type(&self) -> Option<&str> {
         self.selected_type.as_deref()
@@ -357,6 +365,7 @@ impl SpawnPlacementUi {
         self.team = team;
         self.count = count;
         self.angle = normalize_angle(angle);
+        self.clamp_placement_team();
     }
     pub fn placement_angle(&self) -> i32 {
         self.angle
@@ -561,6 +570,7 @@ impl SpawnPlacementUi {
             );
             return;
         };
+        self.clamp_placement_team();
         let (world_x, world_z) = tile_center(tile_x, tile_y);
         let world_y = cx
             .heights
@@ -1864,6 +1874,26 @@ mod palette_thumbnail_tests {
         let cx = SpawnContext { lang: AppLanguage::English, heights: None,
             vertex_size: 0, height_step: 4., read_only: false };
         (root, scenario, panel, cx)
+    }
+
+    #[test]
+    fn placement_team_follows_selected_type_without_rendering_panel() {
+        let (root, _scenario, mut panel, _cx) = shadow_fixture();
+        panel.catalog.push(SdlObjectType::new("soldier", 2, SdlObjectCategory::Figure,
+            "", 0, Default::default()));
+        panel.select_type("wolf");
+        panel.set_placement_values(15, 1, 0);
+        assert_eq!(panel.team(), 15);
+        panel.select_type("soldier");
+        assert_eq!(panel.team(), 7);
+        panel.set_placement_values(-1, 1, 0);
+        assert_eq!(panel.team(), 0);
+        let item = new_placement(panel.selected_catalog_type().unwrap(), 64., 0., 64., panel.team(), 0., 1).unwrap();
+        assert_eq!(item.team, 0);
+        panel.set_placement_values(4, 1, 0);
+        panel.select_type("wolf");
+        assert_eq!(panel.team(), 4);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
