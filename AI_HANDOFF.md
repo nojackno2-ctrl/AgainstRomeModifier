@@ -1,6 +1,10 @@
+## 2026-10-30 Codex：道路重新規劃失敗防護
+- 道路重新規劃前清除舊方案及該道路待套用請求，避免輸入無效時誤用過期預覽；其他工具的待套用請求保留。
+- 驗證：聚焦測試 1 passed；`cargo check --workspace --locked`、`cargo test --workspace --locked`（287 組、2800 passed、0 failed、23 ignored）及 `cargo build --workspace --locked` 均通過，無 MSVC 連結錯誤。首次指定錯誤的 RUSTUP_HOME，未啟動編譯；改用 repo 的 rustup 後通過。未驗證桌面介面與遊戲內效果；未修改安裝遊戲。
+
 ## 2026-10-30 Codex：建置目錄改放 C 槽
 - D 槽先前僅剩約 15 MB；執行 `cargo clean --target-dir target` 並清除已確認的 Cargo 建置目錄後，D 槽可用空間約 830 GiB。
-- 後續測試與建置請使用位於 C 槽的 `--target-dir`，例如 `--target-dir %TEMP%\against-rome-target`，並先確認 `%TEMP%` 位於 C 槽；保留逆向資料與非建置檔案。
+- D 槽空間已恢復，可使用儲存庫的 `target/` 建置；避免在 `re_workspace` 留下各代理獨立 target 目錄。需要隔離時使用 `%TEMP%` 下單一共用 `--target-dir`，完成後移除。
 - 本次僅清理建置產物，未重新執行建置或測試。
 
 ## 2026-10-30 Codex：水位變更後的河流規劃

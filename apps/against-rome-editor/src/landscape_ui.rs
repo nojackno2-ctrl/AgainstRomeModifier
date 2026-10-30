@@ -398,6 +398,10 @@ impl LandscapeUi {
     }
 
     pub fn plan_road(&mut self, cx: &LandscapeContext) -> Result<(), String> {
+        self.last_road_plan = None;
+        if self.apply_requested == Some(LandscapeApply::Road) {
+            self.apply_requested = None;
+        }
         let points = Self::parse_waypoints(&self.road_waypoints_text);
         if points.len() < 2 {
             return Err("At least 2 waypoints are required for road planning.".into());
@@ -1972,6 +1976,22 @@ mod tests {
         assert!(ui.run_road_planning(16).is_ok());
         assert!(ui.last_road_plan.is_some());
         assert!(ui.is_dirty());
+    }
+
+    #[test]
+    fn failed_road_replanning_discards_old_plan_and_pending_apply() {
+        let mut ui = LandscapeUi::default();
+        ui.road_waypoints_text = "2,2\n2,8".to_string();
+        ui.run_road_planning(16).unwrap();
+        ui.apply_requested = Some(LandscapeApply::Road);
+        ui.road_waypoints_text = "2,2".to_string();
+        assert!(ui.run_road_planning(16).is_err());
+        assert!(ui.last_road_plan.is_none());
+        assert_eq!(ui.take_apply_request(), None);
+
+        ui.apply_requested = Some(LandscapeApply::River);
+        assert!(ui.run_road_planning(16).is_err());
+        assert_eq!(ui.take_apply_request(), Some(LandscapeApply::River));
     }
 
     #[test]
