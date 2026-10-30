@@ -1,3 +1,6 @@
+## 2026-10-30 Codex：設計者缺口盤點
+- 本輪檢查交接與近期提交；事件篩選定位、景觀 3D 區域預覽、atlas 尺寸預檢及 Spawn DATA 載入錯誤提示均已有後續完成紀錄。尚未確認可在本輪安全完成的獨立小缺口；未改程式、未執行測試或提交。下一步需先核對其他候選的目前程式與後續紀錄。
+
 ## 2026-10-30 Codex：勝負預設停用原因
 - 劇本勝負預設按鈕停用時直接顯示原因，避免只能透過滑鼠懸停得知；已存在時維持既有提示。
 - 驗證：專項 egui 測試 1 passed；`cargo check --workspace --locked`、`cargo test --workspace --locked`（287 組，2801 passed、0 failed、23 ignored）及 `cargo build --workspace --locked` 通過，使用儲存庫內 TEMP 與 target。未驗證實際視窗及遊戲。
