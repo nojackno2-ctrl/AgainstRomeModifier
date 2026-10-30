@@ -2381,7 +2381,11 @@ impl EditorApp {
                 ))
             };
             if self.landscape.region_drag_input(response, dim.max(1) as usize, tile_at).is_some() {
-                self.status_message = "Region selection updated from canvas.".into();
+                self.status_message = tr(
+                    self.lang(),
+                    "Region selection updated from canvas.",
+                    "已從畫布更新選取區域。",
+                ).into();
                 self.status_is_error = false;
             }
         }
@@ -10990,6 +10994,139 @@ angle=0.00
     }
 
     #[test]
+    fn test_viewport_3d_landscape_region_drag_selects_tiles_and_previews_plan_regression() {
+        let mut app = EditorApp::initial_state();
+        let session = TerrainSession::create_blank(257, 32);
+        app.session = Some(session);
+        app.view_mode = ViewMode::View3D;
+
+        app.landscape.open = true;
+        app.landscape.current_tab = crate::landscape_ui::LandscapeTab::RegionTools;
+        app.landscape.region.pick_armed = true;
+
+        let ctx = egui::Context::default();
+        let viewport_size = egui::vec2(800.0, 600.0);
+
+        let drive_frame = |app: &mut EditorApp, events: Vec<egui::Event>| -> ViewportAction {
+            let input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, viewport_size)),
+                events,
+                ..Default::default()
+            };
+            let mut action = ViewportAction::None;
+            let _ = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let placement_objects = app.placement.objects();
+                    let selected_obj = app.placement.selected_object();
+                    app.viewport_3d.english = app.lang() == AppLanguage::English;
+                    app.viewport_3d.terrain_pick_mode = app.ramp_selecting;
+                    app.viewport_3d.show_grid = app.show_grid;
+                    app.viewport_3d.show_objects = app.show_objects;
+                    app.viewport_3d.scene_pick = app.scene.scene_pick_active();
+                    app.viewport_3d.landscape_pick = app.landscape.region_pick_active();
+                    app.viewport_3d.landscape_selection = app.landscape.region.selection;
+                    app.viewport_3d.landscape_drag = app.landscape.region.drag.rect();
+                    app.viewport_3d.landscape_plan_cells = app.landscape.region.plan.as_ref().map(|p| p.cells.clone());
+                    action = app.viewport_3d.show(
+                        ui,
+                        ctx,
+                        app.session.as_ref().unwrap(),
+                        app.height_step,
+                        app.water_surface,
+                        app.brush_radius,
+                        &placement_objects,
+                        selected_obj,
+                    );
+                    let dimension = ((app.session.as_ref().unwrap().vertex_size.saturating_sub(1)) / 4).max(1);
+                    for event in std::mem::take(&mut app.viewport_3d.landscape_events) {
+                        if app.landscape.handle_region_pointer(event, dimension).is_some() {
+                            app.status_message = tr(
+                                app.lang(),
+                                "Region selection updated from 3D viewport.",
+                                "已從 3D 視圖更新選取區域。",
+                            ).into();
+                            app.status_is_error = false;
+                        }
+                    }
+                });
+            });
+            app.handle_viewport_3d_action(action.clone());
+            action
+        };
+
+        // Frame 0: 初始化版面配置並確認 3D viewport 已啟用 landscape_pick
+        drive_frame(&mut app, vec![]);
+        assert!(app.viewport_3d.landscape_pick);
+
+        let canvas_rect = app.viewport_3d.last_rect.expect("viewport 應配置畫布矩形");
+        let height_scale = 6.0 * app.viewport_3d.relief_scale;
+        let field = Viewport3d::build_height_field(app.session.as_ref().unwrap(), height_scale, app.height_step).unwrap();
+        let frame = app.viewport_3d
+            .prepare_frame(canvas_rect.size(), &field, app.water_surface, 4.0, &[], &[])
+            .expect("應可建立場景畫面資料");
+
+        let screen_at = |x: f32, z: f32| {
+            let p = frame
+                .project_world_to_screen(against_rome_scene::math::Vec3::new(x, field.sample_height(x, z), z))
+                .expect("地形點應可投影至螢幕");
+            canvas_rect.min + egui::vec2(p.x, p.y)
+        };
+
+        let start_pos = screen_at(10.0, 15.0);
+        let drag_pos = screen_at(25.0, 30.0);
+
+        // Frame 1: 在 (10, 15) 按下
+        let act1 = drive_frame(&mut app, vec![
+            egui::Event::PointerMoved(start_pos),
+            egui::Event::PointerButton {
+                pos: start_pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: Default::default(),
+            },
+        ]);
+        assert_eq!(act1, ViewportAction::None, "地景選區拖曳中不得觸發筆刷繪製");
+
+        // Frame 2: 拖曳至 (25, 30)
+        let act2 = drive_frame(&mut app, vec![
+            egui::Event::PointerMoved(drag_pos),
+        ]);
+        assert_eq!(act2, ViewportAction::None);
+
+        // Frame 3: 釋放左鍵
+        let act3 = drive_frame(&mut app, vec![
+            egui::Event::PointerButton {
+                pos: drag_pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: Default::default(),
+            },
+        ]);
+        assert_eq!(act3, ViewportAction::None, "地景選區釋放不得送出 CommitStroke");
+
+        // 驗證：選取已更新且地形高度未被筆刷修改
+        let sel = app.landscape.region.selection.expect("3D 拖曳應成功選取圖塊矩形");
+        assert_eq!(sel.min_x, 10);
+        assert_eq!(sel.min_y, 15);
+        assert_eq!(sel.max_x, 25);
+        assert_eq!(sel.max_y, 30);
+        assert_eq!(app.landscape.region.vertices_text, "10,15\n25,30");
+        assert_eq!(app.landscape.erosion_start_x, 10);
+        assert_eq!(app.landscape.erosion_start_y, 15);
+        assert_eq!(app.landscape.erosion_end_x, 25);
+        assert_eq!(app.landscape.erosion_end_y, 30);
+        assert!(app.status_message.contains("3D"));
+        assert!(!app.session.as_ref().unwrap().is_dirty(), "地景選區拖曳不得改變地形高度或標記地形已修改");
+
+        // 規劃區域後，3D viewport 會同步接收 planned cells
+        let lcx = crate::landscape_ui::LandscapeContext::plain(257, None);
+        app.landscape.plan_region(&lcx).unwrap();
+        assert!(app.landscape.region.plan.is_some());
+        drive_frame(&mut app, vec![]);
+        assert!(app.viewport_3d.landscape_plan_cells.is_some(), "3D viewport 應同步規劃圖塊以供預覽");
+    }
+
+    #[test]
     fn test_tech_doc_app_integration() {
         let mut app = EditorApp::initial_state();
         assert!(!app.tech_doc.is_open());
@@ -13374,6 +13511,10 @@ impl EditorApp {
                     self.viewport_3d.scene_pick = self.scene.scene_pick_active();
                     self.viewport_3d.scene_markers =
                         if self.scene.open { self.scene.markers() } else { Vec::new() };
+                    self.viewport_3d.landscape_pick = self.landscape.region_pick_active();
+                    self.viewport_3d.landscape_selection = self.landscape.region.selection;
+                    self.viewport_3d.landscape_drag = self.landscape.region.drag.rect();
+                    self.viewport_3d.landscape_plan_cells = self.landscape.region.plan.as_ref().map(|p| p.cells.clone());
                     let action = self.viewport_3d.show(
                         ui,
                         ctx,
@@ -13386,6 +13527,17 @@ impl EditorApp {
                     );
                     for event in std::mem::take(&mut self.viewport_3d.scene_events) {
                         self.scene.scene_pointer(event);
+                    }
+                    let dimension = ((session.vertex_size.saturating_sub(1)) / 4).max(1);
+                    for event in std::mem::take(&mut self.viewport_3d.landscape_events) {
+                        if self.landscape.handle_region_pointer(event, dimension).is_some() {
+                            self.status_message = tr(
+                                self.lang(),
+                                "Region selection updated from 3D viewport.",
+                                "已從 3D 視圖更新選取區域。",
+                            ).into();
+                            self.status_is_error = false;
+                        }
                     }
                     self.handle_viewport_3d_action(action);
                     if let Some(hit) = self.viewport_3d.hover_world {

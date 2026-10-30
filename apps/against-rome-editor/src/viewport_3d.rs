@@ -50,6 +50,7 @@ use against_rome_textures::{
 };
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Ui};
 
+use crate::landscape_ui::{LandscapeRegionPointer, TileRect};
 use crate::scene_ui::{nearest_marker, SceneMarker, ScenePointer};
 use crate::terrain::TerrainSession;
 
@@ -545,6 +546,17 @@ pub struct Viewport3d {
     /// Gestures produced by the last `show`; the app drains them into `SceneUi::scene_pointer`.
     pub scene_events: Vec<ScenePointer>,
     scene_dragging: bool,
+    /// Landscape region mode: presses/drags select a tile rectangle instead of painting terrain.
+    pub landscape_pick: bool,
+    /// Persisted selection rectangle to render on the 3D surface.
+    pub landscape_selection: Option<TileRect>,
+    /// Live in-progress drag rectangle to render on the 3D surface.
+    pub landscape_drag: Option<TileRect>,
+    /// Planned region cells to preview in 3D.
+    pub landscape_plan_cells: Option<Vec<(usize, usize)>>,
+    /// Pointer events produced by the last `show`; the app drains them into `LandscapeUi::handle_region_pointer`.
+    pub landscape_events: Vec<LandscapeRegionPointer>,
+    landscape_dragging: bool,
 
     // Interaction tracking
     pub is_panning: bool,
@@ -642,6 +654,12 @@ impl Viewport3d {
             troop_objects: Vec::new(),
             scene_events: Vec::new(),
             scene_dragging: false,
+            landscape_pick: false,
+            landscape_selection: None,
+            landscape_drag: None,
+            landscape_plan_cells: None,
+            landscape_events: Vec::new(),
+            landscape_dragging: false,
             camera: EditorCamera::default(),
             show_grid: false,
             show_water: true,
@@ -1489,7 +1507,7 @@ impl Viewport3d {
                 self.hover_grid = Some((gx, gy));
 
                 // Left click & drag interaction:
-                if !is_alt_down && !self.terrain_pick_mode && !self.scene_pick {
+                if !is_alt_down && !self.terrain_pick_mode && !self.scene_pick && !self.landscape_pick {
                     let is_primary_clicked = response.clicked_by(egui::PointerButton::Primary)
                         || (rect.contains(pos)
                             && ctx
@@ -1541,7 +1559,7 @@ impl Viewport3d {
                     || ((rect.contains(pos) || response.hovered())
                         && ctx.input(|i| i.pointer.button_clicked(egui::PointerButton::Primary))
                         && !response.dragged());
-                if !is_alt_down && !self.terrain_pick_mode && !self.scene_pick && is_primary_clicked {
+                if !is_alt_down && !self.terrain_pick_mode && !self.scene_pick && !self.landscape_pick && is_primary_clicked {
                     if let Some(idx) = picked_obj_idx {
                         let raw = &objects[idx];
                         action = ViewportAction::SelectObject(Some((raw.slot, raw.uid)));
@@ -1606,6 +1624,47 @@ impl Viewport3d {
         } else if self.scene_dragging {
             self.scene_events.push(ScenePointer::Release);
             self.scene_dragging = false;
+        }
+
+        // 9d. Landscape region selection mode: drag a rectangle across terrain tiles
+        self.landscape_events.clear();
+        if self.landscape_pick && !is_alt_down && !self.terrain_pick_mode && !self.scene_pick {
+            if response.clicked_by(egui::PointerButton::Secondary)
+                || ctx.input(|i| i.key_pressed(egui::Key::Escape))
+            {
+                self.landscape_dragging = false;
+                self.landscape_events.push(LandscapeRegionPointer::Cancel);
+            } else {
+                let pressed = (response.is_pointer_button_down_on() || response.hovered())
+                    && ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary));
+                let down = ctx.input(|i| i.pointer.button_down(egui::PointerButton::Primary));
+                let released = ctx.input(|i| i.pointer.button_released(egui::PointerButton::Primary));
+
+                if pressed && response.hovered() {
+                    if let Some(tile) = self.hover_tile {
+                        self.landscape_events.push(LandscapeRegionPointer::Press(tile));
+                        self.landscape_dragging = true;
+                    }
+                } else if self.landscape_dragging {
+                    if down {
+                        if let Some(tile) = self.hover_tile {
+                            self.landscape_events.push(LandscapeRegionPointer::Drag(tile));
+                        }
+                    }
+                    if released {
+                        self.landscape_events.push(LandscapeRegionPointer::Release(self.hover_tile));
+                        self.landscape_dragging = false;
+                    }
+                } else if released && response.clicked_by(egui::PointerButton::Primary) {
+                    if let Some(tile) = self.hover_tile {
+                        self.landscape_events.push(LandscapeRegionPointer::Press(tile));
+                        self.landscape_events.push(LandscapeRegionPointer::Release(Some(tile)));
+                    }
+                }
+            }
+        } else if self.landscape_dragging {
+            self.landscape_events.push(LandscapeRegionPointer::Cancel);
+            self.landscape_dragging = false;
         }
 
         // Ramp endpoints use the continuous terrain hit grid, matching the 2D canvas.
@@ -1678,6 +1737,7 @@ impl Viewport3d {
             self.drag_started_on_object = false;
             self.is_dragging_terrain = false;
             if !self.terrain_pick_mode
+                && !self.landscape_pick
                 && !is_alt_down
                 && was_dragging_terrain
                 && !was_dragging_object
@@ -1749,6 +1809,9 @@ impl Viewport3d {
         if let Some(ref cursor_cmd) = frame.cursor {
             self.render_brush_cursor(&painter, rect, &frame, cursor_cmd);
         }
+
+        // 13b. Render Landscape Region Overlay & Plan Preview (3D)
+        self.render_landscape_overlay(&painter, rect, &frame, &field);
 
         // 14. Render Hit Point Indicator (when not hovering an object)
         if self.hover_object.is_none() {
@@ -2123,7 +2186,13 @@ impl Viewport3d {
         } else {
             ""
         };
-        let controls_str = if self.english {
+        let controls_str = if self.landscape_pick {
+            if self.english {
+                "Controls: Right-drag: Orbit | Middle/Alt-drag: Pan | Wheel: Zoom | Left-drag: Select landscape region | Right-click/Esc: Cancel"
+            } else {
+                "操作指南：右鍵拖曳：旋轉視角 | 中鍵/Alt+左鍵拖曳：平移 | 滾輪：縮放 | 左鍵拖曳：框選地景區域 | 右鍵/Esc：取消框選"
+            }
+        } else if self.english {
             "Controls: Right-drag: Orbit | Middle/Alt-drag: Pan | Wheel: Zoom | Click: Paint / Pick Object"
         } else {
             "操作指南：右鍵拖曳：旋轉視角 | 中鍵/Alt+左鍵拖曳：平移 | 滾輪：縮放 | 左鍵點選：繪製／選取物件"
@@ -2419,6 +2488,110 @@ impl Viewport3d {
                 pts,
                 Stroke::new(cmd.line_width, color),
             ));
+        }
+    }
+
+    /// Projects a tile rectangle perimeter outline conforming to 3D terrain elevations.
+    fn render_tile_rect_perimeter(
+        painter: &egui::Painter,
+        rect: Rect,
+        frame: &PreparedSceneFrame,
+        field: &TerrainHeightField,
+        tile_rect: &TileRect,
+        color: Color32,
+        line_width: f32,
+    ) {
+        let x0 = tile_rect.min_x.max(0);
+        let y0 = tile_rect.min_y.max(0);
+        let x1 = (tile_rect.max_x + 1).min(field.tile_width as i32);
+        let y1 = (tile_rect.max_y + 1).min(field.tile_height as i32);
+
+        if x0 >= x1 || y0 >= y1 {
+            return;
+        }
+
+        let point = |tx: i32, ty: i32| -> SceneVec3 {
+            let x = tx as f32;
+            let y = ty as f32;
+            SceneVec3::new(x, field.sample_height(x, y) + 0.15, y)
+        };
+
+        let mut perimeter = Vec::with_capacity(((x1 - x0) + (y1 - y0)) as usize * 2);
+        for x in x0..=x1 {
+            perimeter.push(point(x, y0));
+        }
+        for y in (y0 + 1)..=y1 {
+            perimeter.push(point(x1, y));
+        }
+        for x in (x0..=(x1 - 1)).rev() {
+            perimeter.push(point(x, y1));
+        }
+        for y in ((y0 + 1)..=(y1 - 1)).rev() {
+            perimeter.push(point(x0, y));
+        }
+
+        let screen_pts: Vec<Pos2> = perimeter
+            .iter()
+            .filter_map(|&p| {
+                frame
+                    .project_world_to_screen(p)
+                    .map(|s| Pos2::new(rect.min.x + s.x, rect.min.y + s.y))
+            })
+            .collect();
+
+        if screen_pts.len() >= 3 {
+            painter.add(egui::Shape::closed_line(
+                screen_pts,
+                Stroke::new(line_width, color),
+            ));
+        }
+    }
+
+    /// Renders 3D landscape region selections, live drag rectangle, and planned region preview.
+    fn render_landscape_overlay(
+        &self,
+        painter: &egui::Painter,
+        rect: Rect,
+        frame: &PreparedSceneFrame,
+        field: &TerrainHeightField,
+    ) {
+        if let Some(ref sel) = self.landscape_selection {
+            Self::render_tile_rect_perimeter(
+                painter,
+                rect,
+                frame,
+                field,
+                sel,
+                Color32::from_rgb(90, 190, 255),
+                2.0,
+            );
+        }
+        if let Some(ref live) = self.landscape_drag {
+            Self::render_tile_rect_perimeter(
+                painter,
+                rect,
+                frame,
+                field,
+                live,
+                Color32::from_rgb(255, 210, 70),
+                2.5,
+            );
+        }
+        if let Some(ref cells) = self.landscape_plan_cells {
+            let preview_color = Color32::from_rgb(70, 230, 160);
+            for &(cx, cy) in cells.iter().take(1024) {
+                let center = SceneVec3::new(
+                    cx as f32 + 0.5,
+                    field.sample_height(cx as f32 + 0.5, cy as f32 + 0.5) + 0.18,
+                    cy as f32 + 0.5,
+                );
+                if let Some(s) = frame.project_world_to_screen(center) {
+                    let pt = Pos2::new(rect.min.x + s.x, rect.min.y + s.y);
+                    if rect.contains(pt) {
+                        painter.circle_filled(pt, 3.0, preview_color.gamma_multiply(0.85));
+                    }
+                }
+            }
         }
     }
 
@@ -4366,6 +4539,138 @@ mod troop_tests {
                     assert!(!text.contains(literal), "未翻譯：{literal}\n{text}");
                 }
             }
+        }
+    }
+
+    #[test]
+    fn viewport_3d_landscape_region_picking_emits_pointer_events_and_suppresses_brush() {
+        let mut vp = Viewport3d::new();
+        vp.landscape_pick = true;
+        let session = TerrainSession::create_blank(33, 32);
+
+        let ctx = egui::Context::default();
+        let viewport_size = egui::vec2(600.0, 400.0);
+
+        let drive_frame = |vp: &mut Viewport3d, events: Vec<egui::Event>| -> ViewportAction {
+            let input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, viewport_size)),
+                events,
+                ..Default::default()
+            };
+            let mut action = ViewportAction::None;
+            let _ = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    action = vp.show(ui, ctx, &session, 1.0, 0.0, 2.0, &[], None);
+                });
+            });
+            action
+        };
+
+        // Frame 0: initialize viewport rect
+        drive_frame(&mut vp, vec![]);
+        let rect = vp.last_rect.expect("viewport rect should be set");
+        let field = Viewport3d::build_height_field(&session, 1.0, 1.0).unwrap();
+        let frame = vp.prepare_frame(rect.size(), &field, 0.0, 2.0, &[], &[]).unwrap();
+        let screen_at = |x: f32, z: f32| {
+            let p = frame
+                .project_world_to_screen(SceneVec3::new(x, field.sample_height(x, z), z))
+                .expect("terrain point projects to screen");
+            rect.min + egui::vec2(p.x, p.y)
+        };
+        let start_pos = screen_at(2.0, 2.0);
+        let drag_pos = screen_at(5.0, 5.0);
+
+        // Frame 1: Press on terrain
+        let press_events = vec![
+            egui::Event::PointerMoved(start_pos),
+            egui::Event::PointerButton {
+                pos: start_pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: Default::default(),
+            },
+        ];
+        let action = drive_frame(&mut vp, press_events);
+        assert_eq!(action, ViewportAction::None, "landscape pick must not trigger brush paint");
+        assert!(
+            vp.landscape_events.iter().any(|e| matches!(e, LandscapeRegionPointer::Press(_))),
+            "must emit landscape Press event: {:?}",
+            vp.landscape_events
+        );
+
+        // Frame 2: Drag to a different position
+
+        let drag_events = vec![
+            egui::Event::PointerMoved(drag_pos),
+        ];
+        let action = drive_frame(&mut vp, drag_events);
+        assert_eq!(action, ViewportAction::None, "landscape pick must not trigger brush paint while dragging");
+        assert!(
+            vp.landscape_events.iter().any(|e| matches!(e, LandscapeRegionPointer::Drag(_))),
+            "must emit landscape Drag event: {:?}",
+            vp.landscape_events
+        );
+
+        // Frame 3: Release pointer button
+        let release_events = vec![
+            egui::Event::PointerButton {
+                pos: drag_pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: Default::default(),
+            },
+        ];
+        let action = drive_frame(&mut vp, release_events);
+        assert_eq!(action, ViewportAction::None, "landscape pick must not emit CommitStroke on release");
+        assert!(
+            vp.landscape_events.iter().any(|e| matches!(e, LandscapeRegionPointer::Release(_))),
+            "must emit landscape Release event: {:?}",
+            vp.landscape_events
+        );
+
+        // Frame 4: Secondary click triggers Cancel
+        let cancel_events = vec![
+            egui::Event::PointerButton {
+                pos: drag_pos,
+                button: egui::PointerButton::Secondary,
+                pressed: true,
+                modifiers: Default::default(),
+            },
+            egui::Event::PointerButton {
+                pos: drag_pos,
+                button: egui::PointerButton::Secondary,
+                pressed: false,
+                modifiers: Default::default(),
+            },
+        ];
+        drive_frame(&mut vp, cancel_events);
+        assert!(
+            vp.landscape_events.iter().any(|e| matches!(e, LandscapeRegionPointer::Cancel)),
+            "secondary click must emit LandscapeRegionPointer::Cancel: {:?}",
+            vp.landscape_events
+        );
+    }
+
+    #[test]
+    fn viewport_3d_renders_landscape_overlays_and_plan_cells_without_panic() {
+        let mut vp = Viewport3d::new();
+        vp.landscape_pick = true;
+        vp.landscape_selection = Some(TileRect { min_x: 2, min_y: 2, max_x: 5, max_y: 5 });
+        vp.landscape_drag = Some(TileRect { min_x: 4, min_y: 4, max_x: 6, max_y: 6 });
+        vp.landscape_plan_cells = Some(vec![(3, 3), (3, 4), (4, 4), (5, 4)]);
+        let session = TerrainSession::create_blank(33, 32);
+
+        for english in [true, false] {
+            vp.english = english;
+            let text = crate::batch20_localization_tests::render(|ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let _ = vp.show(ui, ctx, &session, 1.0, 0.0, 2.0, &[], None);
+                });
+            });
+            assert!(
+                text.contains(if english { "Select landscape region" } else { "框選地景區域" }),
+                "HUD controls should mention landscape region selection: {text}"
+            );
         }
     }
 }

@@ -1555,6 +1555,15 @@ impl RegionToolState {
     }
 }
 
+/// Pointer events from the 2D or 3D viewport for drag-selecting a tile region.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LandscapeRegionPointer {
+    Press((i32, i32)),
+    Drag((i32, i32)),
+    Release(Option<(i32, i32)>),
+    Cancel,
+}
+
 impl LandscapeUi {
     /// True when the host should forward 2D canvas drags to [`Self::region_drag_input`].
     pub fn region_pick_active(&self) -> bool {
@@ -1600,6 +1609,42 @@ impl LandscapeUi {
         self.region.drag.cancel();
     }
 
+    /// Feeds one landscape region pointer event (e.g. from the 3D viewport).
+    ///
+    /// When a rectangle drag is completed, clamps the selection to `dimension` and updates
+    /// the region selection (and erosion tab). Returns `Some(rect)` on completion.
+    pub fn handle_region_pointer(
+        &mut self,
+        event: LandscapeRegionPointer,
+        dimension: usize,
+    ) -> Option<TileRect> {
+        if !self.region_pick_active() {
+            return None;
+        }
+        match event {
+            LandscapeRegionPointer::Press(tile) => {
+                self.region.drag.begin(tile);
+                None
+            }
+            LandscapeRegionPointer::Drag(tile) => {
+                self.region.drag.update(tile);
+                None
+            }
+            LandscapeRegionPointer::Release(tile_opt) => {
+                if let Some(tile) = tile_opt {
+                    self.region.drag.update(tile);
+                }
+                let rect = self.region.drag.finish().and_then(|r| r.clamped(dimension))?;
+                self.set_region_selection(rect);
+                Some(rect)
+            }
+            LandscapeRegionPointer::Cancel => {
+                self.region_drag_cancel();
+                None
+            }
+        }
+    }
+
     /// Stores a canvas selection into the dialog text and the erosion tab (C# `RunRegionTool`
     /// prefills the dialog from `_canvas.SelectionTiles`).
     pub fn set_region_selection(&mut self, rect: TileRect) {
@@ -1623,6 +1668,15 @@ impl LandscapeUi {
             painter.rect_filled(rect, 0.0, color.gamma_multiply(0.2));
             painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.5_f32, color));
         };
+        if let Some(ref plan) = self.region.plan {
+            let cell_color = Color32::from_rgb(70, 230, 160);
+            for &(cx, cy) in plan.cells.iter().take(1024) {
+                let a = tile_to_screen(cx as f32, cy as f32);
+                let b = tile_to_screen((cx + 1) as f32, (cy + 1) as f32);
+                let rect = egui::Rect::from_two_pos(a, b);
+                painter.rect_filled(rect, 0.0, cell_color.gamma_multiply(0.3));
+            }
+        }
         if let Some(sel) = self.region.selection {
             draw(sel, Color32::from_rgb(90, 190, 255));
         }
@@ -1766,7 +1820,7 @@ impl LandscapeUi {
             });
         ui.add(egui::TextEdit::multiline(&mut self.region.vertices_text).desired_rows(3));
         ui.horizontal(|ui| {
-            ui.checkbox(&mut self.region.pick_armed, tl(self.english, "在 2D 地圖上拖曳框選矩形", "Drag a rectangle on the 2D map"));
+            ui.checkbox(&mut self.region.pick_armed, tl(self.english, "在畫布／3D 視圖上拖曳框選矩形", "Drag a rectangle on the canvas / 3D viewport"));
             if let Some(sel) = self.region.selection {
                 ui.label(format!(
                     "{} {}x{} {}",

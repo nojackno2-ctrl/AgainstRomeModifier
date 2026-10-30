@@ -143,3 +143,32 @@ fn ui_plans_requests_and_applies() {
     ui.reset_session();
     assert!(ui.region.selection.is_none() && !ui.is_dirty());
 }
+
+#[test]
+fn handle_region_pointer_completes_selection_and_cancels() {
+    let mut ui = LandscapeUi::default();
+    ui.open = true;
+    ui.current_tab = LandscapeTab::RegionTools;
+    assert!(!ui.region_pick_active());
+
+    // When pick_armed is false, events are ignored
+    assert_eq!(ui.handle_region_pointer(LandscapeRegionPointer::Press((2, 3)), 16), None);
+
+    ui.region.pick_armed = true;
+    assert!(ui.region_pick_active());
+
+    // Sequence: Press -> Drag -> Release
+    assert_eq!(ui.handle_region_pointer(LandscapeRegionPointer::Press((5, 10)), 16), None);
+    assert_eq!(ui.handle_region_pointer(LandscapeRegionPointer::Drag((12, 14)), 16), None);
+    let completed = ui.handle_region_pointer(LandscapeRegionPointer::Release(Some((12, 14))), 16);
+    assert_eq!(completed, Some(TileRect { min_x: 5, min_y: 10, max_x: 12, max_y: 14 }));
+    assert_eq!(ui.region.selection, completed);
+    assert_eq!(ui.region.vertices_text, "5,10\n12,14");
+    assert_eq!((ui.erosion_start_x, ui.erosion_start_y, ui.erosion_end_x, ui.erosion_end_y), (5, 10, 12, 14));
+
+    // Cancel sequence
+    assert_eq!(ui.handle_region_pointer(LandscapeRegionPointer::Press((1, 1)), 16), None);
+    assert!(ui.region.drag.is_active());
+    assert_eq!(ui.handle_region_pointer(LandscapeRegionPointer::Cancel, 16), None);
+    assert!(!ui.region.drag.is_active());
+}
