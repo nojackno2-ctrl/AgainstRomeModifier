@@ -1,3 +1,7 @@
+## 2026-10-30 Codex：勝負目標快速修正的玩家目標驗證
+- 修正失敗條件誤選非部隊生成物；缺少玩家主堡與部隊時先回報錯誤，避免先新增勝利事件。玩家有部隊時選取部隊作為失敗目標。
+- 已驗證：`cargo test -p against-rome-editor-app --lib design_check_objective_fix_requires_a_player_unit_or_main_house --locked`：1 passed。`cargo check --workspace --locked`、`cargo test --workspace --locked`、`cargo build --workspace --locked` 均通過，未見 MSVC 連結錯誤。
+- 未驗證：原生桌面操作及遊戲內勝負結算；單一部隊的失敗條件不代表全軍覆沒。
 ## 2026-10-30 Codex：顯示被篩選隱藏的已選事件（已驗證）
 - 依交接「事件篩選可能隱藏跳轉列」補雙語「顯示已選事件」按鈕；清除篩選並保留排序、選取、文件與歷史，擴充既有 egui 真實點擊回歸。
 - 本機模型委派逾時且未改檔，改由 Codex 實作；一般 Shell 初始化失敗，升權程序可用。聚焦雙語 egui 點擊回歸 1 passed；`cargo check --workspace --locked`、`cargo test --workspace --locked`、`cargo build --workspace --locked` 均 exit 0，無 MSVC 連結錯誤；`git diff --check` 通過。日誌 `%TEMP%/arm-show-selected-{check,focused,test,build}.log`。未做桌面／遊戲驗收。

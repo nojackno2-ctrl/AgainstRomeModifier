@@ -7610,6 +7610,39 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    /// 缺少玩家主堡或部隊時不得部分新增勝利事件；有部隊時不得選到其他建築。
+    #[test]
+    fn design_check_objective_fix_requires_a_player_unit_or_main_house() {
+        let root = temp_map_dir("objective_player_target");
+        let dir = root.join("MAPS").join("ENDL_006");
+        std::fs::create_dir_all(dir.join("SCRIPT")).unwrap();
+        std::fs::create_dir_all(root.join("SYSTEM/CLAK")).unwrap();
+        std::fs::write(root.join("SYSTEM/CLAK/cl_scint.ini"),
+            "[ObjDefName]\nGER_BAR00=BauGerBar00\nGER_INF00=FigGerInf00\n").unwrap();
+        std::fs::write(dir.join("SCRIPT/ak_level.bci"), against_rome_scenario::BciImage::idle().serialize()).unwrap();
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(dir.clone(), TerrainSession::create_blank(33, 32)).unwrap();
+        app.scenario.load_session(&dir).unwrap();
+        let building = against_rome_scenario::Spawn {
+            alias: "GER_BAR00".into(), team: 0, id: uuid::Uuid::new_v4(), ..Default::default()
+        };
+        app.scenario.apply_spawns(vec![building.clone()]).unwrap();
+        app.run_design_check();
+        assert!(app.fix_missing_objectives().is_err());
+        assert!(app.scenario.document().events.is_empty());
+
+        let unit = against_rome_scenario::Spawn {
+            alias: "GER_INF00".into(), team: 0, id: uuid::Uuid::new_v4(), ..Default::default()
+        };
+        let unit_id = unit.id;
+        app.scenario.apply_spawns(vec![building, unit]).unwrap();
+        app.run_design_check();
+        assert_eq!(app.fix_missing_objectives().unwrap(), 2);
+        let defeat = app.scenario.document().events.iter()
+            .find(|e| e.actions.iter().any(|a| a.kind == 4)).unwrap();
+        assert_eq!(defeat.conditions[0].target_id, unit_id);
+        std::fs::remove_dir_all(root).unwrap();
+    }
     /// 驗證設計檢查「補齊起始部隊」一鍵修正功能。
     #[test]
     fn design_check_quick_fix_adds_missing_units() {

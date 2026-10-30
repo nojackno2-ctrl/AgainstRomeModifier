@@ -761,6 +761,16 @@ impl EditorApp {
             self.scenario.load_session(&path)?;
         }
 
+        if needs_defeat && !self.scenario.document().spawns.iter().any(|s| {
+            s.team == 0 && (against_rome_maps::design_validator::MapDesignValidator::is_main_house(&s.alias)
+                || against_rome_maps::design_validator::MapDesignValidator::is_unit_alias(&s.alias))
+        }) {
+            return Err(tr(self.lang(),
+                "Cannot add Defeat objective: no player main house or unit found. Place one first.",
+                "無法新增失敗目標：找不到玩家主堡或部隊，請先放置。",
+            ).into());
+        }
+
         let mut count = 0;
 
         // 1. 若缺少勝利事件：優先以消滅敵方主堡為勝利條件；若無敵方主堡則以存活 300 秒為勝利條件
@@ -789,7 +799,7 @@ impl EditorApp {
 
             let defeat_added = if let Some(house_id) = player_house {
                 self.scenario.add_objective(None, Some(house_id), 0)?
-            } else if let Some(unit_id) = self.scenario.document().spawns.iter().find(|s| s.team == 0).map(|s| s.id) {
+            } else if let Some(unit_id) = self.scenario.document().spawns.iter().find(|s| s.team == 0 && against_rome_maps::design_validator::MapDesignValidator::is_unit_alias(&s.alias)).map(|s| s.id) {
                 let event = against_rome_scenario::Event {
                     name: crate::scenario_ui::unused_event_name("Player_defeated", &self.scenario.document().events),
                     delay_seconds: 0,
@@ -805,16 +815,6 @@ impl EditorApp {
             if defeat_added {
                 count += 1;
             }
-        }
-
-        if count == 0 && needs_defeat && !needs_victory {
-            self.run_design_check();
-            return Err(tr(
-                self.lang(),
-                "Cannot add Defeat objective: no player spawn found. Place a player main house or unit first.",
-                "無法新增失敗目標：找不到玩家 Spawn。請先放置玩家主堡或部隊。",
-            )
-            .into());
         }
 
         self.run_design_check();
