@@ -1,3 +1,6 @@
+## 2026-10-31 Agy：測試前檢核外部檔案異動自動失效
+- 依備份第 4 項：測試前檢核快取鍵納入已載入地圖目錄的檔案指紋（相對路徑、長度、修改時間；唯讀、最多 3 層／1024 項，每 1 秒節流），外部檔案異動後自動重算；「重新整理檢查」同時強制重掃。提示文字改為說明自動偵測；未記錄歷程的草稿異動仍須手動重新整理（維持待評估）。備份第 1 項已由 0e281fa 完成，第 2、3 項需實機／桌面，仍待人工驗收。
+- 已驗證：`cargo test -p against-rome-editor-app --lib ready_to_test --locked` 7 passed（新增指紋與節流後重算 2 項）；`cargo test --workspace --locked` exit 0，合計 2804 passed、0 failed；使用正常 TEMP，未改安裝遊戲。未驗證：實際桌面視窗。
 ## 2026-10-30 Codex：設計者缺口優先清單
 1. 驗收指引誤將工作副本假定為遊戲 MAPS 路徑；修正為顯示地圖名稱、要求確認實際位置及未載入提示，不洩漏本機路徑（已完成）。
 - 首次 `cargo test --workspace --locked` 因兩個整合測試仍期待舊的推測路徑而失敗；其中一項要求保護個人路徑，已保留該限制並更新測試，重跑 `cargo test --workspace --locked` 通過；`cargo check --workspace --locked`、`cargo build --workspace --locked` 亦通過，使用正常 TEMP 建置目錄。未驗證實際桌面介面及遊戲；未修改安裝遊戲。
