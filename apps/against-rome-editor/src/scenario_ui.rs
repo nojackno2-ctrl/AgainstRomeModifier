@@ -753,6 +753,11 @@ impl ScenarioUi {
     pub(crate) fn recovery_state(&self) -> serde_json::Value {
         serde_json::json!([self.document, self.camera])
     }
+    /// 包含來源、未套用節點圖與歷程邊界，避免同步覆寫新草稿。
+    pub(crate) fn sync_state(&self) -> (serde_json::Value, crate::event_graph::model::EventGraph) {
+        (serde_json::json!([self.source.as_ref().map(|s| &s.path), self.recovery_state(),
+            self.history_token(), self.graph_ui.is_dirty()]), self.graph_ui.graph.clone())
+    }
     fn finish_camera_edit(&mut self, before: &StartCamera) {
         if !camera_eq(before, &self.camera) { self.recovery_redo = None; }
     }

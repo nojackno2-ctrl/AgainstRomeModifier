@@ -170,12 +170,23 @@ fn allow_save(map: &Path) -> Result<()> {
     Ok(())
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 enum Pending {
     Load(String),
     Close,
     Reset,
     Remove { families: Vec<(usize, u32)> },
+}
+
+/// 以原始位元組保留 DATA 草稿，避免將大型 pool 展開為 JSON 整數陣列。
+#[derive(Debug, PartialEq)]
+pub(crate) struct PlacementSyncState {
+    loaded_map: Option<PathBuf>,
+    token: u64,
+    payloads: Vec<Option<Vec<u8>>>,
+    undo: Vec<usize>,
+    redo: Vec<usize>,
+    pending: Option<Pending>,
 }
 
 #[derive(Clone)]
@@ -287,6 +298,15 @@ impl Default for PlacementUi {
     }
 }
 impl PlacementUi {
+    /// 提交後同步不得清除後續 DATA 編輯或待確認操作。
+    pub(crate) fn sync_state(&self) -> PlacementSyncState {
+        PlacementSyncState {
+            loaded_map: self.loaded_map.clone(), token: self.history_token(),
+            payloads: history_payloads(self.store.as_ref()), undo: self.undo_groups.clone(),
+            redo: self.redo_groups.clone(), pending: self.pending.clone(),
+        }
+    }
+
     pub fn history_token(&self) -> u64 { self.history.token() }
 
     pub fn take_history_receipts(&mut self) -> Vec<PlacementHistoryReceipt> {

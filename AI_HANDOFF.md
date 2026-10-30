@@ -2038,12 +2038,14 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 
 - 磁碟交易成功後若 baseline／面板重新載入失敗，記錄各面板錯誤並提示檔案已儲存；保留同步阻擋狀態、既有復原快照與 Undo journal，阻止再次儲存或匯出目前地圖，直到地圖重新載入。復原計時器在阻擋期間不覆寫既有快照；捨棄確認會說明快照也會被清除。
 - 聚焦故障注入及乾淨面板阻擋測試均通過；首次測試因測試事件缺少 action 而驗證失敗，補齊有效 action 後通過。最新版完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-sdl-load-guard-20261027 -- --test-threads=1 --quiet` 結束碼 0；`cargo check --workspace --locked --offline --target-dir %TEMP%\arm-postcommit-save-sync-20261027`、同參數 `cargo build` 與 `git diff --check` 通過。
-- 限制：此防護未自動修復失敗的面板同步；保留的舊快照可能因地圖來源指紋變更而無法直接復原，且既有快照不涵蓋所有面板。未做桌面或遊戲驗收。
+- 歷史限制（重試缺口已由下列第二階段解決）：原先無同步重試，舊快照可能因來源指紋變更而無法復原；快照仍非所有面板的完整序列化。未做桌面或遊戲驗收。
+- 2026-10-30 Codex（第二階段實作與驗證完成）：新增 `app_post_commit_sync.rs`／`app_post_commit_sync_tests.rs` 與中英「Retry panel sync／重試面板同步」按鈕。提交前以完整位元組加交易產物固定真值，涵蓋地圖內未改寫的 DATA／SCRIPT／SDL 及外部 aliases；保留原圖路徑、失敗面板草稿與相機／spawn 合併 final_document，僅重試失敗項目。外部同長度變更、來源切換、新增面板編輯、來源讀取失敗皆拒絕；成功項目不再重載，其他新草稿保留。全部成功才清 warning／換 journal epoch／重建復原來源與快照；舊 epoch（含期間全域 Undo）結束，不改草稿內容。DATA 草稿使用原始 bytes 避免 JSON 展開。
+- 驗證結果：`cargo test -p against-rome-editor-app --lib app_post_commit_sync --locked` 12 passed；`cargo test --workspace --locked` 全數通過（0 failed）；`cargo check --workspace --locked` 通過；`git diff --check` 通過。未驗證：未做實體原生視窗桌面操作或遊戲內驗收。
 
 ## 2026-10-27 Codex：地圖載入失敗時保留復原資料
 
 - 捨棄確認後先執行切換，成功後才清除原地圖快照；地圖載入失敗保留原地圖、Undo journal 與快照。清除舊快照時不抹除新地圖的復原提示。`failed_discard_load` 聚焦回歸通過，涵蓋損毀 SDL 拒絕及後續成功切換；完整 `cargo test --workspace --locked --offline --no-fail-fast -j 1 --target-dir %TEMP%\arm-sdl-load-guard-20261027 -- --test-threads=1 --quiet` 結束碼 0，`cargo check`、`cargo build` workspace 與 `git diff --check` 通過。未做桌面驗收。
-- Luna 唯讀稽核建議提交後同步重試須保留交易產物識別、各面板狀態與外部變更檢查；目前僅有錯誤字串，不能安全地盲目重試所有面板。未實作同步重試。
+- Luna 唯讀稽核建議保留交易產物識別、各面板狀態與外部變更檢查，避免盲目重試所有面板；2026-10-30 已依上節第二階段實作，原先僅有錯誤字串的限制已解決。
 
 ## 2026-10-27 Codex：捨棄後新復原快照的背景順序
 

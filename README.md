@@ -1,11 +1,11 @@
 # Against Rome Modifier（羅馬帝國：黃金版 全方位修改器 & 工具箱）
 
-Rust 全程式改寫進行中，現有 C# 功能尚未全部替換。獨立 Rust 地形編輯入口位於 `apps/against-rome-editor`，可用 `powershell -NoProfile -ExecutionPolicy Bypass -File tools/run-rust-editor.ps1` 建置並啟動；加 `-Map "地圖工作副本路徑"` 載入圖層。功能與驗證缺口見 [Rust 改寫對照](docs/rust-rewrite.md)。
+本專案已全面以 **Rust** 實作（修改器、存檔管理器、地圖編輯器、追蹤 DLL 與逆向工具），不再需要 .NET。改寫對照與尚待實機驗收的項目見 [Rust 改寫對照](docs/rust-rewrite.md)。
 
 [![Platform: Windows x64](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20(x64)-blue.svg)](#系統需求)
-[![.NET 8.0](https://img.shields.io/badge/.NET-8.0%20(Windows%20Forms)-512BD4.svg)](#自行編譯)
+[![Rust](https://img.shields.io/badge/Rust-egui%20%2F%20eframe-CE422B.svg)](#️-開發與自行編譯)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Release: Portable](https://img.shields.io/badge/Release-Single%20Executable-orange.svg)](#快速開始)
+[![Release: Portable](https://img.shields.io/badge/Release-Portable%20ZIP-orange.svg)](#-快速開始)
 
 > [!IMPORTANT]
 > **本工具完全不包含任何遊戲本體檔案。**
@@ -26,7 +26,7 @@ Rust 全程式改寫進行中，現有 C# 功能尚未全部替換。獨立 Rust
 
 ## ✨ 核心特色
 
-- 🚀 **免安裝單一執行檔（Single Portable Executable）**：下載單一 `AgainstRomeModifier.exe` 即可直接執行，整合所有工具，即開即用。
+- 🚀 **免安裝可攜版（Portable ZIP）**：解壓即可執行，`against-rome-launcher.exe` 整合修改器、存檔管理器與地圖編輯器，無需安裝任何執行環境。
 - 🛡️ **100% 安全可還原（Non-destructive & Reversible）**：內建記憶體備份與自動回復點機制，支援「一鍵全部還原」或「分項局部還原」，隨時恢復純淨原版。
 - 🖥️ **現代系統相容性完美修復**：內建整合 [dgVoodoo2](https://github.com/dege-diosg/dgVoodoo2) DirectX 轉譯層，徹底修復 Windows 10/11 常見的卡頓、低 FPS、視窗化失效與黑屏問題，支援 4:3 比例高解析度置中。
 - ⚔️ **無盡模式深度重製與 AI 強化**：
@@ -44,15 +44,15 @@ Rust 全程式改寫進行中，現有 C# 功能尚未全部替換。獨立 Rust
 
 - **作業系統**：Windows 10 / Windows 11（64 位元）
 - **遊戲版本**：已安裝的《Against Rome》（遊戲目錄內需包含 `Against_Rome.exe`）
-- **執行環境**：若是使用單一發行版（Self-Contained），無需額外安裝 .NET Runtime；若自行編譯則需 .NET 8.0 SDK。
+- **執行環境**：可攜版為原生 Rust 執行檔，無需安裝 .NET 或其他 Runtime；自行編譯需 Rust 工具鏈（見下方）。
 
 ---
 
 ## 🚀 快速開始
 
-1. **下載程式**：前往 [Releases](../../releases) 頁面下載最新版本的發行壓縮檔或單一執行檔 `AgainstRomeModifier.exe`。
+1. **下載程式**：前往 [Releases](../../releases) 頁面下載最新版本的可攜 ZIP（附 `.sha256` 校驗檔）。
 2. **解壓縮至任意目錄**：解壓到任意資料夾（請勿直接放在遊戲目錄內）。
-3. **啟動工具箱**：執行 `AgainstRomeModifier.exe`，在啟動導航畫面中選擇進入「**啟動修改器**」。
+3. **啟動工具箱**：執行 `against-rome-launcher.exe`，在啟動導航畫面中選擇進入「**啟動修改器**」（亦可直接執行 `against-rome-modifier-gui.exe`、`save-manager.exe` 或 `against-rome-editor.exe`）。
 4. **確認遊戲目錄**：程式通常會自動偵測遊戲安裝路徑；若未偵測到，請點擊「**瀏覽...**」手動選擇包含 `Against_Rome.exe` 的遊戲資料夾。
 5. **選擇欲套用的功能**：
    - 點選「**所有功能開啟**」快速勾選所有常用推薦功能。
@@ -248,36 +248,38 @@ Rust 全程式改寫進行中，現有 C# 功能尚未全部替換。獨立 Rust
 
 ## 🛠️ 開發與自行編譯
 
-本專案使用 **C# 12 / .NET 8.0** 開發，採用 Windows Forms 架構與原生 x64 組建。
+本專案以 **Rust**（Cargo workspace）開發；桌面介面使用 egui / eframe，追蹤 DLL 為 32 位元 `cdylib`。
 
 ### 環境需求
 - Windows 10 / 11 (x64)
-- [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- Visual Studio 2022（需安裝「.NET 桌面開發」工作負載）
+- [Rust 工具鏈](https://rustup.rs/)（stable，含 `x86_64-pc-windows-msvc` 與 `i686-pc-windows-msvc` 目標）
+- MSVC Build Tools（Rust MSVC 目標所需的連結器）
 
-### 方案架構
+### 專案架構
 ```
 AgainstRomeModifier/
-├── src.Core/          # 核心服務層（檔案解碼、補丁引擎、備份管理、多國語系）
-├── src.Modifier/      # 修改器主程式與 UI 控制項
-├── src.SaveManager/   # 存檔管理器獨立模組與 UI
-├── src.MapEditor/     # 地圖編輯器獨立模組（2D/3D 視圖與地圖邏輯）
-├── src.Shared/        # 共用資料模型與公用工具
-├── tests/             # xUnit 單元測試與回歸測試套件
-├── tools/             # 自動化發行與逆向工程輔助腳本
-└── ThirdParty/        # 第三方授權相容性元件 (dgVoodoo2)
+├── apps/against-rome-editor/   # 桌面程式：地圖編輯器、啟動器、修改器 GUI、存檔管理器
+├── native/against-rome-*/      # 核心 crate：修改器/補丁、存檔、地圖、地形、放置、劇本、
+│                               #   戰役、環境、音景、打包、導航、場景、材質、追蹤 DLL 等
+├── tools/re/*-rs/              # 逆向工程探針與驗證工具（含 ar-re）
+├── tools/*.ps1                 # 測試與可攜發行腳本
+├── docs/                       # 技術文件與逆向工程筆記
+└── ThirdParty/                 # 第三方相容性元件 (dgVoodoo2)
 ```
 
 ### 建置與測試指令
 ```powershell
-# 還原相依套件與編譯 Release 版本
-dotnet build AgainstRomeModifier.slnx -c Release
+# 編譯整個 workspace（Release）
+cargo build --workspace --release --locked
 
-# 執行全套自動化單元測試
-dotnet test AgainstRomeModifier.slnx -c Release
+# 執行全套測試
+cargo test --workspace --locked
 
-# 透過自動化腳本打包單一發行檔 (Single-File Portable Package)
-powershell -ExecutionPolicy Bypass -File tools/publish.ps1 -Version "1.2.1"
+# 依 crate 逐一測試（含桌面程式與 i686 追蹤 DLL 檢查）
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/test-rust-rewrite.ps1 -IncludeDesktop
+
+# 建置可攜發行 ZIP（需 PowerShell 7）
+pwsh -NoProfile -ExecutionPolicy Bypass -File tools/publish-rust.ps1 -OutputDirectory <新的輸出資料夾>
 ```
 
 ---

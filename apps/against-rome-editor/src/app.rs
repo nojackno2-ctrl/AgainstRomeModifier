@@ -3,6 +3,9 @@
 mod control_history;
 #[path = "app_recovery.rs"]
 mod app_recovery;
+#[path = "app_post_commit_sync.rs"]
+mod app_post_commit_sync;
+use app_post_commit_sync::{PendingPanelSync, PostCommitSync};
 pub mod save_blockers;
 
 use against_rome_environment::nature::{
@@ -176,6 +179,9 @@ pub struct EditorApp {
     pub status_message: String,
     pub status_is_error: bool,
     post_commit_warning: Option<String>,
+    post_commit_sync: Option<PostCommitSync>,
+    #[cfg(test)]
+    panel_sync_faults: BTreeSet<&'static str>,
 
     // 筆刷參數
     pub active_tool: ActiveTool,
@@ -690,6 +696,9 @@ impl EditorApp {
             status_message: "Ready. Blank 257x257 map initialized.".to_string(),
             status_is_error: false,
             post_commit_warning: None,
+            post_commit_sync: None,
+            #[cfg(test)]
+            panel_sync_faults: BTreeSet::new(),
             active_tool: ActiveTool::HeightRaise,
             brush_radius: 12.0,
             brush_strength: 8,
@@ -877,8 +886,8 @@ impl EditorApp {
                     self.status_message = format!(
                         "{} {warning}",
                         tr(self.lang(),
-                            "Files were saved, but a panel could not refresh. Preserve pending edits and reload the map before saving or exporting again:",
-                            "檔案已儲存，但面板無法重新載入。請先保留待處理的編輯，重新載入地圖後再儲存或匯出：")
+                            "Files were saved, but a panel could not refresh. Retry panel sync before saving or exporting again:",
+                            "檔案已儲存，但面板無法重新載入。請重試面板同步後再儲存或匯出：")
                     );
                     self.status_is_error = true;
                     return;
@@ -1203,7 +1212,7 @@ impl EditorApp {
     ) -> Result<against_rome_maps::MapSaveReport, String> {
         use against_rome_ambience::soundscape::{SoundscapeBinaryStorage, SoundscapeSnapshot};
         if let Some(warning) = &self.post_commit_warning {
-            return Err(format!("Files were already saved, but panel refresh failed; reload the map before saving again: {warning}"));
+            return Err(format!("Files were already saved, but panel refresh failed; retry panel sync or reload the map before saving again: {warning}"));
         }
         // A brush stroke still in flight must be part of the candidate, never half-recorded.
         self.nature_end_stroke();
@@ -1376,76 +1385,46 @@ impl EditorApp {
             }
         }
         tx.validate().map_err(|e| e.to_string())?;
+        // 固定各面板待確認資料與交易產物，避免重試時吃掉提交後的新草稿。
+        let mut panels = Vec::new();
+        if let Some((_, green)) = &staged_emboss {
+            panels.push(PendingPanelSync::Emboss { heights: self.session.as_ref().expect("session validated above").heights().to_vec(), green: green.clone() });
+        }
+        if (placement_dirty && !nature_dirty) || ((nature_dirty || spawn_data_staged) && self.placement.is_loaded()) {
+            panels.push(PendingPanelSync::Placement(self.placement.sync_state()));
+        }
+        if camera_pending || scenario_dirty {
+            let final_document = staged_scenario.iter().find(|(p, _)| p == Path::new("arm_scenario.json"))
+                .map(|(_, bytes)| against_rome_scenario::ScenarioDocument::from_json(bytes)).transpose()?;
+            panels.push(PendingPanelSync::scenario(self, camera_pending, final_document));
+        }
+        if textures_dirty { panels.push(PendingPanelSync::Textures(self.textures.sync_state())); }
+        if scene_dirty { panels.push(PendingPanelSync::scene(self)); }
+        // 包含未改寫的 DATA、SCRIPT、SDL 等 baseline dependencies；擷取失敗就不提交。
+        let mut sync = PostCommitSync::prepare(self, &path, &tx, panels)?;
         let report = commit(&mut tx)?;
-        // Publish in-memory baselines only after *all* disk artifacts committed.
         let session = self.session.as_mut().expect("session validated above");
         session.raw_boden_bmp = Some(height);
         session.raw_collision_bmp = Some(collision);
-        let mut post_commit_errors = Vec::new();
-        if let (Some(emboss), Some((image, green))) = (self.emboss.as_mut(), staged_emboss) {
-            if let Err(e) = emboss
-                .session
-                .commit_baseline(session.heights(), Some(&green))
-            {
-                post_commit_errors.push(format!("emboss baseline: {e}"));
-            }
+        if let (Some(emboss), Some((image, _))) = (self.emboss.as_mut(), staged_emboss) {
             emboss.raw = image;
         }
         session.commit_baseline();
-        if aux_reset {
-            self.reset_auxiliary_layers = false;
-        }
+        if aux_reset { self.reset_auxiliary_layers = false; }
         if ambience_dirty {
             self.ambience.clear_dirty();
             self.ambience.status_message = "Ambience saved in whole-map transaction.".into();
             self.ambience.status_is_error = false;
         }
-        if placement_dirty && !nature_dirty {
-            if let Err(e) = self.placement.commit_baseline(&path) {
-                post_commit_errors.push(format!("placement baseline: {e}"));
-            }
-        }
-        if nature_dirty {
-            // The committed objects.dat is the new baseline for both Nature and the DATA panel.
-            self.nature.accept_saved();
-            if self.placement.is_loaded() {
-                if let Err(e) = self.placement.commit_baseline(&path) {
-                    post_commit_errors.push(format!("placement baseline after nature save: {e}"));
-                }
-            }
-        }
+        if nature_dirty { self.nature.accept_saved(); }
         self.settlement_undo.clear();
         self.settlement_redo.clear();
-        if spawn_data_staged {
-            // The committed DATA is the new baseline for the Objects panel and the clearance cache.
-            if self.placement.is_loaded() {
-                if let Err(e) = self.placement.commit_baseline(&path) {
-                    post_commit_errors.push(format!("placement baseline after spawn save: {e}"));
-                }
-            }
-            self.spawn_landscape = None;
-        }
-        if camera_pending {
-            match self.scenario.load_session(&path) {
-                Ok(()) => self.campaign.camera_saved(),
-                Err(e) => post_commit_errors.push(format!("scenario camera reload: {e}")),
-            }
-        } else if scenario_dirty {
-            if let Err(e) = self
-                .scenario
-                .commit_baseline_with(&path, spawn_plan.as_ref().map(|p| &p.scenario))
-            {
-                post_commit_errors.push(format!("scenario baseline: {e}"));
-            }
-        }
-        if textures_dirty {
-            if let Err(e) = self.textures.commit_baseline(&path) {
-                post_commit_errors.push(format!("texture baseline: {e}"));
-            }
-        }
-        if scene_dirty {
-            if let Err(e) = self.scene.commit_baseline(&path) {
-                post_commit_errors.push(format!("scene baseline: {e}"));
+        if spawn_data_staged { self.spawn_landscape = None; }
+        let mut post_commit_errors = sync.synchronize(self, false);
+        if post_commit_errors.is_empty() {
+            match crate::recovery::fingerprint(&path) {
+                Ok(source) => self.recovery.source = source,
+                Err(e) => post_commit_errors.push(format!("復原來源指紋 / Recovery fingerprint: {e}")),
             }
         }
         if post_commit_errors.is_empty() {
@@ -1453,8 +1432,8 @@ impl EditorApp {
             self.reset_journal_epoch();
         } else {
             self.post_commit_warning = Some(post_commit_errors.join("; "));
+            self.post_commit_sync = Some(sync);
         }
-        if let Ok(source) = crate::recovery::fingerprint(&path) { self.recovery.source = source; }
         self.recovery_deferred = false;
         Ok(report)
     }
@@ -1604,6 +1583,7 @@ impl EditorApp {
         self.viewport_3d.set_floor_atlas(None);
         self.reset_journal_epoch();
         self.post_commit_warning = None;
+        self.post_commit_sync = None;
         self.save_blockers_open = false;
         self.save_focus_nature = false;
         self.pending_save_warnings = None;
@@ -1670,6 +1650,7 @@ impl EditorApp {
         self.viewport_3d.set_floor_atlas(None);
         self.reset_journal_epoch();
         self.post_commit_warning = None;
+        self.post_commit_sync = None;
         self.recovery.offer = None;
         self.recovery.last = None;
         self.save_blockers_open = false;
@@ -12970,6 +12951,7 @@ impl EditorApp {
                     }
                 }
             });
+            self.panel_sync_retry_ui(ui);
             // 狀態列
             let is_3d_diagnostic = Self::is_3d_material_diagnostic(&self.status_message);
             let show_status_message = !self.status_message.is_empty()

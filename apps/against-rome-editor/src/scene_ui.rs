@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 type Result<T> = std::result::Result<T, String>;
 
 #[derive(Clone, Debug, PartialEq)]
-struct SceneSnapshot {
+pub(crate) struct SceneSnapshot {
     objects: Vec<MapSceneObject>,
     removals: Vec<SdlSceneObjectRemoval>,
     additions: Vec<SdlSceneObjectAddition>,
@@ -220,7 +220,7 @@ impl SceneUi {
         })
     }
 
-    fn snapshot(&self) -> SceneSnapshot {
+    pub(crate) fn snapshot(&self) -> SceneSnapshot {
         SceneSnapshot {
             objects: self.objects.clone(),
             removals: self.removals.clone(),
