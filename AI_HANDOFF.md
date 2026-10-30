@@ -1,3 +1,7 @@
+## 2026-10-30 Codex：空白場景選擇可用槽位
+- 新增「尋找可用槽位」，沿用地圖目錄的空槽搜尋；失敗保留原槽位，搜尋不建立地圖。
+- 已驗證：`cargo test -p against-rome-editor-app --lib blank_map_finds_free_slot_without_creating_a_map --locked` 通過；`cargo check --workspace --locked` 通過。`cargo test --workspace --locked` 與 `cargo build --workspace --locked` 通過。首次測試因儲存庫內 TEMP 的祖先資源干擾而有 4 項失敗；以指向該 TEMP 的獨立磁碟根目錄重跑後通過。
+- 未驗證：實際視窗操作及遊戲內載入；未修改已安裝遊戲。
 ## 2026-10-30 Codex：Spawn DATA 目錄載入失敗
 - 需要預建 DATA 時，資料目錄載入錯誤會以雙語拒絕 Safe Save，保留編輯，不再靜默改用腳本建築。
 - 已驗證：專項回歸、`cargo check --workspace --locked`、`cargo test --workspace --locked`、`cargo build --workspace --locked` 通過。

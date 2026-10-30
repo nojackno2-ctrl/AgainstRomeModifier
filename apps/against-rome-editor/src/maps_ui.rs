@@ -240,6 +240,16 @@ impl MapsUi {
         Ok(intent)
     }
 
+    /// 尋找下一個可用的自訂地圖槽位，不建立任何地圖。
+    pub fn select_next_blank_slot(&mut self) -> Result<i32, String> {
+        let path = Path::new(self.game_path_input.trim());
+        if !path.is_dir() {
+            return Err("Game root path is invalid or does not exist.".into());
+        }
+        let slot = EndlessMapCatalog::new().get_next_free_slot(path)?;
+        self.blank_target_slot = slot;
+        Ok(slot)
+    }
     /// Requests building a blank map by queuing a typed build intent.
     /// Does NOT perform any filesystem mutation; the owning app is responsible for
     /// verifying clean/discard state before executing the build.
@@ -982,6 +992,18 @@ impl MapsUi {
             ui.label(tl(self.english, "目標地圖槽位：", "Target Slot:"));
             ui.add(egui::DragValue::new(&mut self.blank_target_slot).clamp_range(5..=999).prefix("ENDL_"));
             ui.label(tl(self.english, "(自訂地圖範圍 5..999)", "(custom map range 5..999)"));
+            if ui.button(tl(self.english, "尋找可用槽位", "Find Free Slot")).clicked() {
+                match self.select_next_blank_slot() {
+                    Ok(slot) => {
+                        self.status_message = format!("{} ENDL_{slot:03}", tl(self.english, "可用槽位：", "Available slot:"));
+                        self.status_is_error = false;
+                    }
+                    Err(error) => {
+                        self.status_message = format!("{} {error}", tl(self.english, "尋找可用槽位失敗：", "Could not find a free slot:"));
+                        self.status_is_error = true;
+                    }
+                }
+            }
         });
 
         ui.horizontal(|ui| {
@@ -1433,6 +1455,20 @@ refpos=100.0,0.0,100.0
         root
     }
 
+    #[test]
+    fn blank_map_finds_free_slot_without_creating_a_map() {
+        let root = disk_fixture();
+        std::fs::create_dir_all(root.join("MAPS/ENDL_005")).unwrap();
+        let mut ui = MapsUi::default();
+        ui.game_path_input = root.to_string_lossy().into_owned();
+        assert_eq!(ui.select_next_blank_slot().unwrap(), 6);
+        assert_eq!(ui.blank_map_build_intent().spec.target_slot, 6);
+        assert!(!root.join("MAPS/ENDL_006").exists());
+        ui.game_path_input = root.join("missing").to_string_lossy().into_owned();
+        assert!(ui.select_next_blank_slot().is_err());
+        assert_eq!(ui.blank_target_slot, 6);
+        let _ = std::fs::remove_dir_all(root);
+    }
     #[test]
     fn test_maps_ui_clone_and_delete_do_not_mark_session_dirty() {
         let root = disk_fixture();
