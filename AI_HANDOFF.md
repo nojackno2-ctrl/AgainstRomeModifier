@@ -1,3 +1,17 @@
+## 2026-10-30 Agy：設計檢查勢力起始部隊與主堡一鍵補齊（已驗證）
+- 依設計者建立或編輯地圖時，若缺乏各勢力起始部隊或基地主堡（`team-no-units`、`team-no-main-house`），無法正常遊玩且需在地圖 16384x16384 廣大空間手動搜尋與擺放之缺口，實作一鍵快速修正與定位支援：
+  1. 快速修正演算法：
+     - `EditorApp::fix_missing_units`：自動偵測 `team-no-units` 勢力；優先以該勢力既有生成物或 DATA 物件座標為基準（若無則依隊伍角度與半徑環狀推算位置），精準取樣地形表面高度（`sample_bilinear_raw_height`），自動選擇型錄中適合的部隊別名（如 `GER_INF00`、`HUN_KAVINF00` 等），加入隊伍部隊小隊生成物（`count: 4`）並套用至劇本，同步生成物 UI 並自動重新執行設計檢查。
+     - `EditorApp::fix_missing_bases`：自動偵測 `team-no-main-house` 勢力；以勢力部隊或物件座標為基準取樣地面高度，依陣營選擇主堡別名（`is_main_house`，如 `GER_HAU00`、`HUN_HAU00` 等），加入主堡生成物（`count: 1`）並套用至劇本，自動重新執行設計檢查。
+  2. 導覽定位與 UI 按鈕：
+     - 擴充 `IssueRow::is_locatable` 支援 `team-no-` 勢力警告問題，點擊「前往／定位」時自動觸發 `scenario_panel_request` 請求開啟劇本面板以供微調。
+     - `show_design_check` 工具列依問題動態顯示 `[Add starting units / 補齊起始部隊]` 與 `[Add main houses / 補齊勢力主堡]` 按鈕，點擊後透過中英雙語狀態列即時回饋補齊勢力數與存檔指引。
+- 已驗證：
+  - `design_check_ui` 單元測試：驗證 `team-no-units` 與 `team-no-main-house` 納入可定位範圍並請求開啟劇本面板，以及按鈕渲染無崩潰（`test_scenario_issues_are_locatable_and_request_scenario_panel`、`test_quick_fix_buttons_shown_for_missing_units_and_bases`）。
+  - `app.rs` 端到端整合測試：驗證一鍵補齊起始部隊（`design_check_quick_fix_adds_missing_units`）與一鍵補齊勢力主堡（`design_check_quick_fix_adds_missing_bases`）修復警告、別名選擇、隊伍與生成物同步及狀態列回饋。
+  - 完整 `cargo test --workspace --locked` 通過（exit 0，無任何失敗）。
+- 未驗證：自製地圖匯入遊戲後的基地生產與部隊 AI 起始行為。
+
 ## 2026-10-30 Agy：設計檢查劇本勝負目標一鍵補齊與定位（已驗證）
 - 依設計者在地圖設計時缺乏勝負條件導致地圖無法正常結算、且 Design Check 僅能手動開啟劇本編輯器從頭編寫之缺口，實作一鍵快速修正與定位聯動：
   1. `scenario_panel_request` 與定位開關：`DesignCheckUi` 新增 `scenario_panel_request` 旗標；擴充 `IssueRow::is_locatable` 支援 `scenario-` 開頭之問題識別碼，點擊「前往／定位」時若為劇本相關問題自動請求開啟劇本面板；`consume_design_check_focus` 自動開啟劇本面板並自動載入劇本檔案。

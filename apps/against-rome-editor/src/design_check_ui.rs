@@ -142,6 +142,7 @@ impl IssueRow {
             || self.event_index >= 0
             || !self.object_id.is_nil()
             || self.code.starts_with("scenario-")
+            || self.code.starts_with("team-no-")
     }
 }
 
@@ -820,6 +821,227 @@ impl EditorApp {
         Ok(count)
     }
 
+    /// 補齊各參戰勢力缺失的起始部隊或單位，整批套用並重新執行設計檢查。
+    pub fn fix_missing_units(&mut self) -> Result<usize, String> {
+        let teams: Vec<i32> = match self.design_check_report() {
+            DesignCheckReport::Unavailable(e) => return Err(e),
+            DesignCheckReport::Checked { design_issues, .. } => {
+                let mut set = std::collections::BTreeSet::new();
+                for issue in design_issues {
+                    if issue.code == "team-no-units" && (0..=7).contains(&issue.team) {
+                        set.insert(issue.team);
+                    }
+                }
+                set.into_iter().collect()
+            }
+        };
+        if teams.is_empty() {
+            self.run_design_check();
+            return Ok(0);
+        }
+
+        let path = self
+            .loaded_map_path
+            .clone()
+            .ok_or_else(|| tr(self.lang(), "No map loaded.", "尚未載入地圖。").to_string())?;
+        if !self.scenario.is_loaded() {
+            self.scenario.load_session(&path)?;
+        }
+
+        let mut spawns = self.scenario.document().spawns.clone();
+        let known_aliases = self.scenario.known_aliases().to_vec();
+        let default_unit_alias = known_aliases
+            .iter()
+            .find(|a| against_rome_maps::design_validator::MapDesignValidator::is_unit_alias(a))
+            .cloned()
+            .unwrap_or_else(|| "GER_INF00".to_string());
+
+        let mut count = 0;
+        for team in teams {
+            let ref_pos = spawns
+                .iter()
+                .find(|s| s.team == team && s.x.is_finite() && s.z.is_finite())
+                .map(|s| (s.x, s.z))
+                .or_else(|| {
+                    if self.placement.is_loaded() {
+                        self.placement.objects().iter().find(|o| {
+                            o.parent.is_none()
+                                && o.team == team as u16
+                                && o.position[0].is_finite()
+                                && o.position[2].is_finite()
+                        })
+                        .map(|o| (o.position[0], o.position[2]))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| {
+                    let angle = team as f32 * (std::f32::consts::TAU / 8.0);
+                    let radius = 3000.0;
+                    (8192.0 + radius * angle.cos(), 8192.0 + radius * angle.sin())
+                });
+
+            let (target_x, target_z) = (
+                (ref_pos.0 + 256.0).clamp(256.0, 16128.0),
+                (ref_pos.1 + 256.0).clamp(256.0, 16128.0),
+            );
+
+            let ground_y = if let Some(session) = &self.session {
+                let norm_x = (target_x / 16384.0).clamp(0.0, 1.0);
+                let norm_z = (target_z / 16384.0).clamp(0.0, 1.0);
+                against_rome_maps::design_validator::MapDesignValidator::sample_bilinear_raw_height(
+                    session.heights(),
+                    session.vertex_size,
+                    norm_x,
+                    norm_z,
+                ) * self.height_step
+            } else {
+                0.0
+            };
+
+            let alias = known_aliases
+                .iter()
+                .find(|a| {
+                    against_rome_maps::design_validator::MapDesignValidator::is_unit_alias(a)
+                        && (team == 0 || !a.to_ascii_uppercase().starts_with("GER_"))
+                })
+                .cloned()
+                .unwrap_or_else(|| default_unit_alias.clone());
+
+            let new_spawn = against_rome_scenario::Spawn {
+                alias,
+                x: target_x,
+                y: ground_y,
+                z: target_z,
+                team,
+                count: 4,
+                angle: 0,
+                prebuilt: false,
+                id: uuid::Uuid::new_v4(),
+                raw_rotation: None,
+            };
+            spawns.push(new_spawn);
+            count += 1;
+        }
+
+        if count > 0 {
+            self.scenario.apply_spawns(spawns)?;
+            self.spawn_ui.sync_with_document(&self.scenario, self.loaded_map_path.as_deref());
+        }
+
+        self.run_design_check();
+        Ok(count)
+    }
+
+    /// 補齊各參戰勢力缺失的主堡建築（Haupthaus），整批套用並重新執行設計檢查。
+    pub fn fix_missing_bases(&mut self) -> Result<usize, String> {
+        let teams: Vec<i32> = match self.design_check_report() {
+            DesignCheckReport::Unavailable(e) => return Err(e),
+            DesignCheckReport::Checked { design_issues, .. } => {
+                let mut set = std::collections::BTreeSet::new();
+                for issue in design_issues {
+                    if issue.code == "team-no-main-house" && (0..=7).contains(&issue.team) {
+                        set.insert(issue.team);
+                    }
+                }
+                set.into_iter().collect()
+            }
+        };
+        if teams.is_empty() {
+            self.run_design_check();
+            return Ok(0);
+        }
+
+        let path = self
+            .loaded_map_path
+            .clone()
+            .ok_or_else(|| tr(self.lang(), "No map loaded.", "尚未載入地圖。").to_string())?;
+        if !self.scenario.is_loaded() {
+            self.scenario.load_session(&path)?;
+        }
+
+        let mut spawns = self.scenario.document().spawns.clone();
+        let known_aliases = self.scenario.known_aliases().to_vec();
+        let default_house_alias = known_aliases
+            .iter()
+            .find(|a| against_rome_maps::design_validator::MapDesignValidator::is_main_house(a))
+            .cloned()
+            .unwrap_or_else(|| "GER_HAU00".to_string());
+
+        let mut count = 0;
+        for team in teams {
+            let ref_pos = spawns
+                .iter()
+                .find(|s| s.team == team && s.x.is_finite() && s.z.is_finite())
+                .map(|s| (s.x, s.z))
+                .or_else(|| {
+                    if self.placement.is_loaded() {
+                        self.placement.objects().iter().find(|o| {
+                            o.parent.is_none()
+                                && o.team == team as u16
+                                && o.position[0].is_finite()
+                                && o.position[2].is_finite()
+                        })
+                        .map(|o| (o.position[0], o.position[2]))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| {
+                    let angle = team as f32 * (std::f32::consts::TAU / 8.0);
+                    let radius = 3000.0;
+                    (8192.0 + radius * angle.cos(), 8192.0 + radius * angle.sin())
+                });
+
+            let (target_x, target_z) = (
+                ref_pos.0.clamp(256.0, 16128.0),
+                ref_pos.1.clamp(256.0, 16128.0),
+            );
+
+            let ground_y = if let Some(session) = &self.session {
+                let norm_x = (target_x / 16384.0).clamp(0.0, 1.0);
+                let norm_z = (target_z / 16384.0).clamp(0.0, 1.0);
+                against_rome_maps::design_validator::MapDesignValidator::sample_bilinear_raw_height(
+                    session.heights(),
+                    session.vertex_size,
+                    norm_x,
+                    norm_z,
+                ) * self.height_step
+            } else {
+                0.0
+            };
+
+            let alias = known_aliases
+                .iter()
+                .find(|a| against_rome_maps::design_validator::MapDesignValidator::is_main_house(a))
+                .cloned()
+                .unwrap_or_else(|| default_house_alias.clone());
+
+            let new_spawn = against_rome_scenario::Spawn {
+                alias,
+                x: target_x,
+                y: ground_y,
+                z: target_z,
+                team,
+                count: 1,
+                angle: 0,
+                prebuilt: false,
+                id: uuid::Uuid::new_v4(),
+                raw_rotation: None,
+            };
+            spawns.push(new_spawn);
+            count += 1;
+        }
+
+        if count > 0 {
+            self.scenario.apply_spawns(spawns)?;
+            self.spawn_ui.sync_with_document(&self.scenario, self.loaded_map_path.as_deref());
+        }
+
+        self.run_design_check();
+        Ok(count)
+    }
+
     /// Pure generation of the current Design Check report as a Markdown document.
     pub fn export_design_check_markdown(&self) -> String {
         let report = match &self.design_check.report {
@@ -899,11 +1121,14 @@ impl EditorApp {
         let mut fix_hostility = false;
         let mut fix_destination = false;
         let mut fix_objectives = false;
+        let mut fix_units = false;
+        let mut fix_bases = false;
         let mut locate: Option<usize> = None;
         let rows = self.design_check.get_or_compute_rows(lang).to_vec();
         let mut selected = self.design_check.selected.filter(|i| *i < rows.len());
         egui::Window::new(tr(lang, "Design Check (read-only)", "設計檢查（唯讀）"))
             .open(&mut open)
+            .collapsible(false)
             .default_width(600.0)
             .show(ctx, |ui| {
                 ui.horizontal_wrapped(|ui| {
@@ -950,6 +1175,32 @@ impl EditorApp {
                             .clicked()
                     {
                         fix_objectives = true;
+                    }
+                    let has_unit_issues = rows.iter().any(|r| r.code == "team-no-units");
+                    if has_unit_issues
+                        && ui
+                            .button(tr(lang, "Add starting units", "補齊起始部隊"))
+                            .on_hover_text(tr(
+                                lang,
+                                "Automatically adds a starting squad for factions lacking units",
+                                "自動為缺乏部隊的勢力在基地附近補齊初始戰斗小隊",
+                            ))
+                            .clicked()
+                    {
+                        fix_units = true;
+                    }
+                    let has_base_issues = rows.iter().any(|r| r.code == "team-no-main-house");
+                    if has_base_issues
+                        && ui
+                            .button(tr(lang, "Add main houses", "補齊勢力主堡"))
+                            .on_hover_text(tr(
+                                lang,
+                                "Automatically adds a main house for factions lacking a base",
+                                "自動為缺乏基地的勢力補齊主堡建築",
+                            ))
+                            .clicked()
+                    {
+                        fix_bases = true;
                     }
                     let can_locate = selected
                         .and_then(|i| rows.get(i))
@@ -1097,7 +1348,7 @@ impl EditorApp {
             if !row.object_id.is_nil() {
                 self.design_check.object_request = Some(row.object_id);
             }
-            if row.code.starts_with("scenario-") {
+            if row.code.starts_with("scenario-") || row.code.starts_with("team-no-") {
                 self.design_check.scenario_panel_request = true;
             }
         }
@@ -1150,6 +1401,46 @@ impl EditorApp {
                 }
                 Ok(_) => {
                     self.status_message = tr(lang, "No objective events added.", "未新增勝負事件。").into();
+                    self.status_is_error = false;
+                }
+                Err(e) => {
+                    self.status_message = e;
+                    self.status_is_error = true;
+                }
+            }
+        } else if fix_units {
+            match self.fix_missing_units() {
+                Ok(n) if n > 0 => {
+                    self.status_message = match lang {
+                        AppLanguage::English => {
+                            format!("Added starting units for {n} team(s); Save to write them.")
+                        }
+                        _ => format!("已為 {n} 個勢力補齊起始部隊；請存檔以寫入變更。"),
+                    };
+                    self.status_is_error = false;
+                }
+                Ok(_) => {
+                    self.status_message = tr(lang, "No units added.", "未新增部隊。").into();
+                    self.status_is_error = false;
+                }
+                Err(e) => {
+                    self.status_message = e;
+                    self.status_is_error = true;
+                }
+            }
+        } else if fix_bases {
+            match self.fix_missing_bases() {
+                Ok(n) if n > 0 => {
+                    self.status_message = match lang {
+                        AppLanguage::English => {
+                            format!("Added main houses for {n} team(s); Save to write them.")
+                        }
+                        _ => format!("已為 {n} 個勢力補齊主堡；請存檔以寫入變更。"),
+                    };
+                    self.status_is_error = false;
+                }
+                Ok(_) => {
+                    self.status_message = tr(lang, "No main houses added.", "未新增主堡。").into();
                     self.status_is_error = false;
                 }
                 Err(e) => {
@@ -1634,8 +1925,50 @@ mod tests {
         assert!(row.is_locatable());
         row.code = "bounds".into();
         assert!(!row.is_locatable());
+        row.code = "team-no-units".into();
+        assert!(row.is_locatable());
+        row.code = "team-no-main-house".into();
+        assert!(row.is_locatable());
 
         let dc = DesignCheckUi::default();
         assert!(!dc.scenario_panel_request);
+    }
+
+    #[test]
+    fn test_quick_fix_buttons_shown_for_missing_units_and_bases() {
+        let mut app = EditorApp::default();
+        app.design_check.open = true;
+        app.design_check.report = Some(DesignCheckReport::Checked {
+            map_issues: vec![],
+            preflight_error: None,
+            design_issues: vec![
+                against_rome_maps::design_validator::MapDesignIssue {
+                    severity: against_rome_maps::design_validator::DesignIssueSeverity::Warning,
+                    code: "team-no-units".into(),
+                    chinese: "隊伍 0 缺少起始部隊".into(),
+                    english: "Team 0 has no units".into(),
+                    object_alias: "".into(),
+                    team: 0,
+                    world_x: None,
+                    world_z: None,
+                    object_id: uuid::Uuid::nil(),
+                },
+                against_rome_maps::design_validator::MapDesignIssue {
+                    severity: against_rome_maps::design_validator::DesignIssueSeverity::Warning,
+                    code: "team-no-main-house".into(),
+                    chinese: "隊伍 1 缺少主堡".into(),
+                    english: "Team 1 has no main house".into(),
+                    object_alias: "".into(),
+                    team: 1,
+                    world_x: None,
+                    world_z: None,
+                    object_id: uuid::Uuid::nil(),
+                },
+            ],
+        });
+
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| app.show_design_check(ctx));
+        assert!(app.design_check.open);
     }
 }

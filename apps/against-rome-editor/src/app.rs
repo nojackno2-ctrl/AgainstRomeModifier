@@ -7610,6 +7610,129 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    /// 驗證設計檢查「補齊起始部隊」一鍵修正功能。
+    #[test]
+    fn design_check_quick_fix_adds_missing_units() {
+        let root = temp_map_dir("units_fix_root");
+        let dir = root.join("MAPS").join("ENDL_006");
+        std::fs::create_dir_all(dir.join("SCRIPT")).unwrap();
+        std::fs::create_dir_all(root.join("SYSTEM/CLAK")).unwrap();
+        std::fs::write(
+            root.join("SYSTEM/CLAK/cl_scint.ini"),
+            "[ObjDefName]
+GER_HAU00=BauGerHau00_Haupthaus
+GER_INF00=FigGerInf00
+HUN_HAU00=BauHunHau00_Hauptzelt
+HUN_KAVINF00=FigHunKav00
+",
+        ).unwrap();
+        std::fs::write(dir.join("SCRIPT/ak_level.bci"), against_rome_scenario::BciImage::idle().serialize()).unwrap();
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(dir.clone(), TerrainSession::create_blank(33, 32)).unwrap();
+        app.scenario.load_session(&dir).unwrap();
+
+        // 放置玩家與敵方主堡，無任何部隊；此時設計檢查應回報 team-no-units
+        app.scenario.apply_spawns(vec![
+            against_rome_scenario::Spawn {
+                alias: "GER_HAU00".into(),
+                team: 0,
+                x: 3000.0,
+                z: 3000.0,
+                count: 0,
+                id: uuid::Uuid::new_v4(),
+                ..Default::default()
+            },
+            against_rome_scenario::Spawn {
+                alias: "HUN_HAU00".into(),
+                team: 1,
+                x: 8000.0,
+                z: 8000.0,
+                count: 0,
+                id: uuid::Uuid::new_v4(),
+                ..Default::default()
+            },
+        ]).unwrap();
+
+        let ctx = egui::Context::default();
+        gui_click(&mut app, &ctx, "Design Check");
+        assert!(design_codes(&app).contains(&"team-no-units".to_string()), "{:?}", design_codes(&app));
+
+        // 點擊「補齊起始部隊」
+        gui_click(&mut app, &ctx, "Add starting units");
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(app.status_message.contains("Added starting units for 2 team(s)"));
+
+        // 檢查部隊已被加入，team-no-units 警告消除
+        let spawns = app.scenario.document().spawns.clone();
+        assert_eq!(spawns.len(), 4, "{spawns:?}");
+        assert!(spawns.iter().any(|s| s.team == 0 && s.count > 0));
+        assert!(spawns.iter().any(|s| s.team == 1 && s.count > 0));
+        assert!(!design_codes(&app).contains(&"team-no-units".to_string()), "{:?}", design_codes(&app));
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// 驗證設計檢查「補齊勢力主堡」一鍵修正功能。
+    #[test]
+    fn design_check_quick_fix_adds_missing_bases() {
+        let root = temp_map_dir("bases_fix_root");
+        let dir = root.join("MAPS").join("ENDL_007");
+        std::fs::create_dir_all(dir.join("SCRIPT")).unwrap();
+        std::fs::create_dir_all(root.join("SYSTEM/CLAK")).unwrap();
+        std::fs::write(
+            root.join("SYSTEM/CLAK/cl_scint.ini"),
+            "[ObjDefName]
+GER_HAU00=BauGerHau00_Haupthaus
+GER_INF00=FigGerInf00
+HUN_HAU00=BauHunHau00_Hauptzelt
+HUN_KAVINF00=FigHunKav00
+",
+        ).unwrap();
+        std::fs::write(dir.join("SCRIPT/ak_level.bci"), against_rome_scenario::BciImage::idle().serialize()).unwrap();
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(dir.clone(), TerrainSession::create_blank(33, 32)).unwrap();
+        app.scenario.load_session(&dir).unwrap();
+
+        // 放置勢力 0 與 1 的部隊，無主堡；設計檢查應回報 team-no-main-house
+        app.scenario.apply_spawns(vec![
+            against_rome_scenario::Spawn {
+                alias: "GER_INF00".into(),
+                team: 0,
+                x: 3000.0,
+                z: 3000.0,
+                count: 4,
+                id: uuid::Uuid::new_v4(),
+                ..Default::default()
+            },
+            against_rome_scenario::Spawn {
+                alias: "HUN_KAVINF00".into(),
+                team: 1,
+                x: 8000.0,
+                z: 8000.0,
+                count: 4,
+                id: uuid::Uuid::new_v4(),
+                ..Default::default()
+            },
+        ]).unwrap();
+
+        let ctx = egui::Context::default();
+        gui_click(&mut app, &ctx, "Design Check");
+        assert!(design_codes(&app).contains(&"team-no-main-house".to_string()), "{:?}", design_codes(&app));
+
+        // 點擊「補齊勢力主堡」
+        gui_click(&mut app, &ctx, "Add main houses");
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(app.status_message.contains("Added main houses for 2 team(s)"));
+
+        let spawns = app.scenario.document().spawns.clone();
+        assert_eq!(spawns.len(), 4, "{spawns:?}");
+        assert!(spawns.iter().any(|s| s.team == 0 && against_rome_maps::design_validator::MapDesignValidator::is_main_house(&s.alias)));
+        assert!(spawns.iter().any(|s| s.team == 1 && against_rome_maps::design_validator::MapDesignValidator::is_main_house(&s.alias)));
+        assert!(!design_codes(&app).contains(&"team-no-main-house".to_string()), "{:?}", design_codes(&app));
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     /// 真實面板產生、目的地預設、夾限預覽、設計檢查及單步復原。
     #[test]
     fn attack_wave_generator_panel() {
