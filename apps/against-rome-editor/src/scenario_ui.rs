@@ -1427,11 +1427,13 @@ impl ScenarioUi {
         ui.horizontal(|ui| {
             let response = ui.add_enabled(!exists && checked.is_ok(), egui::Button::new(label));
             if response.clicked() { self.objective_notice = Some(self.add_objective(seconds, target, team)); }
-            if let Err(reason) = &checked {
-                response.on_disabled_hover_text(format!("無法新增預設 / Cannot add preset: {reason}"));
-            }
             if exists { ui.label(tl(self.english, "已存在", "Already present")); }
         });
+        if !exists {
+            if let Err(reason) = &checked {
+                ui.label(format!("{}: {reason}", tl(self.english, "無法新增預設", "Cannot add preset")));
+            }
+        }
     }
     fn show_objective_presets(&mut self, ui: &mut egui::Ui) {
         let en = self.english;
@@ -2732,6 +2734,24 @@ mod tests {
             assert_eq!(ui.dirty(), dirty);
             assert!(!ui.can_undo_events() && !ui.can_redo_events());
             assert!(ui.take_history_receipts().is_empty());
+        }
+    }
+    #[test]
+    fn objective_button_shows_unavailable_reason_without_hover() {
+        let mut scenario_ui = ScenarioUi::default();
+        let ctx = egui::Context::default();
+        for en in [false, true] {
+            scenario_ui.english = en;
+            let output = ctx.run(Default::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    scenario_ui.objective_button(ui, "objective", None, None, 0);
+                });
+            });
+            let text = format!("{:?}", output.shapes);
+            assert!(text.contains(tl(en, "無法新增預設", "Cannot add preset")));
+            assert!(text.contains("No usable main-house Spawn/binding"));
+            assert!(scenario_ui.document.events.is_empty());
+            assert!(!scenario_ui.can_undo_events());
         }
     }
     #[test]

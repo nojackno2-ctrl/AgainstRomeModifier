@@ -1,3 +1,7 @@
+## 2026-10-30 Codex：勝負預設停用原因
+- 劇本勝負預設按鈕停用時直接顯示原因，避免只能透過滑鼠懸停得知；已存在時維持既有提示。
+- 驗證：專項 egui 測試 1 passed；`cargo check --workspace --locked`、`cargo test --workspace --locked`（287 組，2801 passed、0 failed、23 ignored）及 `cargo build --workspace --locked` 通過，使用儲存庫內 TEMP 與 target。未驗證實際視窗及遊戲。
+
 ## 2026-10-30 Codex：道路重新規劃失敗防護
 - 道路重新規劃前清除舊方案及該道路待套用請求，避免輸入無效時誤用過期預覽；其他工具的待套用請求保留。
 - 驗證：聚焦測試 1 passed；`cargo check --workspace --locked`、`cargo test --workspace --locked`（287 組、2800 passed、0 failed、23 ignored）及 `cargo build --workspace --locked` 均通過，無 MSVC 連結錯誤。首次指定錯誤的 RUSTUP_HOME，未啟動編譯；改用 repo 的 rustup 後通過。未驗證桌面介面與遊戲內效果；未修改安裝遊戲。
