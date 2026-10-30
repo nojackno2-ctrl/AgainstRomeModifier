@@ -1,3 +1,8 @@
+## 2026-10-30 Codex：材質自動轉場筆觸回復
+- 修正轉場無法烘焙時，拖曳插值與後續移動可能在整筆回復後繼續繪製；失敗筆觸保持停止直到放開或取消。
+- 已驗證：專項回歸測試 1 passed；cargo check、cargo test 與 cargo build --workspace --locked 均通過。首次專項指令的工具鏈路徑錯誤；前兩次完整測試的暫存目錄位於含遊戲辨識檔的 re_workspace，觸發唯讀保護，改用儲存庫根目錄下暫存目錄後通過。
+- 未驗證：實際 GUI 拖曳與遊戲內呈現；未修改已安裝遊戲。
+
 ## 2026-10-30 Codex：放置隊伍自動相容
 - 選取放置類型、設定參數及放置前，依物件類型調整隊伍範圍；有效隊伍保留。
 - 已驗證：專項測試 1 passed；更新整合測試後，cargo check --workspace --locked、cargo test --workspace --locked、cargo build --workspace --locked 均通過。首次完整測試因舊測試仍預期拒絕無效隊伍而失敗，已依新行為更新並重跑通過。
