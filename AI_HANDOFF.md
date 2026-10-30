@@ -1,3 +1,8 @@
+## 2026-10-30 Codex：水位變更後的河流規劃
+- 地景工作室同步水位時，撤銷使用舊水位的河流規劃及待套用請求，提示重新規劃；相同水位保留規劃。
+- 已驗證：聚焦測試 1 passed；正常 TEMP 下 `cargo check --workspace --locked`、`cargo test --workspace --locked`（287 組、2799 passed、0 failed、23 ignored）及 `cargo build --workspace --locked` 均通過。首次誤設工具鏈目錄；另因 D 槽空間不足導致連結與重試失敗，改用 TEMP 建置目錄及單工作後通過。
+- 未驗證：桌面介面與遊戲內效果；未修改已安裝遊戲。
+
 ## 2026-10-30 Codex：設計檢查事件定位顯示
 - Design Check 定位被篩選隱藏的事件時自動清除篩選，保留時間排序；可見目標保留篩選，無效索引不變更狀態。
 - 聚焦測試 1 passed；首輪因測試直接替換事件已為 dirty，改比較操作前後狀態。`cargo check --workspace --locked`、`cargo test --workspace --locked`（287 組、2798 passed、0 failed、23 ignored）及 `cargo build --workspace --locked` 均通過；`git diff --check` 通過。使用正常 TEMP；桌面與遊戲內未驗證。

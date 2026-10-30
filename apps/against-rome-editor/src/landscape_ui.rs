@@ -240,6 +240,19 @@ impl Default for LandscapeUi {
 }
 
 impl LandscapeUi {
+    fn sync_water_level(&mut self, level: f32) {
+        if self.cached_water_level.map(f32::to_bits) != Some(level.to_bits()) {
+            if self.last_river_plan.take().is_some() {
+                if self.apply_requested == Some(LandscapeApply::River) {
+                    self.apply_requested = None;
+                }
+                self.status_message = tl(self.english, "水位已變更，請重新規劃河流。", "Water level changed; plan the river again.").to_string();
+                self.status_is_error = false;
+            }
+            self.cached_water_level = Some(level);
+        }
+    }
+
     pub fn is_dirty(&self) -> bool {
         self.dirty
             || self.last_cliff_result.is_some()
@@ -765,7 +778,7 @@ impl LandscapeUi {
                 ui.separator();
 
                 if let Some(ambience) = ambience.as_mut() {
-                    self.cached_water_level = Some(ambience.profile.boden.waterlevel);
+                    self.sync_water_level(ambience.profile.boden.waterlevel);
                     ui.horizontal(|ui| {
                         ui.label(tl(self.english, "目前水位 / Current water level:", "Current water level:"));
                         ui.label(format!("{:.1}", ambience.profile.boden.waterlevel));
@@ -781,7 +794,7 @@ impl LandscapeUi {
                         if resp.changed() {
                             ambience.dirty = true;
                             ambience.validate_current();
-                            self.cached_water_level = Some(ambience.profile.boden.waterlevel);
+                            self.sync_water_level(ambience.profile.boden.waterlevel);
                         }
                     });
                     ui.separator();
@@ -1928,6 +1941,28 @@ mod tests {
         assert!(ui.run_river_planning(16, None).is_ok());
         assert!(ui.last_river_plan.is_some());
         assert!(ui.is_dirty());
+    }
+
+    #[test]
+    fn water_level_change_invalidates_river_plan_and_pending_apply() {
+        let mut ui = LandscapeUi::default();
+        ui.sync_water_level(20.0);
+        ui.river_start_x = 0;
+        ui.river_start_y = 0;
+        ui.river_end_x = 2;
+        ui.river_end_y = 2;
+        ui.run_river_planning(16, None).unwrap();
+        ui.apply_requested = Some(LandscapeApply::River);
+        ui.sync_water_level(20.0);
+        assert!(ui.last_river_plan.is_some());
+        assert_eq!(ui.apply_requested, Some(LandscapeApply::River));
+        ui.sync_water_level(25.0);
+        assert!(ui.last_river_plan.is_none());
+        assert_eq!(ui.apply_requested, None);
+        assert_eq!(ui.cached_water_level, Some(25.0));
+        assert!(ui.status_message.contains("重新規劃"));
+        ui.run_river_planning(16, None).unwrap();
+        assert!(ui.last_river_plan.is_some());
     }
 
     #[test]
