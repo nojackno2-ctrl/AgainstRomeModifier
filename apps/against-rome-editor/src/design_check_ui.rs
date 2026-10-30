@@ -138,7 +138,10 @@ impl IssueRow {
 
     /// Whether this issue can be located/focused in the viewport, scenario panel, or objects/spawns panel.
     pub fn is_locatable(&self) -> bool {
-        self.focus_world().is_some() || self.event_index >= 0 || !self.object_id.is_nil()
+        self.focus_world().is_some()
+            || self.event_index >= 0
+            || !self.object_id.is_nil()
+            || self.code.starts_with("scenario-")
     }
 }
 
@@ -406,6 +409,8 @@ pub struct DesignCheckUi {
     pub event_request: Option<i32>,
     /// Placed object ID the app should select in the placement/spawns panel.
     pub object_request: Option<Uuid>,
+    /// Request opening the scenario panel for a scenario-level issue.
+    pub scenario_panel_request: bool,
     /// Whether to show errors in the issue list (default: true).
     pub show_errors: bool,
     /// Whether to show warnings in the issue list (default: true).
@@ -433,6 +438,7 @@ impl Default for DesignCheckUi {
             focus_request: None,
             event_request: None,
             object_request: None,
+            scenario_panel_request: false,
             show_errors: true,
             show_warnings: true,
             search: String::new(),
@@ -727,6 +733,93 @@ impl EditorApp {
         Ok(count)
     }
 
+    /// 補齊劇本缺失的勝利與失敗目標事件，整批驗證後以單步或兩步復原套用並重新執行設計檢查。
+    pub fn fix_missing_objectives(&mut self) -> Result<usize, String> {
+        let (needs_victory, needs_defeat) = match self.design_check_report() {
+            DesignCheckReport::Unavailable(e) => return Err(e),
+            DesignCheckReport::Checked { design_issues, .. } => {
+                let v = design_issues
+                    .iter()
+                    .any(|i| i.code == "scenario-no-win-loss" || i.code == "scenario-no-victory");
+                let d = design_issues
+                    .iter()
+                    .any(|i| i.code == "scenario-no-win-loss" || i.code == "scenario-no-defeat");
+                if !v && !d {
+                    self.run_design_check();
+                    return Ok(0);
+                }
+                (v, d)
+            }
+        };
+
+        let path = self
+            .loaded_map_path
+            .clone()
+            .ok_or_else(|| tr(self.lang(), "No map loaded.", "尚未載入地圖。").to_string())?;
+        if !self.scenario.is_loaded() {
+            self.scenario.load_session(&path)?;
+        }
+
+        let mut count = 0;
+
+        // 1. 若缺少勝利事件：優先以消滅敵方主堡為勝利條件；若無敵方主堡則以存活 300 秒為勝利條件
+        if needs_victory {
+            let enemy_house = self.scenario.document().spawns.iter().find(|s| {
+                s.team > 0
+                    && against_rome_maps::design_validator::MapDesignValidator::is_main_house(&s.alias)
+            }).map(|s| (s.id, s.team));
+
+            let victory_added = if let Some((enemy_id, enemy_team)) = enemy_house {
+                self.scenario.add_objective(None, Some(enemy_id), enemy_team)?
+            } else {
+                self.scenario.add_objective(Some(300), None, 0)?
+            };
+            if victory_added {
+                count += 1;
+            }
+        }
+
+        // 2. 若缺少失敗事件：以玩家主堡被摧毀為失敗條件；若無玩家主堡則以玩家首個部隊被消滅為失敗條件
+        if needs_defeat {
+            let player_house = self.scenario.document().spawns.iter().find(|s| {
+                s.team == 0
+                    && against_rome_maps::design_validator::MapDesignValidator::is_main_house(&s.alias)
+            }).map(|s| s.id);
+
+            let defeat_added = if let Some(house_id) = player_house {
+                self.scenario.add_objective(None, Some(house_id), 0)?
+            } else if let Some(unit_id) = self.scenario.document().spawns.iter().find(|s| s.team == 0).map(|s| s.id) {
+                let event = against_rome_scenario::Event {
+                    name: crate::scenario_ui::unused_event_name("Player_defeated", &self.scenario.document().events),
+                    delay_seconds: 0,
+                    conditions: vec![against_rome_scenario::Condition { kind: 1, target_id: unit_id, ..Default::default() }],
+                    actions: vec![against_rome_scenario::Action { kind: 4, ..Default::default() }],
+                    ..Default::default()
+                };
+                self.scenario.add_events(&[event])?;
+                true
+            } else {
+                false
+            };
+            if defeat_added {
+                count += 1;
+            }
+        }
+
+        if count == 0 && needs_defeat && !needs_victory {
+            self.run_design_check();
+            return Err(tr(
+                self.lang(),
+                "Cannot add Defeat objective: no player spawn found. Place a player main house or unit first.",
+                "無法新增失敗目標：找不到玩家 Spawn。請先放置玩家主堡或部隊。",
+            )
+            .into());
+        }
+
+        self.run_design_check();
+        Ok(count)
+    }
+
     /// Pure generation of the current Design Check report as a Markdown document.
     pub fn export_design_check_markdown(&self) -> String {
         let report = match &self.design_check.report {
@@ -805,6 +898,7 @@ impl EditorApp {
         let mut export_report = false;
         let mut fix_hostility = false;
         let mut fix_destination = false;
+        let mut fix_objectives = false;
         let mut locate: Option<usize> = None;
         let rows = self.design_check.get_or_compute_rows(lang).to_vec();
         let mut selected = self.design_check.selected.filter(|i| *i < rows.len());
@@ -838,6 +932,24 @@ impl EditorApp {
                         && ui.button(tr(lang, "Send waves toward the player base", "讓波次進攻玩家主屋")).clicked()
                     {
                         fix_destination = true;
+                    }
+                    let has_objective_issues = rows.iter().any(|r| {
+                        matches!(
+                            r.code.as_str(),
+                            "scenario-no-win-loss" | "scenario-no-victory" | "scenario-no-defeat"
+                        )
+                    });
+                    if has_objective_issues
+                        && ui
+                            .button(tr(lang, "Add win/loss objectives", "補齊勝負條件"))
+                            .on_hover_text(tr(
+                                lang,
+                                "Automatically adds default survival/elimination victory and base-defense defeat rules",
+                                "自動補齊預設的存活／消滅勝利與主堡防守失敗規則",
+                            ))
+                            .clicked()
+                    {
+                        fix_objectives = true;
                     }
                     let can_locate = selected
                         .and_then(|i| rows.get(i))
@@ -985,6 +1097,9 @@ impl EditorApp {
             if !row.object_id.is_nil() {
                 self.design_check.object_request = Some(row.object_id);
             }
+            if row.code.starts_with("scenario-") {
+                self.design_check.scenario_panel_request = true;
+            }
         }
         self.design_check.open = open;
         if export_report {
@@ -1015,6 +1130,26 @@ impl EditorApp {
                 }
                 Ok(_) => {
                     self.status_message = tr(lang, "No wave destinations changed.", "未變更波次目的地。").into();
+                    self.status_is_error = false;
+                }
+                Err(e) => {
+                    self.status_message = e;
+                    self.status_is_error = true;
+                }
+            }
+        } else if fix_objectives {
+            match self.fix_missing_objectives() {
+                Ok(n) if n > 0 => {
+                    self.status_message = match lang {
+                        AppLanguage::English => {
+                            format!("Added {n} win/loss objective event(s); Save to write them.")
+                        }
+                        _ => format!("已補齊 {n} 個勝負目標事件；請存檔以寫入變更。"),
+                    };
+                    self.status_is_error = false;
+                }
+                Ok(_) => {
+                    self.status_message = tr(lang, "No objective events added.", "未新增勝負事件。").into();
                     self.status_is_error = false;
                 }
                 Err(e) => {
@@ -1487,5 +1622,20 @@ mod tests {
         let rows3 = dc.get_or_compute_rows(AppLanguage::TraditionalChinese);
         assert_eq!(rows3.len(), 1);
         assert_eq!(dc.recompute_count, 3);
+    }
+
+    #[test]
+    fn test_scenario_issues_are_locatable_and_request_scenario_panel() {
+        let mut row = IssueRow::from(&map_issue(MapIssueSeverity::Warning, "scenario-no-win-loss", None, None));
+        assert!(row.is_locatable());
+        row.code = "scenario-no-victory".into();
+        assert!(row.is_locatable());
+        row.code = "scenario-no-defeat".into();
+        assert!(row.is_locatable());
+        row.code = "bounds".into();
+        assert!(!row.is_locatable());
+
+        let dc = DesignCheckUi::default();
+        assert!(!dc.scenario_panel_request);
     }
 }

@@ -2757,6 +2757,11 @@ impl EditorApp {
                 }
             }
         }
+        if self.design_check.scenario_panel_request {
+            self.design_check.scenario_panel_request = false;
+            self.autoload_scenario_if_needed();
+            self.scenario.open = true;
+        }
         if let Some((x, z)) = focus_pos {
             self.focus_world_position(x, z);
         }
@@ -7491,6 +7496,120 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    /// 劇本勝負目標一鍵補齊：支援敵方主堡消滅勝利、存活 300 秒勝利、玩家主堡摧毀失敗及復原與定位。
+    #[test]
+    fn design_check_quick_fix_adds_win_loss_objectives() {
+        let root = temp_map_dir("win_loss_fix_root");
+        let dir = root.join("MAPS").join("ENDL_006");
+        std::fs::create_dir_all(dir.join("SCRIPT")).unwrap();
+        std::fs::create_dir_all(root.join("SYSTEM/CLAK")).unwrap();
+        std::fs::write(
+            root.join("SYSTEM/CLAK/cl_scint.ini"),
+            "[ObjDefName]\nGER_HAU00=BauGerHau00_Haupthaus\nHUN_HAU00=BauHunHau00_Hauptzelt\nHUN_KAVINF00=FigHunKav00\n",
+        ).unwrap();
+        std::fs::write(dir.join("SCRIPT/ak_level.bci"), against_rome_scenario::BciImage::idle().serialize()).unwrap();
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(dir.clone(), TerrainSession::create_blank(33, 32)).unwrap();
+        app.scenario.load_session(&dir).unwrap();
+
+        // 放置玩家主堡與敵方主堡，此時無勝負事件，設計檢查回報 scenario-no-win-loss
+        app.scenario.apply_spawns(vec![
+            against_rome_scenario::Spawn {
+                alias: "GER_HAU00".into(),
+                team: 0,
+                x: 3000.0,
+                z: 3000.0,
+                count: 0,
+                id: uuid::Uuid::new_v4(),
+                ..Default::default()
+            },
+            against_rome_scenario::Spawn {
+                alias: "HUN_HAU00".into(),
+                team: 1,
+                x: 8000.0,
+                z: 8000.0,
+                count: 0,
+                id: uuid::Uuid::new_v4(),
+                ..Default::default()
+            },
+        ]).unwrap();
+
+        let ctx = egui::Context::default();
+        gui_click(&mut app, &ctx, "Design Check");
+        assert!(design_codes(&app).contains(&"scenario-no-win-loss".to_string()), "{:?}", design_codes(&app));
+
+        // 點擊「補齊勝負條件」
+        gui_click(&mut app, &ctx, "Add win/loss objectives");
+        let events = app.scenario.document().events.clone();
+        assert_eq!(events.len(), 2, "{events:?}");
+        // 包含勝利事件 (kind 3) 與失敗事件 (kind 4)
+        assert!(events.iter().any(|e| e.actions.iter().any(|a| a.kind == 3)));
+        assert!(events.iter().any(|e| e.actions.iter().any(|a| a.kind == 4)));
+
+        // 重新檢查後 scenario-no-win-loss 警告消除
+        assert!(!design_codes(&app).contains(&"scenario-no-win-loss".to_string()), "{:?}", design_codes(&app));
+        assert!(!design_codes(&app).contains(&"scenario-no-victory".to_string()), "{:?}", design_codes(&app));
+        assert!(!design_codes(&app).contains(&"scenario-no-defeat".to_string()), "{:?}", design_codes(&app));
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(app.status_message.contains("Added 2 win/loss objective event(s)"));
+
+        // 復原可撤回新增之勝負事件
+        assert!(app.scenario.undo_events());
+        assert_eq!(app.scenario.document().events.len(), 1);
+        assert!(app.scenario.undo_events());
+        assert_eq!(app.scenario.document().events.len(), 0);
+
+        // 測試定位 scenario 相關問題會開啟劇本面板
+        app.scenario.open = false;
+        app.design_check.selected = Some(0);
+        app.design_check.scenario_panel_request = true;
+        app.consume_design_check_focus();
+        assert!(app.scenario.open, "Locating a scenario issue must open the scenario panel");
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// 無敵方主堡時，一鍵補齊自動備援使用存活 300 秒勝利目標。
+    #[test]
+    fn design_check_quick_fix_survival_victory_when_no_enemy_base() {
+        let root = temp_map_dir("win_loss_survival_root");
+        let dir = root.join("MAPS").join("ENDL_006");
+        std::fs::create_dir_all(dir.join("SCRIPT")).unwrap();
+        std::fs::create_dir_all(root.join("SYSTEM/CLAK")).unwrap();
+        std::fs::write(
+            root.join("SYSTEM/CLAK/cl_scint.ini"),
+            "[ObjDefName]\nGER_HAU00=BauGerHau00_Haupthaus\n",
+        ).unwrap();
+        std::fs::write(dir.join("SCRIPT/ak_level.bci"), against_rome_scenario::BciImage::idle().serialize()).unwrap();
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(dir.clone(), TerrainSession::create_blank(33, 32)).unwrap();
+        app.scenario.load_session(&dir).unwrap();
+
+        app.scenario.apply_spawns(vec![
+            against_rome_scenario::Spawn {
+                alias: "GER_HAU00".into(),
+                team: 0,
+                x: 3000.0,
+                z: 3000.0,
+                count: 0,
+                id: uuid::Uuid::new_v4(),
+                ..Default::default()
+            },
+        ]).unwrap();
+
+        let ctx = egui::Context::default();
+        gui_click(&mut app, &ctx, "Design Check");
+        assert!(design_codes(&app).contains(&"scenario-no-win-loss".to_string()), "{:?}", design_codes(&app));
+
+        gui_click(&mut app, &ctx, "Add win/loss objectives");
+        let events = app.scenario.document().events.clone();
+        assert_eq!(events.len(), 2);
+        let survive_evt = events.iter().find(|e| e.actions.iter().any(|a| a.kind == 3)).unwrap();
+        assert_eq!(survive_evt.delay_seconds, 300);
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     /// 真實面板產生、目的地預設、夾限預覽、設計檢查及單步復原。
     #[test]
     fn attack_wave_generator_panel() {
@@ -7840,7 +7959,7 @@ mod tests {
     fn spawns_panel_loads_the_open_maps_script_on_demand() {
         let (mut app, dir, _) = start_camera_app(false);
         let ctx = egui::Context::default();
-        let out = gui_click(&mut app, &ctx, "Spawns");
+        let _out = gui_click(&mut app, &ctx, "Spawns");
         assert!(app.spawn_ui.open);
         assert!(app.scenario.is_loaded(), "{}", app.status_message);
         let out = gui_frame(&mut app, &ctx, vec![]);
@@ -7977,7 +8096,7 @@ mod tests {
         // main house and a troop the regular way: pick a type, "Place on map", click the canvas.
         let map = app.last_map_rect;
         // "Place on map" is a toggle that stays on after a placement.
-        let mut place = |app: &mut EditorApp, row: &str, at: egui::Vec2, toggle: bool| {
+        let place = |app: &mut EditorApp, row: &str, at: egui::Vec2, toggle: bool| {
             gui_click(app, &ctx, row);
             if toggle {
                 gui_click(app, &ctx, "Place on map");

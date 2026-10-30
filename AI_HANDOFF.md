@@ -1,3 +1,19 @@
+## 2026-10-30 Agy：設計檢查劇本勝負目標一鍵補齊與定位（已驗證）
+- 依設計者在地圖設計時缺乏勝負條件導致地圖無法正常結算、且 Design Check 僅能手動開啟劇本編輯器從頭編寫之缺口，實作一鍵快速修正與定位聯動：
+  1. `scenario_panel_request` 與定位開關：`DesignCheckUi` 新增 `scenario_panel_request` 旗標；擴充 `IssueRow::is_locatable` 支援 `scenario-` 開頭之問題識別碼，點擊「前往／定位」時若為劇本相關問題自動請求開啟劇本面板；`consume_design_check_focus` 自動開啟劇本面板並自動載入劇本檔案。
+  2. 勝負目標一鍵補齊（`EditorApp::fix_missing_objectives`）：
+     - 偵測 `scenario-no-win-loss`、`scenario-no-victory`、`scenario-no-defeat` 缺失問題。
+     - 若缺乏勝利目標：優先檢查敵方隊伍（非本方隊伍）建築，若存在基地（MainHouse）則建立「摧毀敵方基地」目標（`Condition::BuildingsRemaining == 0` -> `Action::Victory`）；若無敵方基地則建立「存活 300 秒」防守勝利目標（`Condition::TimerSeconds >= 300` -> `Action::Victory`）。
+     - 若缺乏失敗目標：優先檢查己方基地，若存在則建立「保護己方基地」目標（`Condition::BuildingsRemaining == 0` -> `Action::Defeat`）；若無則建立「全軍覆沒」失敗目標（`Condition::TroopsRemaining == 0` -> `Action::Defeat`）。
+     - 支援 Undo/Redo 歷史紀錄，修復後自動重新評估設計檢查報告，並以中英雙語更新狀態列。
+  3. UI 快速修正按鈕：`show_design_check` 於偵測到目標缺失問題時提供 `[Add win/loss objectives / 補齊勝負條件]` 快速修正按鈕。
+- 已驗證：
+  - 新增 `design_check_ui` 單元測試：驗證 `scenario-` 系列問題可定位並觸發 `scenario_panel_request`（`test_scenario_issues_are_locatable_and_request_scenario_panel`）。
+  - 新增 `app.rs` 端到端整合測試：驗證一鍵補齊新增摧毀敵方基地勝利與保護己方基地失敗條件、Undo 復原、狀態列更新（`design_check_quick_fix_adds_win_loss_objectives`）。
+  - 新增 `app.rs` 端到端整合測試：驗證在無敵方基地時自動建立存活計時勝利條件與失敗條件（`design_check_quick_fix_survival_victory_when_no_enemy_base`）。
+  - 完整 `cargo test --workspace --locked` 通過（exit 0，無任何失敗）。
+- 未驗證：自製劇本匯出至遊戲內後的勝利結算演出畫面與計時器顯示。
+
 ## 2026-10-30 Agy：3D 視圖生成物件放置模式與即時預覽（已驗證）
 - 依設計者在 3D 視圖中無法直接放置物件／部隊、且誤點擊會誤觸發高程筆刷破壞地形之關鍵缺口，實作 3D 視圖生成物件放置模式與即時預覽：
   1. `ViewportAction::PlaceSpawnAtTile` 與取消動作：`ViewportAction` 擴充 `PlaceSpawnAtTile { tile_x, tile_y }` 與 `CancelSpawnPlacement`；`Viewport3d` 引入 `spawn_place_mode` 與 `spawn_ghost: Option<SpawnGhostInfo>`。當放置模式啟動時攔截 Primary 點擊並直接送出選中圖塊座標，阻擋地形筆刷 (`Paint`/`CommitStroke`) 與物件選取；按右鍵或 Esc 觸發取消放置。
