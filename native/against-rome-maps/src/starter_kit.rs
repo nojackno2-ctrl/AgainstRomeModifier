@@ -4,10 +4,7 @@
 use against_rome_scenario::model::{ScenarioDocument, Spawn};
 use uuid::Uuid;
 use std::{collections::BTreeMap, path::{Path, PathBuf}};
-// Manifest edits are outside this slice. Share the existing DATA source rather than fork it.
-// Replace this source link with a crate dependency at the later integration boundary.
-#[path = "../../against-rome-placement/src/lib.rs"]
-pub mod native;
+pub use against_rome_placement as native;
 #[path = "starter_transaction.rs"]
 pub mod transaction;
 use native::{ObjectStore, WorldObject};

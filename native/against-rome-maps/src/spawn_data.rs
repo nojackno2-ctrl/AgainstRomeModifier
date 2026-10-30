@@ -214,19 +214,80 @@ pub fn plan_spawn_data_with_kit(
     if !next.spawns.iter().any(|s| s.prebuilt) && previous.data_slots.is_empty() {
         return Ok(None);
     }
+    let store = ObjectStore::load(map).map_err(|e| format!("無法讀取地圖 DATA：{e}"))?;
+    plan_spawn_data_core(map, &store, &store, catalog, previous, next, placed, kit, false)
+}
+
+/// 從呼叫端提供的 detached `ObjectStore` 規劃，並以目前磁碟 DATA 作為輸出差異基準。
+/// 這讓較大的儲存交易可以保留候選 store 已有的 DATA 變更。
+///
+/// 不會寫入傳入的 store；仍會讀取地圖建立輸出基準，並以該基準產生變更 pool。
+pub fn plan_spawn_data_from_store(
+    map: &Path,
+    store: &ObjectStore,
+    catalog: &SpawnDataCatalog,
+    previous: &ScenarioDocument,
+    next: &ScenarioDocument,
+    placed: &[SdlPlacedObject],
+) -> Result<Option<SpawnDataPlan>, String> {
+    plan_spawn_data_from_store_with_kit(map, store, catalog, previous, next, placed, None)
+}
+
+/// [`plan_spawn_data_with_kit`] 的 detached-store 版本。空白地圖檢查會同時套用於磁碟基準
+/// 與候選 store，避免起始配置交易帶入既有原生物件或變更。
+pub fn plan_spawn_data_from_store_with_kit(
+    map: &Path,
+    store: &ObjectStore,
+    catalog: &SpawnDataCatalog,
+    previous: &ScenarioDocument,
+    next: &ScenarioDocument,
+    placed: &[SdlPlacedObject],
+    kit: Option<&PendingStarterKit>,
+) -> Result<Option<SpawnDataPlan>, String> {
+    if !next.spawns.iter().any(|s| s.prebuilt) && previous.data_slots.is_empty() {
+        return Ok(None);
+    }
     let disk = ObjectStore::load(map).map_err(|e| format!("無法讀取地圖 DATA：{e}"))?;
+    plan_spawn_data_core(map, store, &disk, catalog, previous, next, placed, kit, true)
+}
+
+fn plan_spawn_data_core(
+    map: &Path,
+    store: &ObjectStore,
+    disk: &ObjectStore,
+    catalog: &SpawnDataCatalog,
+    previous: &ScenarioDocument,
+    next: &ScenarioDocument,
+    placed: &[SdlPlacedObject],
+    kit: Option<&PendingStarterKit>,
+    check_candidate_conflicts: bool,
+) -> Result<Option<SpawnDataPlan>, String> {
+    if !next.spawns.iter().any(|s| s.prebuilt) && previous.data_slots.is_empty() {
+        return Ok(None);
+    }
+    if check_candidate_conflicts {
+        previous.validate(None)?;
+        for binding in &previous.data_slots {
+            let slot = usize::try_from(binding.slot)
+                .map_err(|_| format!("原生 DATA binding 槽位 {} 無效。", binding.slot))?;
+            if !disk.family_matches(store, slot, binding.uid).unwrap_or(false) {
+                return Err(format!("原生 DATA binding 槽位 {} 的候選群組與磁碟版本衝突。", binding.slot));
+            }
+        }
+    }
     let kit = kit.filter(|k| !k.ids.is_empty());
     let (original, previous) = match kit {
         Some(k) => {
             let game = catalog.game_maps.as_deref().and_then(Path::parent);
-            require_starter_kit_blank_map(map, game, &disk, previous)?;
-            let templates = Templates { catalog, current: &disk, cache: RefCell::default() };
-            let mut imported = k.kit.apply_to_candidate(&disk, previous, Some(&|s| templates.for_spawn(s)))?;
+            require_starter_kit_blank_map(map, game, disk, previous)?;
+            require_starter_kit_blank_map(map, game, store, previous)?;
+            let templates = Templates { catalog, current: store, cache: RefCell::default() };
+            let mut imported = k.kit.apply_to_candidate(store, previous, Some(&|s| templates.for_spawn(s)))?;
             let all: HashSet<Uuid> = k.kit.spawns.iter().map(|s| s.id).collect();
             bind_native_metadata(&mut imported, &all)?;
             (imported.store, imported.scenario)
         }
-        None => (disk.clone(), previous.clone()),
+        None => (store.clone(), previous.clone()),
     };
     let previous = &previous;
     let resolver = |type_id: i32| catalog.resolve_native_alias(type_id);
@@ -268,7 +329,7 @@ pub fn plan_spawn_data_with_kit(
     if let Some(k) = kit {
         validate_starter_kit_candidate(&result.store, &scenario, k.ids, k.terrain)?;
     }
-    let files = stage_changed_pools(map, &disk, &result.store)?;
+    let files = stage_changed_pools(map, disk, &result.store)?;
     Ok(Some(SpawnDataPlan { scenario, active, files, skipped }))
 }
 

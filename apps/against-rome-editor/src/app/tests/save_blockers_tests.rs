@@ -373,7 +373,7 @@ fn save_blockers_preview_keeps_spawn_history_selection_and_artifacts() {
 }
 
 #[test]
-fn save_blockers_data_conflicts_are_reported_together() {
+fn save_blockers_preview_accepts_independent_data_changes() {
     let (mut app, root, map) = spawn_save_tests::fixture("blocker_data_conflicts", &[(232, None)]);
     app.placement.load_session(&map).unwrap();
     app.placement
@@ -386,19 +386,7 @@ fn save_blockers_data_conflicts_are_reported_together() {
     app.apply_start_camera_candidate().unwrap();
     let before = save_file_snapshot(&root);
     let blockers = app.save_blockers();
-    let ctx = egui::Context::default();
-    for blocker in blockers.iter().filter(|b| b.kind == Kind::DataConflict) {
-        assert!(blocker.actions.contains(&Action::OpenPanel));
-        app.resolve_save_blocker(blocker.panel, Action::OpenPanel, &ctx);
-    }
-    assert!(app.placement.open);
-    assert!(blockers
-        .iter()
-        .any(|b| b.kind == Kind::DataConflict && b.panel == Panel::Objects));
-    assert!(!blockers
-        .iter()
-        .any(|b| b.kind == Kind::DataConflict && b.panel == Panel::Campaign));
-    app.safe_save_current_using(|_| panic!("Objects DATA 衝突不可略過"));
+    assert!(!blockers.iter().any(|b| b.kind == Kind::DataConflict), "{blockers:?}");
     assert_eq!(save_file_snapshot(&root), before);
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -509,7 +497,7 @@ fn save_blockers_weather_discard_keeps_confirmation() {
 }
 
 #[test]
-fn save_blockers_nature_data_conflict_opens_nature() {
+fn save_blockers_nature_does_not_block_unrelated_spawn_data() {
     let (mut app, root) = nature_app("blocker_nature_route");
     app.nature_set_enabled(true);
     app.nature_select_type(i32::from(NATURE_TREE));
@@ -517,10 +505,7 @@ fn save_blockers_nature_data_conflict_opens_nature() {
     assert!(nature_stroke(&mut app, &[(10, 10)]).planted > 0);
     let path = PathBuf::from(&app.map_path_input);
     let blockers = app.save_data_blockers(&path, true);
-    let blocker = blockers.iter().find(|b| b.panel == Panel::Nature).unwrap();
-    assert!(blocker.actions.contains(&Action::OpenPanel));
-    app.open_save_panel(blocker.panel, &egui::Context::default());
-    assert!(app.save_focus_nature);
+    assert!(!blockers.iter().any(|b| b.panel == Panel::Nature));
     std::fs::remove_dir_all(root).unwrap();
 }
 

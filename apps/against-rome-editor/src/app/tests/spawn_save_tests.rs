@@ -660,18 +660,225 @@ fn duplicating_and_deleting_bound_spawns_copies_and_removes_data() {
 }
 
 #[test]
-fn pending_objects_panel_edits_block_spawn_data_changes_without_writing() {
-    let (mut app, root, map) = fixture("conflict", &[(232, None)]);
+fn independent_objects_edit_and_prebuilt_spawn_share_safe_save_with_rollback_and_reload() {
+    use against_rome_maps::TransactionFailurePoint as Fail;
+
+    let (mut app, root, map) = fixture("objects_and_prebuilt", &[(232, None)]);
     app.placement.load_session(&map).unwrap();
     app.placement.store_mut().unwrap().set_team(0, 1, 3).unwrap();
     assert!(app.placement.is_dirty());
+
     place_house(&mut app, (30, 30), 0);
+    let spawn_id = app.scenario.document().spawns[0].id;
     let before = save_file_snapshot(&root);
-    app.safe_save_current();
+
+    // 交易失敗時保留磁碟內容與兩邊的編輯。
+    app.safe_save_current_using(|tx| {
+        let mut injected = std::mem::replace(
+            tx,
+            against_rome_maps::MapSaveTransaction::new("unused"),
+        )
+        .with_injected_failure(Fail::BeforeFinalCommit, "模擬交易失敗");
+        injected.commit().map_err(|e| e.to_string())
+    });
     assert!(app.status_is_error, "{}", app.status_message);
-    assert!(app.status_message.contains("Spawn placement DATA"), "{}", app.status_message);
     assert_eq!(save_file_snapshot(&root), before);
     assert!(app.scenario.dirty() && app.placement.is_dirty());
+
+    // 重試後確認無關物件編輯與預建綁定同時保留。
+    save_ok(&mut app);
+    assert!(!app.scenario.dirty() && !app.placement.is_dirty());
+    let objects = data_objects(&map);
+    let edited = objects.iter().find(|object| object.slot == 0).unwrap();
+    assert_eq!(edited.team, 3);
+    let saved = against_rome_scenario::ScenarioDocument::from_json(
+        &std::fs::read(map.join("arm_scenario.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(saved.spawns.iter().any(|spawn| spawn.id == spawn_id && spawn.prebuilt));
+    let binding = saved.data_slots.iter().find(|entry| entry.spawn_id == spawn_id).unwrap();
+    assert!(objects
+        .iter()
+        .any(|object| object.slot as i32 == binding.slot && object.uid == binding.uid));
+    assert_eq!(objects.len(), 2);
+    assert_eq!(app.placement.objects(), objects);
+
+    let mut reloaded = EditorApp::initial_state();
+    reloaded
+        .set_loaded_map(map.clone(), crate::storage::load_map(&map).unwrap())
+        .unwrap();
+    reloaded.placement.load_session(&map).unwrap();
+    reloaded.scenario.load_session(&map).unwrap();
+    let reloaded_objects = data_objects(&map);
+    assert_eq!(reloaded.placement.objects(), reloaded_objects);
+    assert_eq!(reloaded_objects.iter().find(|object| object.slot == 0).unwrap().team, 3);
+    assert_eq!(reloaded.scenario.document(), &saved);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn editing_a_bound_spawn_family_blocks_another_spawn_data_change_without_writing() {
+    let (mut app, root, map) = fixture("bound_family_conflict", &[]);
+    place_house(&mut app, (30, 30), 0);
+    save_ok(&mut app);
+    sync(&mut app, &map);
+    app.placement.load_session(&map).unwrap();
+
+    let original_spawn_id = app.scenario.document().spawns[0].id;
+    let binding = app
+        .scenario
+        .document()
+        .data_slots
+        .iter()
+        .find(|entry| entry.spawn_id == original_spawn_id)
+        .unwrap()
+        .clone();
+    assert!(app.spawn_ui.is_data_bound_index(0));
+
+    // 修改既有綁定家族，再新增另一個預建物件。
+    app.placement
+        .store_mut()
+        .unwrap()
+        .set_family_team(binding.slot as usize, binding.uid, 3)
+        .unwrap();
+    place_house(&mut app, (35, 35), 0);
+    assert!(app.placement.is_dirty() && app.scenario.dirty());
+    let before = save_file_snapshot(&root);
+
+    app.safe_save_current();
+    assert!(app.status_is_error, "修改已儲存 bound family 時應拒絕合併：{}", app.status_message);
+    assert!(app.status_message.contains("衝突"), "{}", app.status_message);
+    assert_eq!(save_file_snapshot(&root), before);
+    assert!(app.placement.is_dirty() && app.scenario.dirty());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn nature_objects_and_prebuilt_spawn_share_safe_save_and_reload() {
+    let (mut app, root, map) = fixture("nature_and_prebuilt", &[]);
+    // 重用 Nature 測試資料，同時保留 spawn 型錄與官方主屋模板。
+    nature_data_fixture(&map, 16);
+    let mut house_columns = vec!["0".to_string(); 53];
+    house_columns[0] = "232".into();
+    house_columns[1] = "1".into();
+    house_columns[52] = HOUSE.into();
+    let mut tree_columns = vec!["0".to_string(); 53];
+    tree_columns[0] = NATURE_TREE.to_string();
+    tree_columns[1] = "1".into();
+    tree_columns[52] = "LanGerNad00_Tanne".into();
+    std::fs::write(
+        root.join("SYSTEM/DATA_MP/DEFAULTS/objdef.dau"),
+        format!(
+            "[ObjectDefaults]\n{}\n{}\n",
+            house_columns.join(","),
+            tree_columns.join(",")
+        ),
+    )
+    .unwrap();
+    app.placement.load_session(&map).unwrap();
+
+    app.nature_set_enabled(true);
+    assert!(!app.status_is_error, "{}", app.status_message);
+    app.nature_select_type(i32::from(NATURE_TREE));
+    // 與種植模板無關的既有樹木編輯必須一併保留。
+    app.placement.store_mut().unwrap().set_team(1, 2, 7).unwrap();
+    let planted = app.nature_paint_tile(20, 20);
+    app.nature_end_stroke();
+    assert!(planted.planted > 0);
+    assert!(app.nature_is_dirty());
+
+    place_house(&mut app, (30, 30), 0);
+    let spawn_id = app.scenario.document().spawns[0].id;
+    assert!(app.scenario.dirty());
+    save_ok(&mut app);
+    assert!(!app.nature_is_dirty() && !app.scenario.dirty() && !app.placement.is_dirty());
+
+    let saved = against_rome_scenario::ScenarioDocument::from_json(
+        &std::fs::read(map.join("arm_scenario.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(saved.spawns.iter().any(|spawn| spawn.id == spawn_id && spawn.prebuilt));
+    let binding = saved.data_slots.iter().find(|entry| entry.spawn_id == spawn_id).unwrap();
+    let objects = data_objects(&map);
+    assert!(objects
+        .iter()
+        .any(|object| object.slot as i32 == binding.slot && object.uid == binding.uid));
+    assert_eq!(
+        objects
+            .iter()
+            .filter(|object| object.type_id == NATURE_TREE)
+            .count(),
+        2 + planted.planted,
+        "原有兩棵樹與 Nature 新增物件都應保留"
+    );
+    assert_eq!(objects.iter().find(|object| object.slot == 1).unwrap().team, 7);
+
+    assert_eq!(app.placement.objects(), objects);
+
+    let mut reloaded = EditorApp::initial_state();
+    reloaded
+        .set_loaded_map(map.clone(), crate::storage::load_map(&map).unwrap())
+        .unwrap();
+    reloaded.placement.load_session(&map).unwrap();
+    reloaded.scenario.load_session(&map).unwrap();
+    assert_eq!(reloaded.placement.objects(), objects);
+    assert_eq!(reloaded.scenario.document(), &saved);
+    assert!(reloaded
+        .scenario
+        .document()
+        .data_slots
+        .iter()
+        .any(|entry| entry.spawn_id == spawn_id && entry.slot == binding.slot && entry.uid == binding.uid));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn moved_composite_spawn_diagnostics_use_final_candidate_with_independent_objects_edit() {
+    let (mut app, root, map) = fixture("merged_family_diagnostics", &[]);
+    place_house(&mut app, (30, 30), 0);
+    save_ok(&mut app);
+    let uid = app.scenario.document().data_slots[0].uid;
+    let id = install_two_object_family_with_light(&map, uid);
+
+    let mut loaded = EditorApp::initial_state();
+    loaded.set_loaded_map(map.clone(), TerrainSession::create_blank(5, 32)).unwrap();
+    loaded.scenario.load_session(&map).unwrap();
+    loaded.placement.load_session(&map).unwrap();
+    sync(&mut loaded, &map);
+    loaded.placement.store_mut().unwrap().clone_family_fixed(0, uid, [2048 * 256, 0, 0]).unwrap();
+    loaded.spawn_ui.select_all();
+    loaded.spawn_ui.move_selected(&mut loaded.scenario, &cx(), 512.0, 0.0, false);
+    assert!(!loaded.spawn_ui.status().1, "{}", loaded.spawn_ui.status().0);
+    loaded.water_surface = 1000.0;
+
+    let before = save_file_snapshot(&root);
+    let plan = loaded.preview_spawn_data_for_save(&map).unwrap().unwrap();
+    assert_eq!(plan.scenario.data_slots[0].uid, uid, "複合家族平移保留 UID");
+    assert_eq!(plan.scenario.spawns[0].x, 4512.0);
+    let staged = vec![(PathBuf::from("arm_scenario.json"), plan.scenario.to_json().unwrap())];
+    let diagnostics = loaded.candidate_diagnostics(&map, &staged).unwrap();
+    assert!(diagnostics.map_issues.iter().any(|issue| issue.code == "blocked-building"
+        && issue.object_id == id && issue.world_x == Some(4512.0)),
+        "診斷必須使用同筆交易中已平移的家族位置：{:?}", diagnostics.map_issues);
+    assert_eq!(save_file_snapshot(&root), before, "預覽不得落盤");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn external_data_change_blocks_merged_spawn_save_without_losing_edits() {
+    let (mut app, root, map) = fixture("merged_baseline_drift", &[(232, None)]);
+    app.placement.load_session(&map).unwrap();
+    app.placement.store_mut().unwrap().set_team(0, 1, 3).unwrap();
+    place_house(&mut app, (30, 30), 0);
+    let mut changed = std::fs::read(map.join("DATA/engine.dat")).unwrap();
+    changed[34..38].copy_from_slice(&900u32.to_le_bytes());
+    std::fs::write(map.join("DATA/engine.dat"), changed).unwrap();
+    let before = save_file_snapshot(&root);
+    assert!(!app.save_blockers().is_empty());
+    app.safe_save_current();
+    assert!(app.status_is_error, "外部 DATA 變更必須拒絕合併");
+    assert_eq!(save_file_snapshot(&root), before);
+    assert!(app.placement.is_dirty() && app.scenario.dirty());
     std::fs::remove_dir_all(root).unwrap();
 }
 

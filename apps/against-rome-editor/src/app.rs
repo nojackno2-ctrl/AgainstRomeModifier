@@ -1074,12 +1074,28 @@ impl EditorApp {
         // for bound spawns rather than diagnosing their stale saved positions.
         if self.placement.is_dirty() {
             let objects = self.placement.objects();
+            let saved = match std::fs::read(path.join("arm_scenario.json")) {
+                Ok(bytes) => ScenarioDocument::from_json(&bytes)?,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => ScenarioDocument::default(),
+                Err(e) => return Err(format!("Cannot read saved scenario: {e}")),
+            };
             for binding in document.data_slots.iter().filter(|b| !b.spawn_id.is_nil()) {
                 let spawn = document
                     .spawns
                     .iter_mut()
                     .find(|s| s.id == binding.spawn_id)
                     .ok_or("Diagnostics: missing bound scenario spawn")?;
+                // 新綁定與已修改的生成位置／隊伍以劇本候選為準；複合家族平移可能保留 UID。
+                // 只有仍沿用磁碟劇本的物件，才需要套用 Objects 面板的待存位置與隊伍。
+                let saved_binding = saved.data_slots.iter().any(|b| {
+                    b.spawn_id == binding.spawn_id && b.slot == binding.slot && b.uid == binding.uid
+                });
+                let spawn_changed = saved.spawns.iter().find(|s| s.id == spawn.id).is_none_or(|s| {
+                    [s.x, s.y, s.z] != [spawn.x, spawn.y, spawn.z] || s.team != spawn.team
+                });
+                if !saved_binding || spawn_changed {
+                    continue;
+                }
                 let object = objects.iter().find(|o| o.slot as i32 == binding.slot && o.uid == binding.uid)
                     .ok_or("Diagnostics: pending placement removed or replaced a bound scenario object")?;
                 [spawn.x, spawn.y, spawn.z] = object.position;
@@ -1267,17 +1283,11 @@ impl EditorApp {
         } else {
             Vec::new()
         };
-        for (rel_path, bytes) in &staged_placement {
-            tx.stage_file(rel_path, bytes.clone())?;
-        }
         let staged_nature = if nature_dirty {
             self.stage_nature_files(&path)?
         } else {
             Vec::new()
         };
-        for (rel_path, bytes) in &staged_nature {
-            tx.stage_file(rel_path, bytes.clone())?;
-        }
         let scenario_dirty = self.scenario.dirty() || self.scenario.graph_ui().is_dirty();
         // Save-time DATA transaction of the spawn panel (C# prebuilt block): new buildings become
         // DATA objects, bound spawns move/rebuild, duplicates copy their family. Detached: it only
@@ -1292,6 +1302,12 @@ impl EditorApp {
         if !blockers.is_empty() {
             self.save_blockers_open = true;
             return Err(blockers.iter().map(|b| b.english.as_str()).collect::<Vec<_>>().join("; "));
+        }
+        // spawn 候選已包含 Objects 與 Nature 的修改，只能寫入一份 DATA。
+        if spawn_plan.is_none() {
+            for (rel_path, bytes) in staged_placement.iter().chain(&staged_nature) {
+                tx.stage_file(rel_path, bytes.clone())?;
+            }
         }
         for (rel_path, bytes) in spawn_plan.iter().flat_map(|p| p.files.iter()) {
             tx.stage_file(rel_path, bytes.clone())?;
@@ -5141,6 +5157,12 @@ impl EditorApp {
         let mut next = self.scenario.document().clone();
         let placed = placements.session().objects();
         mark_prebuilt(&mut next.spawns, placed);
+        // 僅新增／修改腳本生成物件時，不重建未變更的預建 DATA，保留 Objects 的合法編輯。
+        if previous.spawns.iter().filter(|s| s.prebuilt).eq(next.spawns.iter().filter(|s| s.prebuilt))
+            && self.spawn_ui.pending_starter_kit().is_none()
+        {
+            return Ok(None);
+        }
         if !next.spawns.iter().any(|s| s.prebuilt) && previous.data_slots.is_empty() {
             return Ok(None);
         }
@@ -5175,7 +5197,23 @@ impl EditorApp {
             (Some(_), None) => return Err("Spawn DATA: starter kit needs trusted terrain data".into()),
             _ => None,
         };
-        against_rome_maps::spawn_data::plan_spawn_data_with_kit(map, &catalog, &previous, &next, placed, pending.as_ref())
+        let candidate = if self.placement.is_dirty() || self.nature.session.is_dirty() {
+            // 沿用面板的路徑、原始地圖及磁碟基準檢查，再將自然地景重播到同一份候選。
+            if self.nature.session.is_dirty() {
+                self.stage_nature_files(map)?;
+            } else {
+                self.placement.stage_transaction_files(map)?;
+                self.placement.verify_disk_baseline(map)?;
+            }
+            Some(self.replay_nature_candidate(map, &self.nature.session, self.placement.detached_store()?)?)
+        } else {
+            None
+        };
+        let plan = match candidate.as_ref() {
+            Some(store) => against_rome_maps::spawn_data::plan_spawn_data_from_store_with_kit(map, store, &catalog, &previous, &next, placed, pending.as_ref()),
+            None => against_rome_maps::spawn_data::plan_spawn_data_with_kit(map, &catalog, &previous, &next, placed, pending.as_ref()),
+        };
+        plan
             .map_err(|e| format!("Spawn DATA: {e}"))
     }
 

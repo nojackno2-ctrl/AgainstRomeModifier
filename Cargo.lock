@@ -191,6 +191,7 @@ dependencies = [
  "against-rome-data",
  "against-rome-landscape",
  "against-rome-navigation",
+ "against-rome-placement",
  "against-rome-scenario",
  "chrono",
  "encoding_rs",

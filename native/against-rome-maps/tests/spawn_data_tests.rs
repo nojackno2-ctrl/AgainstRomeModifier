@@ -4,7 +4,7 @@
 
 use against_rome_maps::sdl_objects::{NativeObjectIdentity, SdlObjectCategory, SdlObjectType, SdlPlacedObject};
 use against_rome_maps::script_aliases::ScriptObjectAlias;
-use against_rome_maps::spawn_data::{intended_prebuilt, mark_prebuilt, plan_spawn_data, SpawnDataCatalog, SpawnDataPlan};
+use against_rome_maps::spawn_data::{intended_prebuilt, mark_prebuilt, plan_spawn_data, plan_spawn_data_from_store, SpawnDataCatalog, SpawnDataPlan};
 use against_rome_maps::starter_kit::native::{ObjectStore, COLUMNS, SEGMENTS};
 use against_rome_scenario::model::{DataSlot, ScenarioDocument, Spawn};
 use std::collections::HashMap;
@@ -194,6 +194,46 @@ fn new_building_becomes_a_prebuilt_data_object_and_nothing_is_written() {
     assert_eq!((o.type_id, o.team), (232, 3));
     assert_eq!(o.position, [9000.0, 20.0, 9000.0]);
     against_rome_scenario::verify_binding_snapshot(&plan.scenario, &plan.active).unwrap();
+}
+
+#[test]
+fn detached_candidate_changes_are_preserved_and_outputs_use_disk_baseline() {
+    let f = fixture(&[(232, None)]);
+    let before = disk_bytes(&f.map);
+    let disk = ObjectStore::load(&f.map).unwrap();
+    let mut candidate = disk.clone();
+    candidate.set_team(0, 1, 7).unwrap();
+    let next = doc(vec![spawn(11, "HOUSE", 9000.0, 9000.0, 3, 0, true)], vec![]);
+    let plan = plan_spawn_data_from_store(
+        &f.map,
+        &candidate,
+        &f.catalog,
+        &ScenarioDocument::default(),
+        &next,
+        &[placed(11, "HOUSE", 9000.0, 9000.0, 3, 0.0)],
+    )
+    .unwrap()
+    .unwrap();
+    let final_store = apply(&plan, &f.map, &f.root);
+    assert_eq!(object_at(&final_store, 0, 1).team, 7, "候選中的既有變更應保留");
+    let binding = plan.scenario.data_slots.iter().find(|b| b.spawn_id == Uuid::from_u128(11)).unwrap();
+    assert_eq!(object_at(&final_store, binding.slot, binding.uid).team, 3);
+    assert_eq!(disk_bytes(&f.map), before, "規劃不得寫入磁碟");
+}
+
+#[test]
+fn detached_candidate_rejects_conflicting_original_spawn_binding() {
+    let f = fixture(&[(232, None)]);
+    let disk = ObjectStore::load(&f.map).unwrap();
+    let mut candidate = disk.clone();
+    candidate.set_team(0, 1, 7).unwrap();
+    let previous = doc(
+        vec![spawn(1, "HOUSE", 4000.0, 4000.0, 0, 90, true)],
+        vec![DataSlot { slot: 0, uid: 1, spawn_id: Uuid::from_u128(1) }],
+    );
+    let next = doc(vec![spawn(1, "HOUSE", 4000.0, 4000.0, 0, 90, true)], vec![]);
+    let error = plan_spawn_data_from_store(&f.map, &candidate, &f.catalog, &previous, &next, &[]).unwrap_err();
+    assert!(error.contains("候選群組與磁碟版本衝突"), "{error}");
 }
 
 #[test]

@@ -271,7 +271,7 @@ impl EditorApp {
                 }
             }
         }
-        // DATA 候選與鏡頭互斥條件和原交易一致，不以清除 dirty 旗標解決。
+        // 預覽使用與正式儲存相同的 DATA 候選。
         let scenario_dirty = self.scenario.dirty() || self.scenario.graph_ui().is_dirty();
         let spawn_plan = if scenario_dirty && !path.as_os_str().is_empty() {
             match self.preview_spawn_data_for_save(&path) {
@@ -391,15 +391,11 @@ impl EditorApp {
         blockers
     }
 
-    /// 預覽與正式 DATA 候選都走同一組互斥檢查，正式候選不信任預覽結果。
-    pub(super) fn save_data_blockers(&self, path: &Path, spawn_data: bool) -> Vec<SaveBlocker> {
+    /// 預覽與正式儲存共用目標路徑檢查。
+    pub(super) fn save_data_blockers(&self, path: &Path, _spawn_data: bool) -> Vec<SaveBlocker> {
         use SaveBlockerKind::*;
         use SavePanel::*;
         let mut blockers = Vec::new();
-        for (dirty, panel) in [(self.placement.is_dirty(), Objects), (self.nature.session.is_dirty(), Nature)] {
-            if !spawn_data || !dirty { continue; }
-            blockers.push(SaveBlocker::new(DataConflict, panel, "Spawn placement DATA changes (prebuilt buildings / bound spawns) cannot be saved together with pending Objects (DATA) or Nature edits; save or discard those first", "生成物件的 DATA 變更不可與物件或自然地景變更同時儲存；請先處理其中一方"));
-        }
         if self.campaign.camera_pending()
             && self
                 .loaded_map_path
