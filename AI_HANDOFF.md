@@ -1,3 +1,14 @@
+## 2026-10-31 Agy：劇本事件瀏覽器搜尋與條件／問題篩選強化
+- 依設計者在劇本事件瀏覽器中無法搜尋條件內容（目標物件 UUID、別名、矩形範圍與移動座標）、缺乏條件種類篩選，以及無法快速過濾存在診斷警告與錯誤事件之缺口，實作：
+  1. 條件與座標深度搜尋：搜尋字串支援條件目標 UUID（含連字號或純十六進位）、目標生成物名稱與別名、條件種類標籤、矩形範圍座標（min/max x, z）以及動作移動目的地座標（destination x, z）。
+  2. 條件種類篩選（`condition_kind`）：於事件瀏覽器加入條件種類下拉選單（任意、物件存在、死亡或已移除、位於矩形區域），支援單獨或與動作種類、隊伍複合篩選。
+  3. 僅問題事件篩選（`issues_only`）：新增「僅問題事件 / Issues only」核取方塊，即時透過 `validate_event_diagnostics` 篩選出存在診斷錯誤或警告之事件，方便設計者快速巡迴除錯。
+  4. 篩選與導覽整合：`clear_filters` 一鍵重設所有篩選；`indices_filtered` 與 `reveal_event` 連動，篩選無結果時提示「無符合篩選條件的事件」。未改變任何磁碟或序列化格式。
+- 驗證：
+  - 新增專項回歸測試 4 項：`event_browser_condition_kind_filter_and_clear`、`event_browser_search_conditions_and_destinations`、`event_browser_issues_only_filter`、`event_browser_renders_condition_filters_and_issues_checkbox` 全數通過。
+  - `scenario_ui` 68 項單元與無頭測試全數通過（68 passed, 0 failed）。
+  - `cargo test --workspace --locked` 287 組全數通過（2827 passed、0 failed、23 ignored）；使用獨立 `%TEMP%` target 建置目錄（已於驗證後清理）。未修改已安裝遊戲，未驗證桌面原生視窗操作。
+
 ## 2026-10-31 Claude：匯出 ZIP 後自動讀回驗證
 - 匯出模組套件後原本直接顯示成功；現於 `packaging_ui::run_export` 寫出後立刻呼叫 `ModBundleExporter::verify_zip`（封包不變式＋每個 payload 的 SHA-256 重新讀取），失敗則顯示錯誤並提示勿散布、重新匯出。成功訊息改為「匯出並通過讀回驗證」。放置越界已由 move/place 拒絕，故未重做。
 - 驗證：`designer_workflow_e2e` 匯出測試補斷言（非錯誤、訊息含已驗證）；`cargo test --workspace --locked`（獨立 %TEMP% target，已清理）287 組、2823 passed、0 failed、23 ignored。讀回失敗分支無自動測試（難以在不損壞檔案下觸發）；未驗證桌面視窗；未修改安裝遊戲。

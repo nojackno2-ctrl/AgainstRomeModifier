@@ -194,8 +194,10 @@ struct EventBrowser {
     search: String,
     team: Option<i32>,
     kind: Option<i32>,
+    condition_kind: Option<i32>,
     enabled_only: bool,
     disabled_only: bool,
+    issues_only: bool,
     time_order: bool,
 }
 impl EventBrowser {
@@ -209,19 +211,96 @@ impl EventBrowser {
         *self = Self { time_order, ..Default::default() };
     }
     fn indices(&self, events: &[Event]) -> Vec<usize> {
+        self.indices_filtered(events, &[], &[])
+    }
+    fn indices_filtered(
+        &self,
+        events: &[Event],
+        targets: &[(Spawn, String)],
+        aliases: &[String],
+    ) -> Vec<usize> {
         let query = self.search.trim().to_lowercase();
-        let mut indices: Vec<_> = events.iter().enumerate().filter(|(_, e)| {
-            (!self.enabled_only || e.enabled) && (!self.disabled_only || !e.enabled)
-                && self.team.is_none_or(|team| e.actions.iter().any(|a| a.team == team || a.other_team == team))
-                && self.kind.is_none_or(|kind| e.actions.iter().any(|a| a.kind == kind))
-                && (query.is_empty() || e.name.to_lowercase().contains(&query)
-                    || e.actions.iter().any(|a| a.text.to_lowercase().contains(&query)
-                        || a.alias.to_lowercase().contains(&query)))
-        }).map(|(i, _)| i).collect();
+        let query_compact = query.replace('-', "");
+        let mut indices: Vec<_> = events
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| {
+                if self.enabled_only && !e.enabled {
+                    return false;
+                }
+                if self.disabled_only && e.enabled {
+                    return false;
+                }
+                if let Some(team) = self.team {
+                    if !e.actions.iter().any(|a| a.team == team || a.other_team == team) {
+                        return false;
+                    }
+                }
+                if let Some(kind) = self.kind {
+                    if !e.actions.iter().any(|a| a.kind == kind) {
+                        return false;
+                    }
+                }
+                if let Some(cond_kind) = self.condition_kind {
+                    if !e.conditions.iter().any(|c| c.kind == cond_kind) {
+                        return false;
+                    }
+                }
+                if self.issues_only {
+                    let diags = validate_event_diagnostics(e, targets, aliases);
+                    if diags.is_empty() {
+                        return false;
+                    }
+                }
+                if !query.is_empty() {
+                    let matches_name = e.name.to_lowercase().contains(&query);
+                    let matches_action = e.actions.iter().any(|a| {
+                        a.text.to_lowercase().contains(&query)
+                            || a.alias.to_lowercase().contains(&query)
+                            || action_kind_label(a.kind, true).to_lowercase().contains(&query)
+                            || action_kind_label(a.kind, false).contains(&query)
+                            || a.move_destination
+                                .as_ref()
+                                .map(|p| p.x.to_string().contains(&query) || p.z.to_string().contains(&query))
+                                .unwrap_or(false)
+                    });
+                    let matches_condition = e.conditions.iter().any(|c| {
+                        let target_str = c.target_id.to_string();
+                        target_str.contains(&query)
+                            || (!query_compact.is_empty() && target_str.replace('-', "").contains(&query_compact))
+                            || condition_kind_label(c.kind, true).to_lowercase().contains(&query)
+                            || condition_kind_label(c.kind, false).contains(&query)
+                            || targets.iter().any(|(s, name)| {
+                                s.id == c.target_id
+                                    && (name.to_lowercase().contains(&query)
+                                        || s.alias.to_lowercase().contains(&query))
+                            })
+                            || (c.kind == 2
+                                && (c.min_x.to_string().contains(&query)
+                                    || c.max_x.to_string().contains(&query)
+                                    || c.min_z.to_string().contains(&query)
+                                    || c.max_z.to_string().contains(&query)))
+                    });
+                    if !matches_name && !matches_action && !matches_condition {
+                        return false;
+                    }
+                }
+                true
+            })
+            .map(|(i, _)| i)
+            .collect();
         if self.time_order {
             indices.sort_by_key(|&i| (events[i].delay_seconds, i));
         }
         indices
+    }
+}
+fn condition_kind_label(kind: i32, en: bool) -> &'static str {
+    match kind {
+        0 => tl(en, "物件存在", "Object exists"),
+        1 => tl(en, "死亡或已移除", "Dead or removed"),
+        2 => tl(en, "位於矩形區域", "Inside rectangle"),
+        _ => tl(en, "未知", "Unknown"),
     }
 }
 fn action_kind_label(kind: i32, en: bool) -> &'static str {
@@ -235,12 +314,7 @@ fn action_kind_label(kind: i32, en: bool) -> &'static str {
     }
 }
 fn event_summary(event: &Event, en: bool) -> String {
-    let kinds: Vec<_> = event.conditions.iter().map(|c| match c.kind {
-        0 => tl(en, "物件存在", "Object exists"),
-        1 => tl(en, "死亡或已移除", "Dead or removed"),
-        2 => tl(en, "位於矩形區域", "Inside rectangle"),
-        _ => tl(en, "未知", "Unknown"),
-    }).collect();
+    let kinds: Vec<_> = event.conditions.iter().map(|c| condition_kind_label(c.kind, en)).collect();
     let actions: Vec<_> = event.actions.iter().map(|a| {
         let label = action_kind_label(a.kind, en);
         match a.kind {
@@ -470,12 +544,20 @@ impl ScenarioUi {
             if self.events.replace_all(&current).is_ok() { self.record_event_commit(&before); }
         }
     }
+    fn spawn_targets(&self) -> Vec<(Spawn, String)> {
+        self.document
+            .spawns
+            .iter()
+            .map(|s| (s.clone(), s.alias.clone()))
+            .collect()
+    }
     pub(crate) fn reveal_event(&mut self, index: usize) {
         if index >= self.document.events.len() {
             return;
         }
         self.selected = index;
-        if !self.browser.indices(&self.document.events).contains(&index) {
+        let targets = self.spawn_targets();
+        if !self.browser.indices_filtered(&self.document.events, &targets, &self.aliases).contains(&index) {
             self.browser.clear_filters();
         }
     }
@@ -1570,9 +1652,14 @@ impl ScenarioUi {
 
     fn show_event_browser(&mut self, ui: &mut egui::Ui) {
         let en = self.english;
+        let targets = self.spawn_targets();
         let browser = &mut self.browser;
         ui.horizontal_wrapped(|ui| {
-            ui.label(tl(en, "搜尋事件名稱／動作文字／別名", "Search event name / action text / alias"));
+            ui.label(tl(
+                en,
+                "搜尋（名稱／動作／條件／目標UUID／別名）",
+                "Search (name / action / condition / target UUID / alias)",
+            ));
             ui.text_edit_singleline(&mut browser.search);
             if ui.small_button(tl(en, "清除搜尋", "Clear search")).clicked() {
                 browser.clear_search();
@@ -1593,12 +1680,25 @@ impl ScenarioUi {
                     ui.selectable_value(&mut browser.kind, None, tl(en, "任意", "Any"));
                     for kind in 0..=4 { ui.selectable_value(&mut browser.kind, Some(kind), action_kind_label(kind, en)); }
                 });
-            if ui.checkbox(&mut browser.enabled_only, tl(en, "僅啟用事件", "Enabled only")).changed() {
+            ui.label(tl(en, "條件種類", "Condition kind"));
+            egui::ComboBox::from_id_source("event_browser_cond_kind")
+                .selected_text(browser.condition_kind.map(|k| condition_kind_label(k, en)).unwrap_or(tl(en, "任意", "Any")))
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut browser.condition_kind, None, tl(en, "任意", "Any"));
+                    for k in 0..=2 { ui.selectable_value(&mut browser.condition_kind, Some(k), condition_kind_label(k, en)); }
+                });
+            if ui.checkbox(&mut browser.enabled_only, tl(en, "僅啟用", "Enabled only")).changed() {
                 browser.disabled_only = false;
             }
-            if ui.checkbox(&mut browser.disabled_only, tl(en, "僅停用事件", "Disabled only")).changed() {
+            if ui.checkbox(&mut browser.disabled_only, tl(en, "僅停用", "Disabled only")).changed() {
                 browser.enabled_only = false;
             }
+            ui.checkbox(&mut browser.issues_only, tl(en, "僅問題事件", "Issues only"))
+                .on_hover_text(tl(
+                    en,
+                    "僅顯示存在診斷錯誤或警告的事件",
+                    "Show only events with diagnostic errors or warnings",
+                ));
             if ui.button(tl(en, "清除篩選", "Clear filters")).clicked() {
                 browser.clear_filters();
             }
@@ -1606,10 +1706,13 @@ impl ScenarioUi {
             ui.selectable_value(&mut browser.time_order, false, tl(en, "原始順序", "Original order"));
             ui.selectable_value(&mut browser.time_order, true, tl(en, "時間", "Time"));
         });
-        let indices = browser.indices(&self.document.events);
+        let indices = browser.indices_filtered(&self.document.events, &targets, &self.aliases);
         ui.horizontal(|ui| {
             ui.label(if en { format!("{} of {} events", indices.len(), self.document.events.len()) }
                 else { format!("顯示 {} / {} 個事件", indices.len(), self.document.events.len()) });
+            if indices.is_empty() && !self.document.events.is_empty() {
+                ui.colored_label(egui::Color32::from_rgb(200, 160, 80), tl(en, "（無符合篩選條件的事件）", "(No events match filter)"));
+            }
             if !indices.is_empty() {
                 let (enable_label, disable_label) = if indices.len() == self.document.events.len() {
                     (tl(en, "啟用全部", "Enable all"), tl(en, "停用全部", "Disable all"))
@@ -1691,7 +1794,6 @@ impl ScenarioUi {
                 self.browser.clear_filters();
             }
         }
-        let targets: Vec<_> = self.document.spawns.iter().map(|s| (s.clone(), s.alias.clone())).collect();
         for i in indices {
             let event = &self.document.events[i];
             let has_err = validate_event_diagnostics(event, &targets, &self.aliases)
@@ -4732,6 +4834,222 @@ mod tests {
             }
             assert!(found_labels.iter().any(|l| l == up_btn), "missing {up_btn} in {found_labels:?}");
             assert!(found_labels.iter().any(|l| l == down_btn), "missing {down_btn} in {found_labels:?}");
+
+            fs::remove_dir_all(p).unwrap();
+        }
+    }
+
+    #[test]
+    fn event_browser_condition_kind_filter_and_clear() {
+        let target_id = uuid::Uuid::new_v4();
+        let events = vec![
+            Event {
+                name: "CondExists".into(),
+                conditions: vec![Condition { kind: 0, target_id, ..Default::default() }],
+                actions: vec![Action { kind: 0, text: "msg".into(), ..Default::default() }],
+                ..Default::default()
+            },
+            Event {
+                name: "CondDead".into(),
+                conditions: vec![Condition { kind: 1, target_id, ..Default::default() }],
+                actions: vec![Action { kind: 0, text: "msg".into(), ..Default::default() }],
+                ..Default::default()
+            },
+            Event {
+                name: "CondRect".into(),
+                conditions: vec![Condition {
+                    kind: 2,
+                    target_id,
+                    min_x: 1000,
+                    max_x: 2000,
+                    min_z: 3000,
+                    max_z: 4000,
+                }],
+                actions: vec![Action { kind: 0, text: "msg".into(), ..Default::default() }],
+                ..Default::default()
+            },
+        ];
+
+        let mut browser = EventBrowser::default();
+        assert_eq!(browser.indices(&events), vec![0, 1, 2]);
+
+        browser.condition_kind = Some(0);
+        assert_eq!(browser.indices(&events), vec![0]);
+
+        browser.condition_kind = Some(1);
+        assert_eq!(browser.indices(&events), vec![1]);
+
+        browser.condition_kind = Some(2);
+        assert_eq!(browser.indices(&events), vec![2]);
+
+        browser.condition_kind = Some(99);
+        assert!(browser.indices(&events).is_empty());
+
+        browser.clear_filters();
+        assert_eq!(browser.condition_kind, None);
+        assert_eq!(browser.indices(&events), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn event_browser_search_conditions_and_destinations() {
+        let spawn_id = uuid::Uuid::parse_str("12345678-1234-5678-1234-567812345678").unwrap();
+        let targets = vec![(
+            Spawn {
+                id: spawn_id,
+                alias: "ROM_LEG01".into(),
+                ..Default::default()
+            },
+            "Legion Leader".into(),
+        )];
+        let events = vec![
+            Event {
+                name: "Event Alpha".into(),
+                conditions: vec![Condition { kind: 1, target_id: spawn_id, ..Default::default() }],
+                actions: vec![Action { kind: 0, text: "Alpha done".into(), ..Default::default() }],
+                ..Default::default()
+            },
+            Event {
+                name: "Event Beta".into(),
+                conditions: vec![Condition {
+                    kind: 2,
+                    min_x: 7777,
+                    max_x: 8888,
+                    min_z: 1111,
+                    max_z: 2222,
+                    ..Default::default()
+                }],
+                actions: vec![Action {
+                    kind: 2,
+                    alias: "GER_INF00".into(),
+                    move_destination: Some(WorldPosition { x: 9999, z: 8888 }),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        ];
+
+        // Search by UUID string
+        let b = EventBrowser { search: "12345678-1234".into(), ..Default::default() };
+        assert_eq!(b.indices_filtered(&events, &targets, &[]), vec![0]);
+
+        // Search by compact UUID (without dashes)
+        let b = EventBrowser { search: "567812345678".into(), ..Default::default() };
+        assert_eq!(b.indices_filtered(&events, &targets, &[]), vec![0]);
+
+        // Search by referenced spawn alias
+        let b = EventBrowser { search: "rom_leg".into(), ..Default::default() };
+        assert_eq!(b.indices_filtered(&events, &targets, &[]), vec![0]);
+
+        // Search by referenced spawn name
+        let b = EventBrowser { search: "Legion Leader".into(), ..Default::default() };
+        assert_eq!(b.indices_filtered(&events, &targets, &[]), vec![0]);
+
+        // Search by condition rect coordinate
+        let b = EventBrowser { search: "7777".into(), ..Default::default() };
+        assert_eq!(b.indices_filtered(&events, &targets, &[]), vec![1]);
+
+        // Search by action move destination coordinate
+        let b = EventBrowser { search: "9999".into(), ..Default::default() };
+        assert_eq!(b.indices_filtered(&events, &targets, &[]), vec![1]);
+    }
+
+    #[test]
+    fn event_browser_issues_only_filter() {
+        let spawn_id = uuid::Uuid::new_v4();
+        let targets = vec![(
+            Spawn { id: spawn_id, alias: "GER_INF00".into(), ..Default::default() },
+            "Spawn 1".into(),
+        )];
+        let aliases = vec!["GER_INF00".to_string()];
+
+        let valid_ev = Event {
+            name: "Valid Event".into(),
+            delay_seconds: 10,
+            repeat: false,
+            conditions: vec![Condition { kind: 0, target_id: spawn_id, ..Default::default() }],
+            actions: vec![Action { kind: 0, text: "Hello".into(), ..Default::default() }],
+            ..Default::default()
+        };
+        let bad_timing = Event {
+            name: "Bad Timing".into(),
+            delay_seconds: 0,
+            repeat: true, // error: delay must be > 0 when repeat
+            conditions: vec![Condition { kind: 0, target_id: spawn_id, ..Default::default() }],
+            actions: vec![Action { kind: 0, text: "Infinite loop".into(), ..Default::default() }],
+            ..Default::default()
+        };
+        let bad_alias = Event {
+            name: "Bad Alias".into(),
+            delay_seconds: 5,
+            conditions: vec![Condition { kind: 0, target_id: spawn_id, ..Default::default() }],
+            actions: vec![Action {
+                kind: 2,
+                alias: "NON_EXISTENT_TROOP".into(),
+                x: 1000.0,
+                z: 1000.0,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let events = vec![valid_ev, bad_timing, bad_alias];
+        let mut browser = EventBrowser { issues_only: true, ..Default::default() };
+        assert_eq!(browser.indices_filtered(&events, &targets, &aliases), vec![1, 2]);
+
+        browser.clear_filters();
+        assert!(!browser.issues_only);
+        assert_eq!(browser.indices_filtered(&events, &targets, &aliases), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn event_browser_renders_condition_filters_and_issues_checkbox() {
+        fn collect_text(shape: &egui::epaint::Shape, out: &mut Vec<String>) {
+            match shape {
+                egui::epaint::Shape::Text(text) => out.push(text.galley.text().to_owned()),
+                egui::epaint::Shape::Vec(shapes) => {
+                    for s in shapes {
+                        collect_text(s, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+        for &english in &[false, true] {
+            let p = source();
+            let mut ui = ScenarioUi::default();
+            ui.load_now(&p).unwrap();
+            ui.english = english;
+            ui.open = true;
+
+            let ev1 = ev("Alpha");
+            ui.add_events(&[ev1]).unwrap();
+
+            let ctx = egui::Context::default();
+            let input = || egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1800.0, 1400.0),
+                )),
+                ..Default::default()
+            };
+            let _ = ctx.run(input(), |ctx| ui.show(ctx));
+            let output = ctx.run(input(), |ctx| ui.show(ctx));
+            let mut found_labels = Vec::new();
+            for shape in &output.shapes {
+                collect_text(&shape.shape, &mut found_labels);
+            }
+
+            let cond_label = if english { "Condition kind" } else { "條件種類" };
+            let issues_label = if english { "Issues only" } else { "僅問題事件" };
+
+            assert!(
+                found_labels.iter().any(|l| l.contains(cond_label)),
+                "missing {cond_label} in {found_labels:?}"
+            );
+            assert!(
+                found_labels.iter().any(|l| l.contains(issues_label)),
+                "missing {issues_label} in {found_labels:?}"
+            );
 
             fs::remove_dir_all(p).unwrap();
         }
