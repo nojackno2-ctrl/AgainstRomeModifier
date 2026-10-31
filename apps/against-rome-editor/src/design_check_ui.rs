@@ -748,6 +748,38 @@ impl EditorApp {
         map_issues
     }
 
+    fn check_inverted_rect_issues(events: &[against_rome_scenario::Event]) -> Vec<MapIssue> {
+        let mut map_issues = Vec::new();
+        for (idx, event) in events.iter().enumerate() {
+            for (cond_idx, cond) in event.conditions.iter().enumerate() {
+                if cond.kind == 2 && (cond.min_x > cond.max_x || cond.min_z > cond.max_z) {
+                    let name = if event.name.trim().is_empty() {
+                        format!("Event #{}", idx + 1)
+                    } else {
+                        event.name.clone()
+                    };
+                    let mut issue = MapIssue::new(
+                        MapIssueSeverity::Error,
+                        "scenario-inverted-rect",
+                        format!(
+                            "事件「{name}」（第 {} 項）條件 #{} 矩形範圍無效（min X > max X 或 min Z > max Z）。遊戲引擎要求最小座標必須小於或等於最大座標。請點擊快速修正以自動正規化範圍。",
+                            idx + 1,
+                            cond_idx + 1
+                        ),
+                        format!(
+                            "Event '{name}' (#{idx_1}) condition #{cond_1} rectangle area invalid (min X > max X or min Z > max Z). Game requires min <= max. Please click quick fix to normalize rectangle bounds.",
+                            idx_1 = idx + 1,
+                            cond_1 = cond_idx + 1
+                        ),
+                    );
+                    issue.event_index = idx as i32;
+                    map_issues.push(issue);
+                }
+            }
+        }
+        map_issues
+    }
+
     fn check_missing_target_issues(
         doc: &against_rome_scenario::model::ScenarioDocument,
     ) -> Vec<MapIssue> {
@@ -807,6 +839,7 @@ impl EditorApp {
                 let mut issues = Self::check_terminal_repeat_issues(&doc.events);
                 issues.extend(Self::check_terminal_not_last_issues(&doc.events));
                 issues.extend(Self::check_missing_target_issues(&doc));
+                issues.extend(Self::check_inverted_rect_issues(&doc.events));
                 if !issues.is_empty() {
                     return DesignCheckReport::Checked {
                         map_issues: issues,
@@ -825,6 +858,7 @@ impl EditorApp {
                 let mut issues = Self::check_terminal_repeat_issues(&doc.events);
                 issues.extend(Self::check_terminal_not_last_issues(&doc.events));
                 issues.extend(Self::check_missing_target_issues(&doc));
+                issues.extend(Self::check_inverted_rect_issues(&doc.events));
                 if !issues.is_empty() {
                     return DesignCheckReport::Checked {
                         map_issues: issues,
@@ -871,6 +905,18 @@ impl EditorApp {
                         }
                     }
                     map_issues.extend(missing_target_issues);
+                }
+                let inverted_rect_issues = Self::check_inverted_rect_issues(&doc.events);
+                if !inverted_rect_issues.is_empty() {
+                    if let Some(ref err) = preflight_error {
+                        if err.contains("invalid area")
+                            || err.contains("區域條件座標範圍無效")
+                            || err.contains("Min <= Max")
+                        {
+                            preflight_error = None;
+                        }
+                    }
+                    map_issues.extend(inverted_rect_issues);
                 }
                 DesignCheckReport::Checked {
                     map_issues,
@@ -1292,26 +1338,53 @@ impl EditorApp {
         let mut count = 0;
         for event in events.iter_mut() {
             let total = event.actions.len();
-            let has_non_last = event.actions.iter().enumerate().any(|(i, a)| {
-                (a.kind == 3 || a.kind == 4) && i + 1 != total
-            });
-            if has_non_last {
-                let mut non_term = Vec::new();
-                let mut term = Vec::new();
-                for a in event.actions.drain(..) {
-                    if a.kind == 3 || a.kind == 4 {
-                        term.push(a);
-                    } else {
-                        non_term.push(a);
+            let term_count = event.actions.iter().filter(|a| a.kind == 3 || a.kind == 4).count();
+            if term_count == 1 {
+                let has_non_last = event.actions.iter().enumerate().any(|(i, a)| {
+                    (a.kind == 3 || a.kind == 4) && i + 1 != total
+                });
+                if has_non_last {
+                    let mut non_term = Vec::new();
+                    let mut term = Vec::new();
+                    for a in event.actions.drain(..) {
+                        if a.kind == 3 || a.kind == 4 {
+                            term.push(a);
+                        } else {
+                            non_term.push(a);
+                        }
                     }
-                }
-                if term.len() > 1 {
-                    let last_term = term.pop().unwrap();
-                    non_term.push(last_term);
-                } else {
                     non_term.extend(term);
+                    event.actions = non_term;
+                    count += 1;
                 }
-                event.actions = non_term;
+            }
+        }
+        if count > 0 {
+            self.scenario.replace_events(events)?;
+        }
+        self.run_design_check();
+        Ok(count)
+    }
+
+    /// 將所有矩形範圍顛倒（min > max）的條件座標正規化（交換 min 與 max），整批套用並重新執行設計檢查。
+    pub fn fix_inverted_rect_conditions(&mut self) -> Result<usize, String> {
+        let path = self
+            .loaded_map_path
+            .clone()
+            .ok_or_else(|| tr(self.lang(), "No map loaded.", "尚未載入地圖。").to_string())?;
+        if !self.scenario.is_loaded() {
+            self.scenario.load_session(&path)?;
+        }
+        let mut events = self.scenario.document().events.clone();
+        let mut count = 0;
+        for event in events.iter_mut() {
+            let mut event_modified = false;
+            for cond in event.conditions.iter_mut() {
+                if crate::scenario_ui::normalize_condition_bounds(cond) {
+                    event_modified = true;
+                }
+            }
+            if event_modified {
                 count += 1;
             }
         }
@@ -1434,6 +1507,7 @@ impl EditorApp {
         let mut fix_terminal_repeat = false;
         let mut fix_terminal_not_last = false;
         let mut fix_missing_targets = false;
+        let mut fix_inverted_rects = false;
         let mut locate: Option<usize> = None;
         let rows = self.design_check.get_or_compute_rows(lang).to_vec();
         let mut selected = self.design_check.selected.filter(|i| *i < rows.len());
@@ -1551,6 +1625,19 @@ impl EditorApp {
                             .clicked()
                     {
                         fix_missing_targets = true;
+                    }
+                    let has_inverted_rects = rows.iter().any(|r| r.code == "scenario-inverted-rect");
+                    if has_inverted_rects
+                        && ui
+                            .button(tr(lang, "Normalize rectangular conditions", "正規化矩形條件範圍"))
+                            .on_hover_text(tr(
+                                lang,
+                                "Automatically swaps min/max coordinates so that min <= max for rectangular conditions to satisfy game validation",
+                                "自動交換矩形條件之 min/max 座標使其符合 min <= max，以解除遊戲驗證與存檔封鎖",
+                            ))
+                            .clicked()
+                    {
+                        fix_inverted_rects = true;
                     }
                     let can_locate = selected
                         .and_then(|i| rows.get(i))
@@ -1851,6 +1938,26 @@ impl EditorApp {
                 }
                 Ok(_) => {
                     self.status_message = tr(lang, "No events with missing targets found.", "未發現參照遺失目標的事件。").into();
+                    self.status_is_error = false;
+                }
+                Err(e) => {
+                    self.status_message = e;
+                    self.status_is_error = true;
+                }
+            }
+        } else if fix_inverted_rects {
+            match self.fix_inverted_rect_conditions() {
+                Ok(n) if n > 0 => {
+                    self.status_message = match lang {
+                        AppLanguage::English => {
+                            format!("Normalized bounds in {n} event(s); Save to write them.")
+                        }
+                        _ => format!("已正規化 {n} 個事件的矩形條件範圍；請存檔以寫入變更。"),
+                    };
+                    self.status_is_error = false;
+                }
+                Ok(_) => {
+                    self.status_message = tr(lang, "No inverted rectangular conditions found.", "未發現座標顛倒的矩形條件。").into();
                     self.status_is_error = false;
                 }
                 Err(e) => {
@@ -2625,6 +2732,19 @@ mod tests {
         assert_eq!(event_undone.actions[0].kind, 3);
         assert_eq!(event_undone.actions[1].kind, 0);
 
+        // Also verify multiple terminal actions are NOT modified, preserving data safely without loss
+        let mut multi_term_event = app.scenario.document().events[0].clone();
+        multi_term_event.actions = vec![
+            against_rome_scenario::Action { kind: 3, ..Default::default() },
+            against_rome_scenario::Action { kind: 0, text: "Msg1".into(), ..Default::default() },
+            against_rome_scenario::Action { kind: 4, ..Default::default() },
+        ];
+        app.scenario.replace_event(0, multi_term_event).unwrap();
+        let fixed_multi = app.fix_terminal_not_last().unwrap();
+        assert_eq!(fixed_multi, 0, "Conflicting multiple terminal actions should not be auto-deleted");
+        let event_preserved = &app.scenario.document().events[0];
+        assert_eq!(event_preserved.actions.len(), 3, "All actions preserved without data loss");
+
         let _ = std::fs::remove_dir_all(temp_dir);
     }
 
@@ -2637,6 +2757,130 @@ mod tests {
             "scenario-terminal-not-last",
             "事件包含勝利或失敗動作但未置於最後一項",
             "Event contains a victory or defeat action that is not the last action",
+        );
+        issue.event_index = 0;
+        app.design_check.report = Some(DesignCheckReport::Checked {
+            map_issues: vec![issue],
+            preflight_error: None,
+            design_issues: vec![],
+        });
+
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| app.show_design_check(ctx));
+        assert!(app.design_check.open);
+    }
+
+    #[test]
+    fn test_scenario_inverted_rect_detection_and_quick_fix() {
+        let temp_dir = std::env::temp_dir().join(format!("arm_inverted_rect_{}", Uuid::new_v4()));
+        let script_dir = temp_dir.join("SCRIPT");
+        std::fs::create_dir_all(&script_dir).unwrap();
+        std::fs::write(temp_dir.join(".arm_custom_map"), b"{}").unwrap();
+        std::fs::write(
+            script_dir.join("ak_level.bci"),
+            against_rome_scenario::BciImage::idle().serialize(),
+        )
+        .unwrap();
+
+        let mut app = EditorApp::default();
+        let session = crate::TerrainSession::create_blank(5, 32);
+        app.set_loaded_map(temp_dir.clone(), session).unwrap();
+        app.scenario.load_session(&temp_dir).unwrap();
+
+        let spawn = against_rome_scenario::Spawn {
+            alias: "GER_INF00".into(),
+            x: 1000.0,
+            y: 0.0,
+            z: 1000.0,
+            team: 0,
+            count: 4,
+            angle: 0,
+            prebuilt: false,
+            id: Uuid::new_v4(),
+            raw_rotation: None,
+        };
+        let spawn_id = spawn.id;
+        app.scenario.apply_spawns(vec![spawn]).unwrap();
+
+        // Initially add a valid event
+        let event = against_rome_scenario::Event {
+            name: "Trigger_Ambush_Area".into(),
+            enabled: false,
+            repeat: false,
+            delay_seconds: 5,
+            conditions: vec![
+                against_rome_scenario::Condition {
+                    kind: 2, // In rectangle
+                    target_id: spawn_id,
+                    min_x: 1000,
+                    max_x: 2000,
+                    min_z: 500,
+                    max_z: 3000,
+                    ..Default::default()
+                },
+            ],
+            actions: vec![
+                against_rome_scenario::Action {
+                    kind: 0, // Message
+                    text: "Ambush!".into(),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        app.scenario.add_events(&[event]).unwrap();
+
+        // Simulate designer inverting rectangle bounds in the editor
+        let mut inverted_event = app.scenario.document().events[0].clone();
+        inverted_event.conditions[0].min_x = 2000;
+        inverted_event.conditions[0].max_x = 1000;
+        inverted_event.conditions[0].min_z = 3000;
+        inverted_event.conditions[0].max_z = 500;
+        app.scenario.replace_event(0, inverted_event).unwrap();
+
+        let report = app.design_check_report();
+        let rows = report_rows(&report, &[], AppLanguage::English);
+        let inverted_issue = rows.iter().find(|r| r.code == "scenario-inverted-rect");
+        assert!(inverted_issue.is_some(), "Should detect event with inverted rectangle bounds");
+        let issue = inverted_issue.unwrap();
+        assert_eq!(issue.severity, MapIssueSeverity::Error);
+        assert_eq!(issue.event_index, 0);
+        assert!(issue.is_locatable());
+        assert!(issue.text(AppLanguage::English).contains("Trigger_Ambush_Area"));
+        assert!(issue.text(AppLanguage::TraditionalChinese).contains("Trigger_Ambush_Area"));
+
+        let fixed = app.fix_inverted_rect_conditions().unwrap();
+        assert_eq!(fixed, 1);
+        let event_after = &app.scenario.document().events[0];
+        assert_eq!(event_after.conditions[0].min_x, 1000);
+        assert_eq!(event_after.conditions[0].max_x, 2000);
+        assert_eq!(event_after.conditions[0].min_z, 500);
+        assert_eq!(event_after.conditions[0].max_z, 3000);
+
+        let report_after = app.design_check_report();
+        let rows_after = report_rows(&report_after, &[], AppLanguage::English);
+        assert!(!rows_after.iter().any(|r| r.code == "scenario-inverted-rect"));
+
+        // Single undo step recovers original inverted bounds
+        assert!(app.scenario.undo_events());
+        let event_undone = &app.scenario.document().events[0];
+        assert_eq!(event_undone.conditions[0].min_x, 2000);
+        assert_eq!(event_undone.conditions[0].max_x, 1000);
+        assert_eq!(event_undone.conditions[0].min_z, 3000);
+        assert_eq!(event_undone.conditions[0].max_z, 500);
+
+        let _ = std::fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_quick_fix_button_shown_for_inverted_rect() {
+        let mut app = EditorApp::default();
+        app.design_check.open = true;
+        let mut issue = MapIssue::new(
+            MapIssueSeverity::Error,
+            "scenario-inverted-rect",
+            "事件包含矩形條件但 min 座標大於 max 座標",
+            "Event contains a rectangular condition where min exceeds max",
         );
         issue.event_index = 0;
         app.design_check.report = Some(DesignCheckReport::Checked {
