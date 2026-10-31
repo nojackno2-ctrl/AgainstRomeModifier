@@ -2,8 +2,10 @@
 - 放置越界已由既有 move/place/匯入限制處理，故改做：`maps_ui.rs` 新增 `duplicate_map_name`，在複製與空白／平坦範本的名稱欄位旁，若目錄中已有同名（不分大小寫、忽略前後空白）地圖，顯示黃色雙語非阻擋提示並指出衝突的 `ENDL_###`；不阻止建置。
 - 驗證：新增 `duplicate_map_name_finds_case_insensitive_clash_and_ignores_blank`；`cargo test --workspace --locked`（獨立 %TEMP% target，已清理）287 組、2837 passed、0 failed、23 ignored。未驗證桌面視窗；未修改已安裝遊戲。僅提交 `maps_ui.rs` 與本條目。
 
-## 2026-10-31 Codex：材質自動繪製（進行中）
-- 材質視窗新增一鍵試算並繪製相容材質，保留整次復原；workspace 驗證進行中。
+## 2026-10-31 Codex：材質自動繪製
+- 材質視窗新增一鍵試算並繪製相容材質，保留整次復原；新增回歸測試。
+- 乾淨 ff26281 worktree：`cargo test --workspace --locked` 287 組、2835 passed、0 failed、23 ignored；已移除 worktree。
+- 修改後 `cargo check --workspace --locked`、`cargo test --workspace --locked`（287 組、2837 passed、0 failed、23 ignored，含並行地圖變更）及 `cargo build --workspace --locked` 通過；未驗證桌面操作。
 - 檢視 7ab870d：僅停用符合條件的事件，保留其他欄位並可復原；停用會改變劇本行為。未修改安裝遊戲。
 
 ## 2026-10-31 Codex：材質相容建議
