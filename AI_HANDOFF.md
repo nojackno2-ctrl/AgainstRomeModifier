@@ -1,3 +1,7 @@
+## 2026-10-31 Codex：合併後劇本審查
+- 審查 7e1c103：修正 Windows-1251 診斷與編譯器編碼不一致、空目標清單及事件瀏覽器漏報遺失目標，並保留刪除被引用物件時的既有錯誤契約。條件排序與正規化沿用既有復原流程；未改變序列化格式。
+- 正常 TEMP 合併 HEAD：cargo test --workspace --locked 287 組、2810 passed、0 failed、23 ignored。修正後 cargo check --workspace --locked、cargo test --workspace --locked（287 組、2811 passed、0 failed、23 ignored）、cargo build --workspace --locked 均通過。首次修正後測試因並行測試鎖住 EXE 失敗，循序重跑發現刪除提示回歸，修復後全數通過。未修改已安裝遊戲；桌面操作及遊戲內相容性未驗證。
+
 ## 2026-10-31 Agy：劇本事件即時診斷、矩形條件邊界正規化與條件排序
 - 依設計者編輯劇本事件時若輸入無效觸發延遲、矩形範圍反轉（min > max）、目標物件遺失、外交同隊或勝敗動作未置於最後時，缺乏即時診斷回饋且編譯失敗訊息模糊之缺口，實作：
   1. `EventDiagnostic` 與 `validate_event_diagnostics`：涵蓋觸發延遲（repeat 延遲需 > 0）、名稱長度、條件上限與有效目標、矩形邊界（min <= max 且座標合規）、勝敗動作終止性（不可重複且置於末位）、外交隊伍相異性、部隊型錄別名驗證、訊息文字 Windows-1251 與長度校驗；於事件編輯器頂部呈現雙語錯誤／警告摘要面板，並在條件／動作欄位旁標註醒目警告。

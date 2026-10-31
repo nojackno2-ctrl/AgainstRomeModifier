@@ -157,6 +157,7 @@ dependencies = [
  "against-rome-scene",
  "against-rome-textures",
  "eframe",
+ "encoding_rs",
  "proc-macro2",
  "rfd",
  "serde_json",

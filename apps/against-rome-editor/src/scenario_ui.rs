@@ -488,6 +488,10 @@ impl ScenarioUi {
         }
     }
     fn validate_draft(&self, draft: &ScenarioDocument) -> Result<()> {
+        if draft.events.iter().filter(|e| e.enabled).flat_map(|e| &e.conditions)
+            .any(|c| !c.target_id.is_nil() && !draft.spawns.iter().any(|s| s.id == c.target_id)) {
+            return Err("missing condition target".into());
+        }
         let targets: Vec<_> = draft.spawns.iter().map(|s| (s.clone(), s.alias.clone())).collect();
         for (i, e) in draft.events.iter().enumerate() {
             let diags = validate_event_diagnostics(e, &targets, &self.aliases);
@@ -1638,9 +1642,10 @@ impl ScenarioUi {
                 self.browser.clear_filters();
             }
         }
+        let targets: Vec<_> = self.document.spawns.iter().map(|s| (s.clone(), s.alias.clone())).collect();
         for i in indices {
             let event = &self.document.events[i];
-            let has_err = validate_event_diagnostics(event, &[], &self.aliases)
+            let has_err = validate_event_diagnostics(event, &targets, &self.aliases)
                 .iter()
                 .any(|d| d.level == DiagnosticLevel::Error);
             let status_icon = if has_err { "⚠" } else if event.enabled { "●" } else { "○" };
@@ -2053,7 +2058,7 @@ fn event_editor(
                         egui::Color32::from_rgb(255, 100, 100),
                         tl(en, "⚠ 未選擇目標物件", "⚠ No target object selected"),
                     );
-                } else if !targets.is_empty() && !targets.iter().any(|(s, _)| s.id == c.target_id) {
+                } else if !targets.iter().any(|(s, _)| s.id == c.target_id) {
                     ui.colored_label(
                         egui::Color32::from_rgb(255, 200, 80),
                         tl(en, "⚠ 目標物件已不存在", "⚠ Target object missing/deleted"),
@@ -2326,18 +2331,7 @@ impl EventDiagnostic {
 }
 
 pub(crate) fn is_windows_1251_compatible(text: &str) -> bool {
-    text.chars().all(|c| {
-        let u = c as u32;
-        u <= 0x7F
-            || (0x0400..=0x045F).contains(&u)
-            || u == 0x0490
-            || u == 0x0491
-            || (0x00A0..=0x00BF).contains(&u)
-            || (0x2013..=0x203A).contains(&u)
-            || u == 0x20AC
-            || u == 0x2116
-            || u == 0x2122
-    })
+    !encoding_rs::WINDOWS_1251.encode(text).2
 }
 
 pub(crate) fn validate_event_diagnostics(
@@ -2389,7 +2383,7 @@ pub(crate) fn validate_event_diagnostics(
                 format!("條件 #{num} 尚未選擇目標物件"),
                 format!("Condition #{num} has no target object selected"),
             ));
-        } else if !targets.is_empty() && !targets.iter().any(|(s, _)| s.id == c.target_id) {
+        } else if !targets.iter().any(|(s, _)| s.id == c.target_id) {
             if event.enabled {
                 diags.push(EventDiagnostic::error(
                     format!("條件 #{num} 所參照的目標物件已被刪除或不存在"),
@@ -4070,6 +4064,19 @@ mod tests {
 
         fs::remove_dir_all(temp_dir).unwrap();
         fs::remove_dir_all(p).unwrap();
+    }
+
+    #[test]
+    fn diagnostics_follow_actual_windows_1251_encoding_and_empty_targets() {
+        for text in ["\u{20ac}\u{201a}\u{2122}\u{2116}", "\u{0490}\u{0404}\u{0457}", "\u{2014}"] {
+            let mut event = ev("valid");
+            event.actions = vec![Action { kind: 0, text: text.into(), ..Default::default() }];
+            assert!(validate_event_diagnostics(&event, &[], &[]).is_empty(), "{text}");
+        }
+        assert!(!is_windows_1251_compatible("\u{2016}"));
+        let mut event = ev("missing");
+        event.conditions = vec![Condition { target_id: uuid::Uuid::new_v4(), ..Default::default() }];
+        assert!(validate_event_diagnostics(&event, &[], &[]).iter().any(|d| d.level == DiagnosticLevel::Error && d.en.contains("missing or deleted")));
     }
 
     #[test]
