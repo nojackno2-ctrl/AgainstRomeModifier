@@ -1,3 +1,7 @@
+## 2026-10-31 Claude：新地圖名稱提前驗證（複製／空白／平坦範本）
+- 設計者原本要到按下建置、確認捨棄或交易回滾後才知道名稱含 `/ \ : * ? " < > |`、控制字元或遊戲無法編碼的字元（平坦範本與複製路徑僅檢查空白）。`maps_ui.rs` 新增 `map_name_error`（中英雙語），在名稱欄位旁即時顯示紅字，並於 `execute_clone`、`execute_copy_selected`、`request_build_flat_template` 與「建立空白場景」按鈕於任何磁碟動作前拒絕，不產生意圖、不碰檔案。
+- 驗證：新增 `map_name_error_rejects_bad_names_in_both_languages_before_any_disk_work`；`maps_ui` 20 passed；`cargo test --workspace --locked`（獨立 %TEMP% target，已清理）287 組、2829 passed、0 failed、23 ignored。未修改已安裝遊戲；未做桌面視窗驗收。僅提交 `maps_ui.rs` 與本條目，他人的 AI_HANDOFF／landscape／design_check 變更未納入。
+
 ## 2026-10-31 Agy：劇本事件瀏覽器搜尋與條件／問題篩選強化
 - 依設計者在劇本事件瀏覽器中無法搜尋條件內容（目標物件 UUID、別名、矩形範圍與移動座標）、缺乏條件種類篩選，以及無法快速過濾存在診斷警告與錯誤事件之缺口，實作：
   1. 條件與座標深度搜尋：搜尋字串支援條件目標 UUID（含連字號或純十六進位）、目標生成物名稱與別名、條件種類標籤、矩形範圍座標（min/max x, z）以及動作移動目的地座標（destination x, z）。

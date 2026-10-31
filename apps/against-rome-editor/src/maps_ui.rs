@@ -138,6 +138,35 @@ fn tl<'a>(english: bool, zh: &'a str, en: &'a str) -> &'a str {
     }
 }
 
+/// Same check as [`map_name_error`] for `Err` paths that are language-agnostic: "English / 中文".
+fn map_name_error_both(name: &str) -> Option<String> {
+    let en = map_name_error(true, name)?;
+    Some(format!("{en} / {}", map_name_error(false, name)?))
+}
+
+/// Early, bilingual check of a new map name so the designer sees the problem next to the field
+/// instead of after a discard prompt or a rolled-back transaction. Mirrors the cloner/builder rules.
+pub fn map_name_error(english: bool, name: &str) -> Option<String> {
+    let msg = if name.trim().is_empty() {
+        tl(english, "地圖名稱不可空白。", "Map name must not be blank.")
+    } else if name.chars().any(|c| c.is_control() || "/\\:*?\"<>|".contains(c)) {
+        tl(
+            english,
+            "地圖名稱含不允許的字元（控制字元或 / \\ : * ? \" < > |）。",
+            "Map name contains forbidden characters (control characters or / \\ : * ? \" < > |).",
+        )
+    } else if !against_rome_maps::text_encoding::can_encode_game_text(name) {
+        tl(
+            english,
+            "地圖名稱包含遊戲無法儲存的字元；請改用英文、數字或原版使用的字元。",
+            "Map name has characters the game cannot store; use English letters, digits or characters used by retail maps.",
+        )
+    } else {
+        return None;
+    };
+    Some(msg.to_string())
+}
+
 impl Default for MapsUi {
     fn default() -> Self {
         Self {
@@ -224,10 +253,10 @@ impl MapsUi {
         if !game_path.is_dir() {
             return Err(format!("Game root path is invalid or does not exist: {}", game_path.display()));
         }
-        let name = self.blank_target_name.trim().to_string();
-        if name.is_empty() {
-            return Err("Map name must not be blank.".into());
+        if let Some(e) = map_name_error_both(&self.blank_target_name) {
+            return Err(e);
         }
+        let name = self.blank_target_name.trim().to_string();
         let slot = EndlessMapCatalog::new().get_next_free_slot(&game_path)?;
         self.blank_target_slot = slot;
         let mut spec = BlankMapSpec::new(format!("ENDL_{:03}", self.blank_source_slot), slot, name);
@@ -474,10 +503,10 @@ impl MapsUi {
         if !game_path.exists() {
             return Err("Game path does not exist.".into());
         }
-        let name = self.clone_new_name.trim().to_string();
-        if name.is_empty() {
-            return Err("Map name must not be blank.".into());
+        if let Some(e) = map_name_error_both(&self.clone_new_name) {
+            return Err(e);
         }
+        let name = self.clone_new_name.trim().to_string();
         let slot = EndlessMapCatalog::new().get_next_free_slot(&game_path)?;
         self.clone_target_slot = slot;
         let result = EndlessMapCloner::new().clone_from_map_id(&game_path, &source_id, slot, &name)?;
@@ -529,10 +558,10 @@ impl MapsUi {
         if !game_path.exists() {
             return Err("Game path does not exist.".into());
         }
-        let name = self.clone_new_name.trim().to_string();
-        if name.is_empty() {
-            return Err("Map name must not be blank.".into());
+        if let Some(e) = map_name_error_both(&self.clone_new_name) {
+            return Err(e);
         }
+        let name = self.clone_new_name.trim().to_string();
 
         let slot = EndlessMapCatalog::new().get_next_free_slot(game_path)?;
         self.clone_target_slot = slot;
@@ -914,6 +943,9 @@ impl MapsUi {
             ui.label(tl(self.english, "新地圖名稱：", "New Map Name:"));
             ui.text_edit_singleline(&mut self.clone_new_name);
         });
+        if let Some(e) = map_name_error(self.english, &self.clone_new_name) {
+            ui.colored_label(Color32::LIGHT_RED, e);
+        }
 
         if ui.button(tl(self.english, "複製地圖", "Clone Map")).clicked() {
             match self.execute_clone() {
@@ -1010,6 +1042,9 @@ impl MapsUi {
             ui.label(tl(self.english, "新地圖名稱：", "New Map Name:"));
             ui.text_edit_singleline(&mut self.blank_target_name);
         });
+        if let Some(e) = map_name_error(self.english, &self.blank_target_name) {
+            ui.colored_label(Color32::LIGHT_RED, e);
+        }
 
         ui.horizontal(|ui| {
             ui.label(tl(self.english, "基礎地形高度：", "Base Height:"));
@@ -1086,6 +1121,11 @@ impl MapsUi {
             }
 
             if ui.button(tl(self.english, "建立並載入空白場景", "Build Empty Scene & Open")).clicked() {
+                if let Some(e) = map_name_error(self.english, &self.blank_target_name) {
+                    self.status_message = e;
+                    self.status_is_error = true;
+                    return;
+                }
                 let intent = self.request_build_blank_map();
                 self.status_message = format!(
                     "{}: ENDL_{:03}...",
@@ -1356,6 +1396,31 @@ mod tests {
         assert!(ui.selected_is_custom);
         ui.select_endless_map(&info(1, None));
         assert_eq!(ui.clone_new_name, "ENDL_001 - Copy");
+    }
+
+    #[test]
+    fn map_name_error_rejects_bad_names_in_both_languages_before_any_disk_work() {
+        assert!(map_name_error(true, "Nordic Plains").is_none());
+        assert!(map_name_error(true, "  ").unwrap().contains("blank"));
+        assert!(map_name_error(false, "").unwrap().contains("空白"));
+        for bad in ["a/b", "a\\b", "a:b", "a*b", "a?b", "a\"b", "a<b", "a>b", "a|b", "tab\there", "nl\nx"] {
+            assert!(map_name_error(true, bad).unwrap().contains("forbidden"), "{bad:?}");
+            assert!(map_name_error(false, bad).unwrap().contains("不允許"), "{bad:?}");
+        }
+        assert!(map_name_error(true, "map \u{1F600}").unwrap().contains("cannot store"));
+
+        let root = std::env::temp_dir().join(format!("arm_maps_ui_name_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut ui = MapsUi::default();
+        ui.game_path_input = root.to_string_lossy().into_owned();
+        ui.blank_target_name = "bad|name".into();
+        assert!(ui.request_build_flat_template().unwrap_err().contains("forbidden"));
+        assert!(ui.pending_build_intent.is_none());
+        ui.clone_new_name = "bad\u{7}name".into();
+        assert!(ui.execute_clone().unwrap_err().contains("forbidden"));
+        assert!(ui.execute_copy_selected().is_err());
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
