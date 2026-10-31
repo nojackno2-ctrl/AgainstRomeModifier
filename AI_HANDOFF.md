@@ -2374,3 +2374,8 @@ ust-runtime\cargo`，RUSTUP_HOME同root的`rustup`，PATH前加cargo/bin；cargo
 - `recovery.rs::fingerprint` 在既有大小／修改時間之外加入 SHA-256；缺檔維持 null，其他讀取錯誤拒絕。回歸測試固定修改時間並維持 20 bytes，確認外部內容變更仍被識別、舊快照拒絕復原。Agy 實作後由 Codex 補強時間戳斷言與複核。
 - 已驗證：Agy 初驗通過；Codex 補強後依序 `cargo check --workspace --locked`、定向回歸、`cargo test --workspace --locked`、`cargo build --workspace --locked` 均 exit 0；完整測試 287 組、2769 passed／0 failed／23 ignored，無 MSVC 連結錯誤，`git diff --check` 通過。日誌 `%TEMP%\arm-20261030-fingerprint-parent-{check,focused,test,build}.log`。
 - 限制／未驗證：舊版只有兩欄指紋的快照會保留但拒絕復原，不自動信任或遷移；讀取期間外部修改的競態未完全消除。未做 GUI／遊戲驗收或大型地圖雜湊效能量測。
+
+## 2026-10-31 Claude：放置／編輯超出地圖範圍的雙語訊息
+
+- 檢查結果：移動、複製、對向複製已會整批拒絕並顯示雙語訊息；但「放置」與「編輯對話框」超出 X/Z 0–16383 時只顯示籠統的「無法在此放置／數值無效」。`spawn_placement_ui.rs::error_text` 現在對位置越界顯示明確雙語訊息（不影響既有「會超出地圖」移動訊息）。新增測試 `placing_outside_map_is_rejected_with_bilingual_position_message`。
+- 驗證：`cargo test --workspace --locked --no-fail-fast`（獨立 target-dir）287 組，2841 passed／2 failed／23 ignored。2 個失敗為 Agy 尚未提交的 `design_check_ui.rs` 工作中變更（`test_scenario_inverted_rect_detection_and_quick_fix`、`test_scenario_terminal_not_last_detection_and_quick_fix`），與本次無關。未做桌面驗收。

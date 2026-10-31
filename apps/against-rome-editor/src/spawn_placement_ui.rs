@@ -259,6 +259,12 @@ fn stacked_group_warning(english: bool, count: usize) -> String {
 
 fn error_text(lang: AppLanguage, error: &PlacementError, out_of_range: (&'static str, &'static str)) -> String {
     match error {
+        PlacementError::OutOfRange(m) if m.starts_with("Position must be finite") && !out_of_range.0.contains("map") => tr(
+            lang,
+            "Position is outside the playable map (X/Z must be between 0 and 16383). Nothing was changed.",
+            "位置超出可玩地圖範圍（X/Z 必須介於 0 到 16383）；未做任何變更。",
+        )
+        .to_string(),
         PlacementError::OutOfRange(_) => tr(lang, out_of_range.0, out_of_range.1).to_string(),
         other => other.to_string(),
     }
@@ -1943,6 +1949,25 @@ mod palette_thumbnail_tests {
         panel.set_placement_values(4, 1, 0);
         panel.select_type("wolf");
         assert_eq!(panel.team(), 4);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn placing_outside_map_is_rejected_with_bilingual_position_message() {
+        let (root, mut scenario, mut panel, cx) = shadow_fixture();
+        panel.select_type("wolf");
+        panel.place_at_tile(&mut scenario, &cx, 64, 10);
+        assert!(panel.status().1);
+        assert_eq!(panel.session().count(), 0);
+        assert!(panel.status().0.contains("0 到 16383") || panel.status().0.contains("0 and 16383"), "{}", panel.status().0);
+        panel.place_at_tile(&mut scenario, &cx, -1, 10);
+        assert!(panel.status().1 && panel.session().count() == 0);
+        assert!(error_text(
+            AppLanguage::English,
+            &PlacementError::OutOfRange("Position must be finite with X/Z between 0 and 16383.".into()),
+            ("x", "y")
+        )
+        .contains("outside the playable map"));
         std::fs::remove_dir_all(root).unwrap();
     }
 
