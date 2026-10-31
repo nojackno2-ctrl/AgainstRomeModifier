@@ -1,3 +1,7 @@
+## 2026-10-31 Claude：匯出 ZIP 目的地副檔名／資料夾預檢
+- `packaging_ui::validate_export_destination` 新增：目的路徑若為既有資料夾、或副檔名不是 `.zip`（不分大小寫），匯出前即以雙語「ZIP 匯出目的地不安全」錯誤拒絕，不寫任何檔案。放置越界先前已由 move/place 拒絕，故改做此項。
+- 驗證：新增 `export_destination_must_be_zip_file_not_folder_or_other_extension`；`cargo test --workspace --locked`（獨立 %TEMP% target，已清理）287 組、2832 passed、0 failed、23 ignored。拒絕原因字串僅英文（外層訊息雙語）；未驗證桌面視窗；未修改安裝遊戲。僅提交 `packaging_ui.rs` 與本條目。
+
 ## 2026-10-31 Agy：設計檢查新增勝負事件重複錯誤診斷與一鍵快速修正
 - 依設計者在劇本事件中若將含勝利（kind 3）或失敗（kind 4）動作之事件勾選「循環重複（Repeat）」，遊戲中觸發勝負將造成結算狀態機無窮重複觸發、音效影音播放異常或遊戲崩潰，且先前會導致預檢直接失敗使設計檢查報告呈現未定位且無法修復之 `check-unavailable` 缺口，實作：
   1. `scenario-terminal-repeat` 設計檢查規則：檢查所有啟用中事件，若含勝負動作且啟用重複，產生具備明確事件序號、名稱與雙語說明的 `MapIssue`（錯誤等級，附帶 `event_index`），並抑制通用非定位預檢錯誤；若候選暫存因重複勝負遭反序列化驗證拒絕，亦自動攔截降級為精準的勝負重複問題報告。

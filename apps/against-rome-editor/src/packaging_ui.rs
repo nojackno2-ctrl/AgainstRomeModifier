@@ -1446,6 +1446,16 @@ impl PackagingUi {
 /// Resolves a path through existing symlinks/junctions while allowing missing trailing
 /// components, then rejects ZIP destinations within the source map or game MAPS tree.
 fn validate_export_destination(source: &Path, destination: &Path) -> Result<(), String> {
+    if destination.is_dir() {
+        return Err("the ZIP path is an existing folder; enter a file name ending in .zip".to_string());
+    }
+    let is_zip = destination
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("zip"));
+    if !is_zip {
+        return Err("the file name must end in .zip, otherwise the package is not recognized as a ZIP".to_string());
+    }
     let source = resolve_path_through_existing_ancestors(source)
         .map_err(|e| format!("cannot resolve source map path: {e}"))?;
     let destination = resolve_path_through_existing_ancestors(destination)
@@ -2077,6 +2087,26 @@ mod tests {
         assert!(!ui.pending_overwrite_confirm);
         assert!(ui.take_export_request().is_some());
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn export_destination_must_be_zip_file_not_folder_or_other_extension() {
+        let dir = crate::packaging_ui::temp_fixture::dir("ar_packaging_zip_ext");
+        let map = dir.join("map");
+        std::fs::create_dir_all(&map).unwrap();
+        let folder = dir.join("out.zip");
+        std::fs::create_dir_all(&folder).unwrap();
+
+        let mut ui = PackagingUi::default();
+        ui.map_dir_input = map.to_string_lossy().to_string();
+        for bad in [dir.join("pack.txt"), dir.join("pack"), folder.clone()] {
+            ui.output_zip_input = bad.to_string_lossy().to_string();
+            let err = ui.run_export().unwrap_err();
+            assert!(err.contains("ZIP"), "{err}");
+            assert!(ui.status_is_error);
+        }
+        assert!(validate_export_destination(&map, &dir.join("OK.ZIP")).is_ok());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
