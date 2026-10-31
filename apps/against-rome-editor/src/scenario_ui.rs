@@ -2015,6 +2015,7 @@ fn event_editor(
     ui.label(tl(en, "條件：全部成立且延遲到期後執行；死亡條件先追蹤曾存在的物件。", "Conditions: all must hold once the delay expires; death conditions track objects that once existed."));
     let mut remove_condition = None;
     let mut move_condition_request: Option<(usize, isize)> = None;
+    let mut duplicate_condition_request: Option<usize> = None;
     let condition_count = e.conditions.len();
     for (i, c) in e.conditions.iter_mut().enumerate() {
         ui.push_id(("condition", i), |ui| {
@@ -2031,6 +2032,15 @@ fn event_editor(
                 );
                 if ui.button(tl(en, "刪除此條件", "Delete condition")).clicked() {
                     remove_condition = Some(i)
+                }
+                if ui
+                    .add_enabled(
+                        condition_count < 32,
+                        egui::Button::new(tl(en, "複製此條件", "Duplicate condition")),
+                    )
+                    .clicked()
+                {
+                    duplicate_condition_request = Some(i);
                 }
                 if ui.add_enabled(i > 0, egui::Button::new(tl(en, "上移", "Move up"))).clicked() {
                     move_condition_request = Some((i, -1));
@@ -2096,6 +2106,8 @@ fn event_editor(
     }
     if let Some(i) = remove_condition {
         e.conditions.remove(i);
+    } else if let Some(i) = duplicate_condition_request {
+        duplicate_condition(&mut e.conditions, i);
     } else if let Some((i, offset)) = move_condition_request {
         move_condition(&mut e.conditions, i, offset);
     }
@@ -2109,6 +2121,7 @@ fn event_editor(
     ui.label(tl(en, "動作：依序執行。勝敗動作只能放在單次事件最後。", "Actions run in order. Victory or Defeat must be the last action of a one-shot event."));
     let mut remove = None;
     let mut move_request: Option<(usize, isize)> = None;
+    let mut duplicate_action_request: Option<usize> = None;
     let action_count = e.actions.len();
     for (i, a) in e.actions.iter_mut().enumerate() {
         ui.push_id(("action", i), |ui| {
@@ -2126,6 +2139,15 @@ fn event_editor(
                     );
                     if ui.button(tl(en, "刪除此動作", "Delete action")).clicked() {
                         remove = Some(i)
+                    }
+                    if ui
+                        .add_enabled(
+                            action_count < 32,
+                            egui::Button::new(tl(en, "複製此動作", "Duplicate action")),
+                        )
+                        .clicked()
+                    {
+                        duplicate_action_request = Some(i);
                     }
                     if ui.add_enabled(i > 0, egui::Button::new(tl(en, "上移", "Move up"))).clicked() {
                         move_request = Some((i, -1));
@@ -2239,6 +2261,8 @@ fn event_editor(
     }
     if let Some(i) = remove {
         e.actions.remove(i);
+    } else if let Some(i) = duplicate_action_request {
+        duplicate_action(&mut e.actions, i);
     } else if let Some((i, offset)) = move_request {
         move_action(&mut e.actions, i, offset);
     }
@@ -2271,6 +2295,32 @@ pub(crate) fn move_condition(conditions: &mut [Condition], index: usize, offset:
     }
     conditions.swap(index, target);
     Some(target)
+}
+
+/// Duplicates condition at `index` and inserts the copy at `index + 1`.
+/// Returns the new condition's index, or `None` when `index` is out of bounds or
+/// the event has already reached the maximum condition capacity (32).
+pub(crate) fn duplicate_condition(conditions: &mut Vec<Condition>, index: usize) -> Option<usize> {
+    if index >= conditions.len() || conditions.len() >= 32 {
+        return None;
+    }
+    let copy = conditions[index].clone();
+    let new_index = index + 1;
+    conditions.insert(new_index, copy);
+    Some(new_index)
+}
+
+/// Duplicates action at `index` and inserts the copy at `index + 1`.
+/// Returns the new action's index, or `None` when `index` is out of bounds or
+/// the event has already reached the maximum action capacity (32).
+pub(crate) fn duplicate_action(actions: &mut Vec<Action>, index: usize) -> Option<usize> {
+    if index >= actions.len() || actions.len() >= 32 {
+        return None;
+    }
+    let copy = actions[index].clone();
+    let new_index = index + 1;
+    actions.insert(new_index, copy);
+    Some(new_index)
 }
 
 /// Normalizes a rectangle condition so that `min_x <= max_x` and `min_z <= max_z`.
@@ -4331,6 +4381,165 @@ mod tests {
         let err = ui.validate_draft(&draft).unwrap_err();
         assert!(err.contains("Wave_Attack_Alpha"));
         assert!(err.contains("重複事件的延遲時間必須大於 0 秒"));
+    }
+
+    #[test]
+    fn test_duplicate_condition_clones_at_next_index_and_respects_32_cap() {
+        let id1 = uuid::Uuid::new_v4();
+        let id2 = uuid::Uuid::new_v4();
+        let mut conditions = vec![
+            Condition { kind: 2, target_id: id1, min_x: 100, max_x: 200, min_z: 300, max_z: 400 },
+            Condition { kind: 0, target_id: id2, ..Default::default() },
+        ];
+
+        // Out of bounds index returns None
+        assert_eq!(duplicate_condition(&mut conditions, 5), None);
+
+        // Duplicate first condition: inserts copy at index 1
+        let new_idx = duplicate_condition(&mut conditions, 0).expect("duplicate should succeed");
+        assert_eq!(new_idx, 1);
+        assert_eq!(conditions.len(), 3);
+        assert_eq!(conditions[1].kind, 2);
+        assert_eq!(conditions[1].target_id, id1);
+        assert_eq!(conditions[1].min_x, 100);
+        assert_eq!(conditions[1].max_x, 200);
+        assert_eq!(conditions[2].target_id, id2); // Original second condition pushed to 2
+
+        // Duplicate at cap (32)
+        while conditions.len() < 32 {
+            duplicate_condition(&mut conditions, 0).unwrap();
+        }
+        assert_eq!(conditions.len(), 32);
+        assert_eq!(duplicate_condition(&mut conditions, 0), None);
+        assert_eq!(conditions.len(), 32);
+    }
+
+    #[test]
+    fn test_duplicate_action_clones_at_next_index_and_respects_32_cap() {
+        let mut actions = vec![
+            Action {
+                kind: 2,
+                alias: "GER_INF00".into(),
+                team: 2,
+                count: 5,
+                x: 1234.0,
+                z: 5678.0,
+                move_destination: Some(WorldPosition { x: 9999, z: 8888 }),
+                ..Default::default()
+            },
+            Action { kind: 0, text: "Mission Start".into(), ..Default::default() },
+        ];
+
+        // Out of bounds index returns None
+        assert_eq!(duplicate_action(&mut actions, 10), None);
+
+        // Duplicate first action: inserts copy at index 1
+        let new_idx = duplicate_action(&mut actions, 0).expect("duplicate should succeed");
+        assert_eq!(new_idx, 1);
+        assert_eq!(actions.len(), 3);
+        assert_eq!(actions[1].alias, "GER_INF00");
+        assert_eq!(actions[1].team, 2);
+        assert_eq!(actions[1].count, 5);
+        assert_eq!(actions[1].x, 1234.0);
+        assert_eq!(actions[1].z, 5678.0);
+        assert_eq!(actions[1].move_destination, Some(WorldPosition { x: 9999, z: 8888 }));
+        assert_eq!(actions[2].text, "Mission Start");
+
+        // Duplicate at cap (32)
+        while actions.len() < 32 {
+            duplicate_action(&mut actions, 0).unwrap();
+        }
+        assert_eq!(actions.len(), 32);
+        assert_eq!(duplicate_action(&mut actions, 0), None);
+        assert_eq!(actions.len(), 32);
+    }
+
+    #[test]
+    fn test_duplicate_condition_and_action_undo_redo_workflow() {
+        let p = source();
+        let mut ui = ScenarioUi::default();
+        ui.load_now(&p).unwrap();
+
+        let id = uuid::Uuid::new_v4();
+        ui.document.spawns.push(Spawn { id, alias: "HUN_KAVINF00".into(), count: 1, ..Default::default() });
+        let ev = Event {
+            name: "Duplicate_Workflow".into(),
+            delay_seconds: 10,
+            conditions: vec![Condition { kind: 0, target_id: id, ..Default::default() }],
+            actions: vec![Action { kind: 0, text: "Alpha".into(), ..Default::default() }],
+            ..Default::default()
+        };
+        ui.add_events(&[ev]).unwrap();
+        assert_eq!(ui.document.events[0].conditions.len(), 1);
+        assert_eq!(ui.document.events[0].actions.len(), 1);
+
+        // Duplicate condition in draft
+        let mut edited = ui.document.events[0].clone();
+        duplicate_condition(&mut edited.conditions, 0).unwrap();
+        ui.replace_event(0, edited).unwrap();
+        assert_eq!(ui.document.events[0].conditions.len(), 2);
+
+        // Duplicate action in draft
+        let mut edited2 = ui.document.events[0].clone();
+        duplicate_action(&mut edited2.actions, 0).unwrap();
+        ui.replace_event(0, edited2).unwrap();
+        assert_eq!(ui.document.events[0].actions.len(), 2);
+
+        // Undo action duplication
+        assert!(ui.undo_events());
+        assert_eq!(ui.document.events[0].actions.len(), 1);
+        assert_eq!(ui.document.events[0].conditions.len(), 2);
+
+        // Undo condition duplication
+        assert!(ui.undo_events());
+        assert_eq!(ui.document.events[0].conditions.len(), 1);
+
+        // Redo restores both steps
+        assert!(ui.redo_events());
+        assert_eq!(ui.document.events[0].conditions.len(), 2);
+        assert!(ui.redo_events());
+        assert_eq!(ui.document.events[0].actions.len(), 2);
+
+        fs::remove_dir_all(p).unwrap();
+    }
+
+    #[test]
+    fn test_event_editor_renders_duplicate_buttons() {
+        for (english, cond_btn, act_btn) in [
+            (false, "複製此條件", "複製此動作"),
+            (true, "Duplicate condition", "Duplicate action"),
+        ] {
+            let ctx = egui::Context::default();
+            let mut event = Event {
+                conditions: vec![Condition::default()],
+                actions: vec![Action::default()],
+                ..Default::default()
+            };
+            let mut pick = None;
+            let mut draw = None;
+            ctx.begin_frame(egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1800.0, 1400.0),
+                )),
+                ..Default::default()
+            });
+            egui::CentralPanel::default().show(&ctx, |ui| {
+                event_editor(ui, &mut event, &[], &[], english, &mut pick, &mut draw);
+            });
+            let output = ctx.end_frame();
+            let found_labels: Vec<String> = output.shapes.iter().filter_map(|shape| {
+                if let egui::epaint::Shape::Text(text) = &shape.shape {
+                    let label = text.galley.text();
+                    if label == cond_btn || label == act_btn {
+                        return Some(label.to_owned());
+                    }
+                }
+                None
+            }).collect();
+            assert!(found_labels.contains(&cond_btn.to_string()), "missing {cond_btn}");
+            assert!(found_labels.contains(&act_btn.to_string()), "missing {act_btn}");
+        }
     }
 }
 

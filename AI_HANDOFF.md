@@ -1,3 +1,13 @@
+## 2026-10-31 Agy：劇本事件條件與動作一鍵複製
+- 依設計者在劇本事件編輯器中設定多組部隊波次生成（座標、隊伍、移動目的地）、區域偵測矩形或物件狀態條件時，僅能新增預設空項目並需反覆手動重新輸入各欄位之缺口，實作：
+  1. `duplicate_condition` 與 `duplicate_action`：於條件與動作列各加入雙語「複製此條件 / Duplicate condition」與「複製此動作 / Duplicate action」按鈕；直接於該項下方插入完整複本。
+  2. 容量上限防護：條件與動作數量各自嚴格限制在 32 項以內，達上限時按鈕自動停用且複製函式拒絕加入。
+  3. 復原整合：複製操作沿用 `replace_event` 單步復原流程；復原即時回復，重做精準還原。未改變任何磁碟或序列化格式。
+- 驗證：
+  - 新增專項回歸測試 4 項：`test_duplicate_condition_clones_at_next_index_and_respects_32_cap`、`test_duplicate_action_clones_at_next_index_and_respects_32_cap`、`test_duplicate_condition_and_action_undo_redo_workflow`、`test_event_editor_renders_duplicate_buttons` 全數通過。
+  - `scenario_ui` 61 項單元與無頭測試全數通過（61 passed, 0 failed）。
+  - `cargo test --workspace --locked` 287 組全數通過（2817 passed、0 failed、23 ignored）；使用獨立 `%TEMP%` target 建置目錄（已於驗證後清理）。未修改已安裝遊戲，未驗證桌面原生視窗操作。
+
 ## 2026-10-31 Claude：複製／移動造成重疊的警告
 - 重複複製同一物件或將物件移到已有同類型物件的完全相同位置時，狀態列追加雙語重疊警告（含重疊數量）；動作仍成功並可單步復原。原本只有單點放置會警告。僅改 spawn_placement_ui.rs。
 - 驗證：新增 `repeated_duplicate_and_move_onto_same_type_warn_about_stacking`；`cargo test --workspace --locked` 合計 2813 passed、0 failed（獨立 %TEMP% target）。未驗證桌面視窗；未修改安裝遊戲。
