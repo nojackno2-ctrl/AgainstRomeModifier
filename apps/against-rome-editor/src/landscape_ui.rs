@@ -354,6 +354,10 @@ impl LandscapeUi {
     }
 
     pub fn plan_river(&mut self, cx: &LandscapeContext) -> Result<(), String> {
+        self.last_river_plan = None;
+        if self.apply_requested == Some(LandscapeApply::River) {
+            self.apply_requested = None;
+        }
         let path = rasterize_orthogonal_path(&[
             (self.river_start_x, self.river_start_y),
             (self.river_end_x, self.river_end_y),
@@ -1992,6 +1996,20 @@ mod tests {
         assert!(ui.status_message.contains("重新規劃"));
         ui.run_river_planning(16, None).unwrap();
         assert!(ui.last_river_plan.is_some());
+    }
+
+    #[test]
+    fn failed_river_replanning_discards_old_plan_and_pending_apply() {
+        let mut ui = LandscapeUi::default();
+        ui.run_river_planning(16, None).unwrap();
+        ui.apply_requested = Some(LandscapeApply::River);
+        assert!(ui.run_river_planning(0, Some(&[])).is_err());
+        assert!(ui.last_river_plan.is_none());
+        assert_eq!(ui.take_apply_request(), None);
+
+        ui.apply_requested = Some(LandscapeApply::Road);
+        assert!(ui.run_river_planning(0, Some(&[])).is_err());
+        assert_eq!(ui.take_apply_request(), Some(LandscapeApply::Road));
     }
 
     #[test]

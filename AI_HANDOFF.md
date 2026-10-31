@@ -1,3 +1,6 @@
+## 2026-10-31 Codex：河流重新規劃失效防護
+- 河流重新規劃前清除舊方案及河流待套用請求，避免失敗後誤用舊方案；保留其他工具的請求。新增失敗及隔離回歸測試。首次驗證指定錯誤的 RUSTUP_HOME，未啟動編譯；改用正確工具鏈後，正常 TEMP 獨立 target 執行 cargo check、cargo test、cargo build --workspace --locked 均通過；測試 287 組、2813 passed、0 failed、23 ignored。其他代理並行修改，結果反映編譯時工作樹；TEMP 建置目錄刪除遭自動審核拒絕，仍保留。未驗證桌面操作或遊戲內效果，未修改已安裝遊戲。
+
 ## 2026-10-31 Codex：合併後劇本審查
 - 審查 7e1c103：修正 Windows-1251 診斷與編譯器編碼不一致、空目標清單及事件瀏覽器漏報遺失目標，並保留刪除被引用物件時的既有錯誤契約。條件排序與正規化沿用既有復原流程；未改變序列化格式。
 - 正常 TEMP 合併 HEAD：cargo test --workspace --locked 287 組、2810 passed、0 failed、23 ignored。修正後 cargo check --workspace --locked、cargo test --workspace --locked（287 組、2811 passed、0 failed、23 ignored）、cargo build --workspace --locked 均通過。首次修正後測試因並行測試鎖住 EXE 失敗，循序重跑發現刪除提示回歸，修復後全數通過。未修改已安裝遊戲；桌面操作及遊戲內相容性未驗證。
