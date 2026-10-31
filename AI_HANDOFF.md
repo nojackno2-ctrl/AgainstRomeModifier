@@ -1,3 +1,7 @@
+## 2026-10-31 Claude：複製／移動造成重疊的警告
+- 重複複製同一物件或將物件移到已有同類型物件的完全相同位置時，狀態列追加雙語重疊警告（含重疊數量）；動作仍成功並可單步復原。原本只有單點放置會警告。僅改 spawn_placement_ui.rs。
+- 驗證：新增 `repeated_duplicate_and_move_onto_same_type_warn_about_stacking`；`cargo test --workspace --locked` 合計 2813 passed、0 failed（獨立 %TEMP% target）。未驗證桌面視窗；未修改安裝遊戲。
+
 ## 2026-10-31 Codex：河流重新規劃失效防護
 - 河流重新規劃前清除舊方案及河流待套用請求，避免失敗後誤用舊方案；保留其他工具的請求。新增失敗及隔離回歸測試。首次驗證指定錯誤的 RUSTUP_HOME，未啟動編譯；改用正確工具鏈後，正常 TEMP 獨立 target 執行 cargo check、cargo test、cargo build --workspace --locked 均通過；測試 287 組、2813 passed、0 failed、23 ignored。其他代理並行修改，結果反映編譯時工作樹；TEMP 建置目錄刪除遭自動審核拒絕，仍保留。未驗證桌面操作或遊戲內效果，未修改已安裝遊戲。
 

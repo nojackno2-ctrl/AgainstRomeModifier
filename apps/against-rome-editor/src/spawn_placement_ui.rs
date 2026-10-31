@@ -249,6 +249,14 @@ fn stacked_place_warning(english: bool) -> &'static str {
     }
 }
 
+fn stacked_group_warning(english: bool, count: usize) -> String {
+    if english {
+        format!(" Warning: {count} object(s) now sit exactly on another object of the same type (stacked duplicates); undo if unintended.")
+    } else {
+        format!(" 注意：{count} 個物件現在與相同類型的物件完全重疊；若非預期請復原。")
+    }
+}
+
 fn error_text(lang: AppLanguage, error: &PlacementError, out_of_range: (&'static str, &'static str)) -> String {
     match error {
         PlacementError::OutOfRange(_) => tr(lang, out_of_range.0, out_of_range.1).to_string(),
@@ -624,6 +632,22 @@ impl SpawnPlacementUi {
         })
     }
 
+    /// How many of `indices` share an exact position with a different object of the same type.
+    fn stacked_among(&self, indices: &[usize]) -> usize {
+        indices
+            .iter()
+            .filter(|&&i| {
+                self.session.get(i).is_some_and(|o| {
+                    (0..self.session.count()).filter(|&j| j != i).filter_map(|j| self.session.get(j)).any(|p| {
+                        p.obj_type.name_def == o.obj_type.name_def
+                            && (p.world_x - o.world_x).abs() < 0.01
+                            && (p.world_z - o.world_z).abs() < 0.01
+                    })
+                })
+            })
+            .count()
+    }
+
     pub fn delete_selected(&mut self, scenario: &mut ScenarioUi, cx: &SpawnContext) {
         let indices = self.selection();
         if indices.is_empty() || !self.guard(scenario, cx) {
@@ -695,14 +719,16 @@ impl SpawnPlacementUi {
             Ok(()) => {
                 self.selection = copies.iter().copied().collect();
                 self.anchor = copies.first().copied();
-                self.set_status(
-                    if cx.english() {
-                        format!("Duplicated {} placed object(s); Save to write.", indices.len())
-                    } else {
-                        format!("已複製 {} 個放置物件；按「儲存」才會寫入。", indices.len())
-                    },
-                    false,
-                );
+                let mut message = if cx.english() {
+                    format!("Duplicated {} placed object(s); Save to write.", indices.len())
+                } else {
+                    format!("已複製 {} 個放置物件；按「儲存」才會寫入。", indices.len())
+                };
+                let stacked = self.stacked_among(&copies);
+                if stacked > 0 {
+                    message.push_str(&stacked_group_warning(cx.english(), stacked));
+                }
+                self.set_status(message, false);
             }
             Err(e) => self.set_status(e, true),
         }
@@ -758,6 +784,10 @@ impl SpawnPlacementUi {
                 };
                 if self.warns_landscape(&indices) {
                     message.push_str(landscape_move_warning(cx.english()));
+                }
+                let stacked = self.stacked_among(&indices);
+                if stacked > 0 {
+                    message.push_str(&stacked_group_warning(cx.english(), stacked));
                 }
                 self.set_status(message, false);
             }
@@ -1929,6 +1959,29 @@ mod palette_thumbnail_tests {
         panel.place_at_tile(&mut scenario, &cx, 11, 10);
         assert!(!panel.status().0.contains("identical"), "{}", panel.status().0);
         assert_eq!(panel.session().count(), 3);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn repeated_duplicate_and_move_onto_same_type_warn_about_stacking() {
+        let (root, mut scenario, mut panel, cx) = shadow_fixture();
+        panel.select_type("wolf");
+        panel.place_at_tile(&mut scenario, &cx, 10, 10);
+        panel.duplicate_selected(&mut scenario, &cx);
+        assert!(!panel.status().1, "{}", panel.status().0);
+        assert!(!panel.status().0.contains("stacked"), "{}", panel.status().0);
+        // Selecting the original and duplicating again lands on the first copy's spot.
+        assert!(panel.select_index(0));
+        panel.duplicate_selected(&mut scenario, &cx);
+        assert!(!panel.status().1, "{}", panel.status().0);
+        assert!(panel.status().0.contains("stacked"), "{}", panel.status().0);
+        // Moving an object onto an occupied spot warns; moving it away does not.
+        assert!(panel.select_index(0));
+        panel.move_selected(&mut scenario, &cx, 256.0, 256.0, false);
+        assert!(!panel.status().1, "{}", panel.status().0);
+        assert!(panel.status().0.contains("stacked"), "{}", panel.status().0);
+        panel.move_selected(&mut scenario, &cx, 256.0, 256.0, false);
+        assert!(!panel.status().0.contains("stacked"), "{}", panel.status().0);
         std::fs::remove_dir_all(root).unwrap();
     }
 
