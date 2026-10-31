@@ -645,25 +645,115 @@ impl EditorApp {
         self.design_check.open = true;
     }
 
+    pub(crate) fn candidate_scenario_events(
+        &self,
+        path: &Path,
+        staged: &[(PathBuf, Vec<u8>)],
+    ) -> Vec<against_rome_scenario::Event> {
+        if self.scenario.is_loaded() {
+            return self.scenario.document().events.clone();
+        }
+        if let Some((_, bytes)) = staged
+            .iter()
+            .find(|(p, _)| *p == Path::new("arm_scenario.json"))
+        {
+            if let Ok(doc) = serde_json::from_slice::<against_rome_scenario::model::ScenarioDocument>(bytes) {
+                return doc.events;
+            }
+        }
+        if let Ok(bytes) = std::fs::read(path.join("arm_scenario.json")) {
+            if let Ok(doc) = serde_json::from_slice::<against_rome_scenario::model::ScenarioDocument>(&bytes) {
+                return doc.events;
+            }
+        }
+        Vec::new()
+    }
+
+    fn check_terminal_repeat_issues(events: &[against_rome_scenario::Event]) -> Vec<MapIssue> {
+        let mut map_issues = Vec::new();
+        for (idx, event) in events.iter().enumerate() {
+            if event.enabled
+                && event.repeat
+                && event.actions.iter().any(|a| a.kind == 3 || a.kind == 4)
+            {
+                let name = if event.name.trim().is_empty() {
+                    format!("Event #{}", idx + 1)
+                } else {
+                    event.name.clone()
+                };
+                let mut issue = MapIssue::new(
+                    MapIssueSeverity::Error,
+                    "scenario-terminal-repeat",
+                    format!(
+                        "事件「{name}」（第 {} 項）包含勝利或失敗動作，但啟用了「循環重複」；在遊戲中重複觸發勝負動作會破壞任務結算流程或導致遊戲崩潰。請取消重複。",
+                        idx + 1
+                    ),
+                    format!(
+                        "Event '{name}' (#{idx_1}) contains a Victory or Defeat action with 'Repeat' enabled; repeatedly triggering victory or defeat in-game corrupts the mission outcome sequence and may crash the game. Please disable repeat.",
+                        idx_1 = idx + 1
+                    ),
+                );
+                issue.event_index = idx as i32;
+                map_issues.push(issue);
+            }
+        }
+        map_issues
+    }
+
     /// Pure (`&self`) computation of the report; used by the button and by tests.
     pub fn design_check_report(&self) -> DesignCheckReport {
         #[cfg(test)]
         let timer = std::time::Instant::now();
         let (path, staged) = match self.check_candidate_inputs() {
             Ok(v) => v,
-            Err(e) => return DesignCheckReport::Unavailable(e),
+            Err(e) => {
+                if e.contains("terminal action must be last and nonrepeating") {
+                    let path = self.loaded_map_path.clone().unwrap_or_default();
+                    let issues = Self::check_terminal_repeat_issues(&self.candidate_scenario_events(&path, &[]));
+                    if !issues.is_empty() {
+                        return DesignCheckReport::Checked {
+                            map_issues: issues,
+                            preflight_error: None,
+                            design_issues: Vec::new(),
+                        };
+                    }
+                }
+                return DesignCheckReport::Unavailable(e);
+            }
         };
         #[cfg(test)]
         eprintln!("Task42 scenario staging={:?}", timer.elapsed());
         match self.candidate_diagnostics_with_pending_data(&path, &staged, true) {
-            Err(e) => DesignCheckReport::Unavailable(e),
+            Err(e) => {
+                if e.contains("terminal action must be last and nonrepeating") {
+                    let issues = Self::check_terminal_repeat_issues(&self.candidate_scenario_events(&path, &staged));
+                    if !issues.is_empty() {
+                        return DesignCheckReport::Checked {
+                            map_issues: issues,
+                            preflight_error: None,
+                            design_issues: Vec::new(),
+                        };
+                    }
+                }
+                DesignCheckReport::Unavailable(e)
+            }
             Ok(c) => {
-                let (preflight_error, design_issues) = match c.design {
+                let (mut preflight_error, design_issues) = match c.design {
                     Ok(issues) => (None, issues),
                     Err(e) => (Some(e), Vec::new()),
                 };
+                let mut map_issues = c.map_issues;
+                let repeat_issues = Self::check_terminal_repeat_issues(&self.candidate_scenario_events(&path, &staged));
+                if !repeat_issues.is_empty() {
+                    if let Some(ref err) = preflight_error {
+                        if err.contains("含勝利或失敗動作的事件不可設為週期重複") {
+                            preflight_error = None;
+                        }
+                    }
+                    map_issues.extend(repeat_issues);
+                }
                 DesignCheckReport::Checked {
-                    map_issues: c.map_issues,
+                    map_issues,
                     preflight_error,
                     design_issues,
                 }
@@ -1042,6 +1132,33 @@ impl EditorApp {
         Ok(count)
     }
 
+    /// 取消所有含勝利或失敗動作之事件的「循環重複」設定，整批套用並重新執行設計檢查。
+    pub fn fix_terminal_repeat(&mut self) -> Result<usize, String> {
+        let path = self
+            .loaded_map_path
+            .clone()
+            .ok_or_else(|| tr(self.lang(), "No map loaded.", "尚未載入地圖。").to_string())?;
+        if !self.scenario.is_loaded() {
+            self.scenario.load_session(&path)?;
+        }
+        let mut events = self.scenario.document().events.clone();
+        let mut count = 0;
+        for event in events.iter_mut() {
+            if event.enabled
+                && event.repeat
+                && event.actions.iter().any(|a| a.kind == 3 || a.kind == 4)
+            {
+                event.repeat = false;
+                count += 1;
+            }
+        }
+        if count > 0 {
+            self.scenario.replace_events(events)?;
+        }
+        self.run_design_check();
+        Ok(count)
+    }
+
     /// Pure generation of the current Design Check report as a Markdown document.
     pub fn export_design_check_markdown(&self) -> String {
         let report = match &self.design_check.report {
@@ -1123,6 +1240,7 @@ impl EditorApp {
         let mut fix_objectives = false;
         let mut fix_units = false;
         let mut fix_bases = false;
+        let mut fix_terminal_repeat = false;
         let mut locate: Option<usize> = None;
         let rows = self.design_check.get_or_compute_rows(lang).to_vec();
         let mut selected = self.design_check.selected.filter(|i| *i < rows.len());
@@ -1201,6 +1319,19 @@ impl EditorApp {
                             .clicked()
                     {
                         fix_bases = true;
+                    }
+                    let has_terminal_repeat = rows.iter().any(|r| r.code == "scenario-terminal-repeat");
+                    if has_terminal_repeat
+                        && ui
+                            .button(tr(lang, "Disable repeat on win/loss events", "取消勝負事件重複"))
+                            .on_hover_text(tr(
+                                lang,
+                                "Automatically disables repeat on events containing victory or defeat actions to avoid game crashes",
+                                "自動取消含勝利或失敗動作事件的循環重複設定，避免遊戲循環崩潰",
+                            ))
+                            .clicked()
+                    {
+                        fix_terminal_repeat = true;
                     }
                     let can_locate = selected
                         .and_then(|i| rows.get(i))
@@ -1441,6 +1572,26 @@ impl EditorApp {
                 }
                 Ok(_) => {
                     self.status_message = tr(lang, "No main houses added.", "未新增主堡。").into();
+                    self.status_is_error = false;
+                }
+                Err(e) => {
+                    self.status_message = e;
+                    self.status_is_error = true;
+                }
+            }
+        } else if fix_terminal_repeat {
+            match self.fix_terminal_repeat() {
+                Ok(n) if n > 0 => {
+                    self.status_message = match lang {
+                        AppLanguage::English => {
+                            format!("Disabled repeat on {n} win/loss event(s); Save to write them.")
+                        }
+                        _ => format!("已取消 {n} 個勝負事件的重複設定；請存檔以寫入變更。"),
+                    };
+                    self.status_is_error = false;
+                }
+                Ok(_) => {
+                    self.status_message = tr(lang, "No repeating win/loss events found.", "未發現重複的勝負事件。").into();
                     self.status_is_error = false;
                 }
                 Err(e) => {
@@ -1965,6 +2116,89 @@ mod tests {
                     object_id: uuid::Uuid::nil(),
                 },
             ],
+        });
+
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| app.show_design_check(ctx));
+        assert!(app.design_check.open);
+    }
+
+    #[test]
+    fn test_scenario_terminal_repeat_detection_and_quick_fix() {
+        let temp_dir = std::env::temp_dir().join(format!("arm_terminal_repeat_{}", Uuid::new_v4()));
+        let script_dir = temp_dir.join("SCRIPT");
+        std::fs::create_dir_all(&script_dir).unwrap();
+        std::fs::write(temp_dir.join(".arm_custom_map"), b"{}").unwrap();
+        std::fs::write(
+            script_dir.join("ak_level.bci"),
+            against_rome_scenario::BciImage::idle().serialize(),
+        )
+        .unwrap();
+
+        let mut app = EditorApp::default();
+        let session = crate::TerrainSession::create_blank(5, 32);
+        app.set_loaded_map(temp_dir.clone(), session).unwrap();
+        app.scenario.load_session(&temp_dir).unwrap();
+
+        let event = against_rome_scenario::Event {
+            name: "Looping_Victory".into(),
+            enabled: true,
+            repeat: false,
+            delay_seconds: 10,
+            conditions: vec![],
+            actions: vec![against_rome_scenario::Action {
+                kind: 3,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        app.scenario.add_events(&[event]).unwrap();
+
+        // Simulate designer toggling repeat to true in the event editor
+        let mut looping_event = app.scenario.document().events[0].clone();
+        looping_event.repeat = true;
+        app.scenario.replace_event(0, looping_event).unwrap();
+
+        let report = app.design_check_report();
+        let rows = report_rows(&report, &[], AppLanguage::English);
+        let repeat_issue = rows.iter().find(|r| r.code == "scenario-terminal-repeat");
+        assert!(repeat_issue.is_some(), "Should detect repeating victory/defeat event");
+        let issue = repeat_issue.unwrap();
+        assert_eq!(issue.severity, MapIssueSeverity::Error);
+        assert_eq!(issue.event_index, 0);
+        assert!(issue.is_locatable());
+        assert!(issue.text(AppLanguage::English).contains("Looping_Victory"));
+        assert!(issue.text(AppLanguage::TraditionalChinese).contains("Looping_Victory"));
+
+        let fixed = app.fix_terminal_repeat().unwrap();
+        assert_eq!(fixed, 1);
+        assert!(!app.scenario.document().events[0].repeat);
+
+        let report_after = app.design_check_report();
+        let rows_after = report_rows(&report_after, &[], AppLanguage::English);
+        assert!(!rows_after.iter().any(|r| r.code == "scenario-terminal-repeat"));
+
+        assert!(app.scenario.undo_events());
+        assert!(app.scenario.document().events[0].repeat);
+
+        let _ = std::fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_quick_fix_button_shown_for_terminal_repeat() {
+        let mut app = EditorApp::default();
+        app.design_check.open = true;
+        let mut issue = MapIssue::new(
+            MapIssueSeverity::Error,
+            "scenario-terminal-repeat",
+            "事件包含勝利或失敗動作，但啟用了循環重複",
+            "Event contains Victory or Defeat action with Repeat enabled",
+        );
+        issue.event_index = 0;
+        app.design_check.report = Some(DesignCheckReport::Checked {
+            map_issues: vec![issue],
+            preflight_error: None,
+            design_issues: vec![],
         });
 
         let ctx = egui::Context::default();
