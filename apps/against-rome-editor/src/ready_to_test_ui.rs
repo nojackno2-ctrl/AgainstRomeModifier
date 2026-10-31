@@ -75,65 +75,11 @@ pub struct ReadyToTestUi {
     cache_key: String,
     cached_preview: String,
     pub recompute_count: usize,
-    /// 已載入地圖目錄的檔案指紋（相對路徑、長度、修改時間）；偵測外部檔案異動。
-    map_fingerprint: String,
-    map_fingerprint_at: Option<std::time::Instant>,
+    /// 上次完整檢核時間，限制背景重算頻率。
+    checked_at: Option<std::time::Instant>,
 }
 
-/// 指紋重新掃描的最短間隔，避免面板開啟時每幀走訪目錄。
-const MAP_FINGERPRINT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(1000);
-
-/// 唯讀掃描地圖目錄（最多 3 層、1024 項），回傳排序後的「路徑|長度|修改時間」指紋。
-pub(crate) fn map_dir_fingerprint(dir: &Path) -> String {
-    fn walk(root: &Path, dir: &Path, depth: usize, out: &mut Vec<String>) {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            if out.len() >= 1024 {
-                return;
-            }
-            let path = entry.path();
-            let Ok(meta) = entry.metadata() else {
-                continue;
-            };
-            if meta.is_dir() {
-                if depth < 3 {
-                    walk(root, &path, depth + 1, out);
-                }
-                continue;
-            }
-            let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().to_lowercase();
-            let mtime = meta
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_nanos())
-                .unwrap_or(0);
-            out.push(format!("{rel}|{}|{mtime}", meta.len()));
-        }
-    }
-    let mut out = Vec::new();
-    walk(dir, dir, 0, &mut out);
-    out.sort();
-    out.join("\n")
-}
-
-impl ReadyToTestUi {
-    /// 依節流間隔更新地圖目錄指紋；`force` 為真時立即重掃（手動重新整理）。
-    fn refresh_map_fingerprint(&mut self, dir: Option<&Path>, force: bool) -> &str {
-        let due = force
-            || self
-                .map_fingerprint_at
-                .map_or(true, |t| t.elapsed() >= MAP_FINGERPRINT_INTERVAL);
-        if due {
-            self.map_fingerprint = dir.map(map_dir_fingerprint).unwrap_or_default();
-            self.map_fingerprint_at = Some(std::time::Instant::now());
-        }
-        &self.map_fingerprint
-    }
-}
-
+const READINESS_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 impl EditorApp {
     /// 評估目前地圖的實機測試就緒狀態（只讀取記憶體候選資料，不寫入檔案）。
     pub fn evaluate_test_readiness(&mut self) -> TestReadinessReport {
@@ -751,24 +697,23 @@ impl EditorApp {
         let mut trigger_fix_hostility = false;
         let mut trigger_copy_instructions = false;
 
-        // 快取是檢查快照；磁碟外部異動或無歷程的草稿變更可手動重新整理。
+        // 定期重算涵蓋未記錄歷程的草稿及磁碟異動，並保留立即失效機制。
+        ctx.request_repaint_after(READINESS_REFRESH_INTERVAL);
         use crate::undo_journal::UndoTarget;
         let tokens: Vec<_> = [SubsystemId::Terrain, SubsystemId::Materials, SubsystemId::Placement,
             SubsystemId::Nature, SubsystemId::Spawns, SubsystemId::Scenario, SubsystemId::Scene,
             SubsystemId::Auxiliary].iter().map(|id| self.token(*id)).collect();
-        let map_dir = self.loaded_map_path.clone();
-        let fingerprint = self
-            .ready_to_test
-            .refresh_map_fingerprint(map_dir.as_deref(), false)
-            .to_string();
-        let key = format!("{:?}|{}|{:?}|{:?}|{:?}|{}|{}|{}", self.loaded_map_path,
+        let key = format!("{:?}|{}|{:?}|{:?}|{:?}|{}|{}", self.loaded_map_path,
             self.map_path_input, lang, tokens, self.subsystem_change_summary(),
-            self.scenario.is_loaded(), self.placement.is_loaded(), fingerprint);
-        if self.ready_to_test.cached_readiness.is_none() || self.ready_to_test.cache_key != key {
+            self.scenario.is_loaded(), self.placement.is_loaded());
+        let expired = self.ready_to_test.checked_at
+            .map_or(true, |at| at.elapsed() >= READINESS_REFRESH_INTERVAL);
+        if expired || self.ready_to_test.cached_readiness.is_none() || self.ready_to_test.cache_key != key {
             let report = self.evaluate_test_readiness();
             self.ready_to_test.cached_readiness = Some(report);
             self.ready_to_test.cache_key = key;
             self.ready_to_test.cached_preview.clear();
+            self.ready_to_test.checked_at = Some(std::time::Instant::now());
             self.ready_to_test.recompute_count += 1;
         }
         let report = self.ready_to_test.cached_readiness.clone().expect("已建立檢查快取");
@@ -790,9 +735,9 @@ impl EditorApp {
             ScrollArea::vertical().show(ui, |ui| {
                 if ui.button(tr(lang, "Refresh checks", "重新整理檢查")).clicked() {
                     self.ready_to_test.cached_readiness = None;
-                    self.ready_to_test.map_fingerprint_at = None;
+                    self.ready_to_test.checked_at = None;
                 }
-                ui.label(tr(lang, "Checks auto-refresh when map files change on disk; refresh manually after unjournaled draft edits.", "地圖檔案於磁碟變動時會自動重新檢查；未記錄歷程的草稿異動請手動重新整理。"));
+                ui.label(tr(lang, "Checks refresh periodically while this panel is open.", "面板開啟時會定期重新檢查。"));
                 // 1. 總體就緒評級狀態橫幅
                 ui.group(|ui| {
                     ui.horizontal(|ui| {
@@ -1358,30 +1303,8 @@ mod tests {
     }
 
     #[test]
-    fn map_dir_fingerprint_detects_external_file_changes() {
-        let dir = std::env::temp_dir().join(format!("arm_rtt_fp_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(dir.join("sub")).unwrap();
-        std::fs::write(dir.join("a.dat"), b"one").unwrap();
-        let first = map_dir_fingerprint(&dir);
-        assert_eq!(first, map_dir_fingerprint(&dir));
-        std::fs::write(dir.join("sub").join("b.dat"), b"x").unwrap();
-        let second = map_dir_fingerprint(&dir);
-        assert_ne!(first, second);
-        std::fs::write(dir.join("a.dat"), b"longer").unwrap();
-        assert_ne!(second, map_dir_fingerprint(&dir));
-        assert_eq!(map_dir_fingerprint(&dir.join("missing")), "");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn ready_to_test_recomputes_after_external_map_file_change() {
-        let dir = std::env::temp_dir().join(format!("arm_rtt_recompute_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("a.dat"), b"one").unwrap();
+    fn ready_to_test_periodically_rechecks_without_journal_changes() {
         let mut app = EditorApp::default();
-        app.loaded_map_path = Some(dir.clone());
         app.ready_to_test.open = true;
         let ctx = egui::Context::default();
         let run = |app: &mut EditorApp| {
@@ -1389,17 +1312,12 @@ mod tests {
         };
         run(&mut app);
         let base = app.ready_to_test.recompute_count;
-        // 節流間隔內無異動：不重算。
         run(&mut app);
         assert_eq!(app.ready_to_test.recompute_count, base);
-        // 外部異動但仍在節流間隔內：維持快照。
-        std::fs::write(dir.join("a.dat"), b"changed!").unwrap();
-        run(&mut app);
-        assert_eq!(app.ready_to_test.recompute_count, base);
-        // 間隔到期後偵測外部異動並重算。
-        app.ready_to_test.map_fingerprint_at = None;
+        app.ready_to_test.cached_preview = "舊的驗收指引".into();
+        app.ready_to_test.checked_at = Some(std::time::Instant::now() - READINESS_REFRESH_INTERVAL);
         run(&mut app);
         assert_eq!(app.ready_to_test.recompute_count, base + 1);
-        let _ = std::fs::remove_dir_all(&dir);
+        assert!(app.ready_to_test.cached_preview.is_empty());
     }
 }
