@@ -1,3 +1,11 @@
+## 2026-10-31 Claude：復原對話框可讀的還原／缺漏清單
+- 當機復原對話框原先直接輸出缺漏面板的 JSON；現新增 `recovery::describe_offer`，以雙語列出「將復原」與「無法復原」項目，空清單顯示「無」。僅改 recovery.rs 與 app_recovery.rs 的對話框兩行。
+- 驗證：新增 `describe_offer_lists_restored_and_omitted_parts_readably`；`cargo test --workspace --locked`（獨立 %TEMP% target）287 組、2819 passed、0 failed、23 ignored。首次編譯因閉包生命週期失敗，已改回傳 String。未驗證桌面視窗；未修改安裝遊戲。
+
+## 2026-10-31 Codex：河流高度圖檢查
+- 新增按需檢查高度圖原始值範圍，並提示資料缺失或尺寸不符。專項測試 1 passed。
+- 審查 ecd8671 與 0b5a10e，未發現確切的復原或未儲存狀態缺陷。工作樹完整測試受其他代理進行中的 scenario_ui 變更影響：985 passed、2 failed、6 ignored；兩個失敗測試均使用沒有動作的事件。未驗證 GUI 或遊戲。
+
 ## 2026-10-31 Agy：劇本事件條件與動作一鍵複製
 - 依設計者在劇本事件編輯器中設定多組部隊波次生成（座標、隊伍、移動目的地）、區域偵測矩形或物件狀態條件時，僅能新增預設空項目並需反覆手動重新輸入各欄位之缺口，實作：
   1. `duplicate_condition` 與 `duplicate_action`：於條件與動作列各加入雙語「複製此條件 / Duplicate condition」與「複製此動作 / Duplicate action」按鈕；直接於該項下方插入完整複本。

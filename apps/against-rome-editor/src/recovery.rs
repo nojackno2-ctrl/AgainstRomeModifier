@@ -25,6 +25,31 @@ pub(crate) fn utc_timestamp(seconds: u64) -> String {
     format!("{year:04}-{month:02}-{day:02} {:02}:{:02}:{:02} UTC", seconds / 3600 % 24, seconds / 60 % 60, seconds % 60)
 }
 
+/// 供復原對話框顯示：把快照內含部分轉成雙語可讀清單，缺漏項目為空時明確標示「無」。
+pub(crate) fn describe_offer(value: &Value) -> (String, String) {
+    let label = |part: &str| -> String { match part {
+        "terrain_height" => "Terrain height / 地形高度",
+        "passability" => "Passability / 通行碰撞",
+        "water" => "Water / 水面",
+        "campaign_camera" => "Campaign camera / 戰役鏡頭",
+        "materials" => "Materials / 材質",
+        "scenario" => "Scenario / 劇本",
+        "script_spawns" => "Script spawns / 腳本生成",
+        "start_camera" => "Start camera / 開局鏡頭",
+        other => other,
+    }.to_string() };
+    let join = |items: Vec<String>| {
+        if items.is_empty() { "None / 無".to_string() } else { items.join("; ") }
+    };
+    let restored = value["included_parts"].as_array().map_or(vec![], |a| {
+        a.iter().filter_map(Value::as_str).map(|p| label(p)).collect()
+    });
+    let omitted = value["pending"]["omitted_panels"].as_array().map_or(vec![], |a| {
+        a.iter().filter_map(Value::as_str).map(str::to_string).collect()
+    });
+    (join(restored), join(omitted))
+}
+
 fn map_key(path: &Path) -> String {
     let name = path.to_string_lossy().replace('\\', "/").to_lowercase();
     let hash = name.bytes().fold(0xcbf29ce484222325u64, |h, b| {
@@ -462,6 +487,23 @@ impl Drop for Recovery {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn describe_offer_lists_restored_and_omitted_parts_readably() {
+        let none = manifest(Path::new("map"), &Value::Null, json!({"omitted_panels": []}));
+        let (restored, omitted) = describe_offer(&none);
+        assert_eq!((restored.as_str(), omitted.as_str()), ("None / 無", "None / 無"));
+        let some = manifest(
+            Path::new("map"),
+            &Value::Null,
+            json!({"terrain": {}, "water": [1, 2], "omitted_panels": ["Scene / 場景"]}),
+        );
+        let (restored, omitted) = describe_offer(&some);
+        assert_eq!(
+            restored,
+            "Terrain height / 地形高度; Passability / 通行碰撞; Water / 水面"
+        );
+        assert_eq!(omitted, "Scene / 場景");
+    }
     #[test]
     fn recovery_utc_dates_and_actual_included_payloads() {
         assert_eq!(utc_timestamp(0), "1970-01-01 00:00:00 UTC");

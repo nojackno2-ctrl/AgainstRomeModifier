@@ -207,7 +207,9 @@ impl EditorApp {
                     ui.label(format!("Unsaved work from {time} was found / 找到 {time} 未儲存工作"));
                     ui.label("Restores memory only; Safe Save persists changes. / 僅復原記憶體；請以 Safe Save 儲存。");
                     ui.label("Undo: terrain, materials and scenario each have one step. Campaign camera and water controls have no undo. / 地形、材質與劇本各自一步復原；戰役鏡頭與水面控制值沒有 undo。");
-                    ui.label(format!("Not recovered / 無法復原：{}", value["pending"]["omitted_panels"]));
+                    let (restored, omitted) = crate::recovery::describe_offer(value);
+                    ui.label(format!("Will restore / 將復原：{restored}"));
+                    ui.label(format!("Not recovered / 無法復原：{omitted}"));
                     ui.label("Listed omissions are not restored, including starter kit DATA families and emboss layers. / 列出的缺漏不會復原，包含起始配置 DATA 家族與浮雕圖層。");
                 }
                 Err(e) => { ui.colored_label(Color32::RED, e); }
