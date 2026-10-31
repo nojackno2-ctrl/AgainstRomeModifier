@@ -1,3 +1,13 @@
+## 2026-10-31 Agy：劇本事件即時診斷、矩形條件邊界正規化與條件排序
+- 依設計者編輯劇本事件時若輸入無效觸發延遲、矩形範圍反轉（min > max）、目標物件遺失、外交同隊或勝敗動作未置於最後時，缺乏即時診斷回饋且編譯失敗訊息模糊之缺口，實作：
+  1. `EventDiagnostic` 與 `validate_event_diagnostics`：涵蓋觸發延遲（repeat 延遲需 > 0）、名稱長度、條件上限與有效目標、矩形邊界（min <= max 且座標合規）、勝敗動作終止性（不可重複且置於末位）、外交隊伍相異性、部隊型錄別名驗證、訊息文字 Windows-1251 與長度校驗；於事件編輯器頂部呈現雙語錯誤／警告摘要面板，並在條件／動作欄位旁標註醒目警告。
+  2. 矩形條件邊界一鍵正規化（`normalize_condition_bounds`）：於偵測到 min > max 時提供「正規化範圍 / Normalize bounds」按鈕，一鍵交換修正為 min <= max；配合 `replace_event` 具備單步復原能力。
+  3. 條件上下移動排序（`move_condition`）：為事件條件清單加入「上移 / Move up」與「下移 / Move down」按鈕，支援執行順序調整。
+  4. 驗證與瀏覽器連動：`validate_draft` 於驗證失敗時直接輸出精準的事件序號、名稱及具體診斷原因；事件瀏覽器清單對存在錯誤之事件即時標註 `⚠` 警示圖示。
+- 驗證：
+  - 新增專項回歸測試 5 項：`test_validate_event_diagnostics_comprehensive`、`test_normalize_condition_bounds`、`test_move_condition_reordering`、`test_condition_normalization_and_reorder_is_one_undo_step`、`test_validate_draft_returns_pinpoint_event_name_and_reason` 全數通過。
+  - `cargo test --workspace --locked` 288 組全數通過（2809 passed、0 failed、23 ignored）；獨立 %TEMP% target 建置目錄（已於驗證後清理）。未修改已安裝遊戲，未驗證桌面原生視窗操作。
+
 ## 2026-10-31 Codex：侵蝕重新規劃失效防護
 - 重新模擬侵蝕前清除舊方案與待套用請求，失敗後不會誤用舊結果，其他工具請求保持不變。新增回歸測試涵蓋有效方案、待套用及無效輸入。
 - 驗證：正常 TEMP 獨立 target 下 `cargo check --workspace --locked`、`cargo test --workspace --locked`（287 組、2805 passed、0 failed、23 ignored；新增案例通過）及 `cargo build --workspace --locked` 通過。測試期間另一代理並行修改並提交放置功能，測試結果反映編譯時的工作樹快照；桌面操作及遊戲內效果未驗證，未修改安裝遊戲。

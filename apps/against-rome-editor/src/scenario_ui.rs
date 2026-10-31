@@ -488,6 +488,18 @@ impl ScenarioUi {
         }
     }
     fn validate_draft(&self, draft: &ScenarioDocument) -> Result<()> {
+        let targets: Vec<_> = draft.spawns.iter().map(|s| (s.clone(), s.alias.clone())).collect();
+        for (i, e) in draft.events.iter().enumerate() {
+            let diags = validate_event_diagnostics(e, &targets, &self.aliases);
+            if let Some(err) = diags.iter().find(|d| d.level == DiagnosticLevel::Error) {
+                return Err(format!(
+                    "劇本事件驗證失敗：事件 #{}「{}」：{}",
+                    i + 1,
+                    e.name,
+                    err.text(self.english)
+                ));
+            }
+        }
         draft
             .validate(if self.aliases.is_empty() { None } else { Some(&self.aliases) })
             .map_err(|e| format!("劇本事件驗證失敗：{e}"))?;
@@ -1078,6 +1090,7 @@ impl ScenarioUi {
     }
     fn preview(&mut self) -> Result<Vec<u8>> {
         self.camera.validate()?;
+        self.validate_draft(&self.document)?;
         for s in &self.watched {if fs::read(&s.path).map_err(|e|e.to_string())?!=s.bytes{return Err(format!("來源已被外部修改：{}；請重新載入。",s.path.display()))}}
         let original = &self
             .source
@@ -1627,9 +1640,19 @@ impl ScenarioUi {
         }
         for i in indices {
             let event = &self.document.events[i];
+            let has_err = validate_event_diagnostics(event, &[], &self.aliases)
+                .iter()
+                .any(|d| d.level == DiagnosticLevel::Error);
+            let status_icon = if has_err { "⚠" } else if event.enabled { "●" } else { "○" };
             let label = egui::RichText::new(format!("{} {}\n{}",
-                if event.enabled { "●" } else { "○" }, event.name, event_summary(event, en)));
-            let label = if event.enabled { label } else { label.color(egui::Color32::GRAY) };
+                status_icon, event.name, event_summary(event, en)));
+            let label = if has_err {
+                label.color(egui::Color32::from_rgb(255, 100, 100))
+            } else if event.enabled {
+                label
+            } else {
+                label.color(egui::Color32::GRAY)
+            };
             if ui.push_id(("event_browser_row", i), |ui| ui.selectable_label(self.selected == i, label)).inner.clicked() {
                 self.selected = i;
             }
@@ -1943,9 +1966,51 @@ fn event_editor(
         ui.label(tl(en, "開局後延遲（秒）", "Delay after start (s)"));
         ui.add(egui::DragValue::new(&mut e.delay_seconds).clamp_range(0..=86400));
         ui.checkbox(&mut e.repeat, tl(en, "週期重複", "Repeat"));
+        if e.repeat && e.delay_seconds == 0 {
+            ui.colored_label(
+                egui::Color32::from_rgb(255, 100, 100),
+                tl(en, "⚠ 重複事件延遲必須大於 0 秒", "⚠ Repeating event delay must be > 0"),
+            );
+        }
     });
+
+    let diagnostics = validate_event_diagnostics(e, targets, aliases);
+    if !diagnostics.is_empty() {
+        ui.group(|ui| {
+            let has_err = diagnostics.iter().any(|d| d.level == DiagnosticLevel::Error);
+            let title_color = if has_err {
+                egui::Color32::from_rgb(255, 100, 100)
+            } else {
+                egui::Color32::from_rgb(255, 200, 80)
+            };
+            let err_count = diagnostics.iter().filter(|d| d.level == DiagnosticLevel::Error).count();
+            let warn_count = diagnostics.len() - err_count;
+            let header = format!(
+                "{} ({} {}, {} {})",
+                tl(en, "事件檢查提示", "Event diagnostics"),
+                err_count,
+                tl(en, "項錯誤", "errors"),
+                warn_count,
+                tl(en, "項警告", "warnings"),
+            );
+            ui.colored_label(title_color, header);
+            for d in &diagnostics {
+                ui.horizontal(|ui| {
+                    let (prefix, color) = match d.level {
+                        DiagnosticLevel::Error => (tl(en, "[錯誤]", "[Error]"), egui::Color32::from_rgb(255, 100, 100)),
+                        DiagnosticLevel::Warning => (tl(en, "[警告]", "[Warning]"), egui::Color32::from_rgb(255, 200, 80)),
+                    };
+                    ui.colored_label(color, prefix);
+                    ui.label(d.text(en));
+                });
+            }
+        });
+    }
+
     ui.label(tl(en, "條件：全部成立且延遲到期後執行；死亡條件先追蹤曾存在的物件。", "Conditions: all must hold once the delay expires; death conditions track objects that once existed."));
-    let mut remove = None;
+    let mut remove_condition = None;
+    let mut move_condition_request: Option<(usize, isize)> = None;
+    let condition_count = e.conditions.len();
     for (i, c) in e.conditions.iter_mut().enumerate() {
         ui.push_id(("condition", i), |ui| {
             ui.horizontal(|ui| {
@@ -1960,22 +2025,41 @@ fn event_editor(
                     },
                 );
                 if ui.button(tl(en, "刪除此條件", "Delete condition")).clicked() {
-                    remove = Some(i)
+                    remove_condition = Some(i)
+                }
+                if ui.add_enabled(i > 0, egui::Button::new(tl(en, "上移", "Move up"))).clicked() {
+                    move_condition_request = Some((i, -1));
+                }
+                if ui.add_enabled(i + 1 < condition_count, egui::Button::new(tl(en, "下移", "Move down"))).clicked() {
+                    move_condition_request = Some((i, 1));
                 }
             });
-            egui::ComboBox::from_id_source("target")
-                .selected_text(
-                    targets
-                        .iter()
-                        .find(|(s, _)| s.id == c.target_id)
-                        .map(|(_, n)| n.as_str())
-                        .unwrap_or(tl(en, "請選擇目標 / 已刪除", "Choose a target / deleted")),
-                )
-                .show_ui(ui, |ui| {
-                    for (s, name) in targets {
-                        ui.selectable_value(&mut c.target_id, s.id, name);
-                    }
-                });
+            ui.horizontal(|ui| {
+                egui::ComboBox::from_id_source("target")
+                    .selected_text(
+                        targets
+                            .iter()
+                            .find(|(s, _)| s.id == c.target_id)
+                            .map(|(_, n)| n.as_str())
+                            .unwrap_or(tl(en, "請選擇目標 / 已刪除", "Choose a target / deleted")),
+                    )
+                    .show_ui(ui, |ui| {
+                        for (s, name) in targets {
+                            ui.selectable_value(&mut c.target_id, s.id, name);
+                        }
+                    });
+                if c.target_id.is_nil() {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(255, 100, 100),
+                        tl(en, "⚠ 未選擇目標物件", "⚠ No target object selected"),
+                    );
+                } else if !targets.is_empty() && !targets.iter().any(|(s, _)| s.id == c.target_id) {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(255, 200, 80),
+                        tl(en, "⚠ 目標物件已不存在", "⚠ Target object missing/deleted"),
+                    );
+                }
+            });
             if c.kind == 2 {
                 ui.horizontal(|ui| {
                     for (name, v) in [
@@ -1991,11 +2075,24 @@ fn event_editor(
                         *draw = Some(i);
                     }
                 });
+                if c.min_x > c.max_x || c.min_z > c.max_z {
+                    ui.horizontal(|ui| {
+                        ui.colored_label(
+                            egui::Color32::from_rgb(255, 100, 100),
+                            tl(en, "⚠ 矩形範圍無效 (min > max)", "⚠ Invalid bounds (min > max)"),
+                        );
+                        if ui.button(tl(en, "正規化範圍", "Normalize bounds")).clicked() {
+                            normalize_condition_bounds(c);
+                        }
+                    });
+                }
             }
         });
     }
-    if let Some(i) = remove {
+    if let Some(i) = remove_condition {
         e.conditions.remove(i);
+    } else if let Some((i, offset)) = move_condition_request {
+        move_condition(&mut e.conditions, i, offset);
     }
     if ui.button(tl(en, "新增物件條件", "Add object condition")).clicked() {
         let mut c = Condition::default();
@@ -2039,6 +2136,17 @@ fn event_editor(
                     0 => {
                         ui.text_edit_multiline(&mut a.text);
                         ui.small(tl(en, "文字需能使用 Windows-1251 編碼，最多 1000 bytes。", "Text must encode as Windows-1251, at most 1000 bytes."));
+                        if a.text.trim().is_empty() {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(255, 100, 100),
+                                tl(en, "⚠ 訊息文字不可為空", "⚠ Message text cannot be empty"),
+                            );
+                        } else if !is_windows_1251_compatible(&a.text) {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(255, 100, 100),
+                                tl(en, "⚠ 包含無法以 Windows-1251 編碼的字元", "⚠ Contains non-Windows-1251 characters"),
+                            );
+                        }
                     }
                     1 => {
                         ui.horizontal(|ui| {
@@ -2048,6 +2156,12 @@ fn event_editor(
                             ui.add(egui::DragValue::new(&mut a.other_team).clamp_range(0..=7));
                             ui.checkbox(&mut a.hostile, tl(en, "敵對", "Hostile"));
                         });
+                        if a.team == a.other_team {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(255, 100, 100),
+                                tl(en, "⚠ 隊伍與對方隊伍不可相同", "⚠ Team and other team must not be identical"),
+                            );
+                        }
                     }
                     2 => {
                         ui.horizontal(|ui| {
@@ -2059,6 +2173,17 @@ fn event_editor(
                             ui.label(tl(en, "數量", "count"));
                             ui.add(egui::DragValue::new(&mut a.count).clamp_range(1..=20));
                         });
+                        if a.alias.trim().is_empty() {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(255, 100, 100),
+                                tl(en, "⚠ 部隊別名不可為空", "⚠ Troop alias cannot be empty"),
+                            );
+                        } else if !aliases.is_empty() && !aliases.iter().any(|al| al.eq_ignore_ascii_case(&a.alias)) {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(255, 200, 80),
+                                tl(en, "⚠ 型錄中未登錄的部隊別名", "⚠ Unregistered troop alias"),
+                            );
+                        }
                         ui.horizontal(|ui| {
                             ui.label("X");
                             ui.add(egui::DragValue::new(&mut a.x).clamp_range(0. ..=16383.));
@@ -2090,6 +2215,12 @@ fn event_editor(
                     }
                     3 | 4 => {
                         ui.small(tl(en, "結束任務；後續事件停止輪詢。", "Ends the mission; later events stop polling."));
+                        if e.repeat || i + 1 != action_count {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(255, 100, 100),
+                                tl(en, "⚠ 勝利／失敗動作必須置於單次事件最後", "⚠ Victory/Defeat must be the last action of a one-shot event"),
+                            );
+                        }
                     }
                     _ => {
                         ui.colored_label(egui::Color32::RED, tl(en, "不支援的動作種類", "Unsupported action kind"));
@@ -2124,6 +2255,285 @@ fn move_action(actions: &mut [Action], index: usize, offset: isize) -> Option<us
     }
     actions.swap(index, target);
     Some(target)
+}
+
+/// Reorders a condition with its neighbour (execution order). Returns the condition's new index,
+/// or `None` when the move is out of range.
+pub(crate) fn move_condition(conditions: &mut [Condition], index: usize, offset: isize) -> Option<usize> {
+    let target = index.checked_add_signed(offset)?;
+    if index >= conditions.len() || target >= conditions.len() {
+        return None;
+    }
+    conditions.swap(index, target);
+    Some(target)
+}
+
+/// Normalizes a rectangle condition so that `min_x <= max_x` and `min_z <= max_z`.
+/// Returns `true` if any coordinates were swapped.
+pub(crate) fn normalize_condition_bounds(c: &mut Condition) -> bool {
+    if c.kind != 2 {
+        return false;
+    }
+    let mut changed = false;
+    if c.min_x > c.max_x {
+        std::mem::swap(&mut c.min_x, &mut c.max_x);
+        changed = true;
+    }
+    if c.min_z > c.max_z {
+        std::mem::swap(&mut c.min_z, &mut c.max_z);
+        changed = true;
+    }
+    changed
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiagnosticLevel {
+    Error,
+    Warning,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EventDiagnostic {
+    pub level: DiagnosticLevel,
+    pub zh: String,
+    pub en: String,
+}
+
+impl EventDiagnostic {
+    pub fn error(zh: impl Into<String>, en: impl Into<String>) -> Self {
+        Self {
+            level: DiagnosticLevel::Error,
+            zh: zh.into(),
+            en: en.into(),
+        }
+    }
+
+    pub fn warning(zh: impl Into<String>, en: impl Into<String>) -> Self {
+        Self {
+            level: DiagnosticLevel::Warning,
+            zh: zh.into(),
+            en: en.into(),
+        }
+    }
+
+    pub fn text(&self, english: bool) -> &str {
+        if english {
+            &self.en
+        } else {
+            &self.zh
+        }
+    }
+}
+
+pub(crate) fn is_windows_1251_compatible(text: &str) -> bool {
+    text.chars().all(|c| {
+        let u = c as u32;
+        u <= 0x7F
+            || (0x0400..=0x045F).contains(&u)
+            || u == 0x0490
+            || u == 0x0491
+            || (0x00A0..=0x00BF).contains(&u)
+            || (0x2013..=0x203A).contains(&u)
+            || u == 0x20AC
+            || u == 0x2116
+            || u == 0x2122
+    })
+}
+
+pub(crate) fn validate_event_diagnostics(
+    event: &Event,
+    targets: &[(Spawn, String)],
+    aliases: &[String],
+) -> Vec<EventDiagnostic> {
+    let mut diags = Vec::new();
+
+    // 1. Event timing / header
+    if event.name.trim().is_empty() {
+        diags.push(EventDiagnostic::error(
+            "事件名稱不可為空",
+            "Event name cannot be empty",
+        ));
+    } else if event.name.encode_utf16().count() > 100 {
+        diags.push(EventDiagnostic::error(
+            "事件名稱長度超過 100 個字元上限",
+            "Event name exceeds 100 character limit",
+        ));
+    }
+
+    if !(0..=86400).contains(&event.delay_seconds) {
+        diags.push(EventDiagnostic::error(
+            "開局延遲秒數超出有效範圍（0..86400）",
+            "Start delay seconds out of range (0..86400)",
+        ));
+    }
+
+    if event.repeat && event.delay_seconds == 0 {
+        diags.push(EventDiagnostic::error(
+            "重複事件的延遲時間必須大於 0 秒（避免遊戲卡死迴圈）",
+            "Repeating event delay must be greater than 0 to prevent an infinite loop",
+        ));
+    }
+
+    // 2. Conditions
+    if event.conditions.len() > 32 {
+        diags.push(EventDiagnostic::error(
+            "條件數量超過 32 個上限",
+            "Too many conditions (max 32)",
+        ));
+    }
+
+    for (i, c) in event.conditions.iter().enumerate() {
+        let num = i + 1;
+        if c.target_id.is_nil() {
+            diags.push(EventDiagnostic::error(
+                format!("條件 #{num} 尚未選擇目標物件"),
+                format!("Condition #{num} has no target object selected"),
+            ));
+        } else if !targets.is_empty() && !targets.iter().any(|(s, _)| s.id == c.target_id) {
+            if event.enabled {
+                diags.push(EventDiagnostic::error(
+                    format!("條件 #{num} 所參照的目標物件已被刪除或不存在"),
+                    format!("Condition #{num} references a missing or deleted target object"),
+                ));
+            } else {
+                diags.push(EventDiagnostic::warning(
+                    format!("條件 #{num} 所參照的目標物件不存在（事件停用中）"),
+                    format!("Condition #{num} references a missing target object (event disabled)"),
+                ));
+            }
+        }
+
+        if c.kind == 2 {
+            if c.min_x > c.max_x || c.min_z > c.max_z {
+                diags.push(EventDiagnostic::error(
+                    format!("條件 #{num} 矩形範圍無效（min X > max X 或 min Z > max Z）"),
+                    format!("Condition #{num} rectangle area is invalid (min exceeds max)"),
+                ));
+            }
+            if c.min_x < 0
+                || c.min_z < 0
+                || c.max_x > 16383
+                || c.max_z > 16383
+            {
+                diags.push(EventDiagnostic::error(
+                    format!("條件 #{num} 座標超出地圖邊界（0..16383）"),
+                    format!("Condition #{num} coordinates out of map bounds (0..16383)"),
+                ));
+            }
+        }
+    }
+
+    // 3. Actions
+    if event.actions.is_empty() {
+        diags.push(EventDiagnostic::error(
+            "事件必須包含至少一個動作",
+            "Event must contain at least one action",
+        ));
+    } else if event.actions.len() > 32 {
+        diags.push(EventDiagnostic::error(
+            "動作數量超過 32 個上限",
+            "Too many actions (max 32)",
+        ));
+    }
+
+    let has_terminal = event.actions.iter().any(|a| a.kind == 3 || a.kind == 4);
+    if has_terminal && event.repeat {
+        diags.push(EventDiagnostic::error(
+            "含勝利或失敗動作的事件不可設為週期重複",
+            "Events with Victory or Defeat cannot be set to repeat",
+        ));
+    }
+
+    for (i, a) in event.actions.iter().enumerate() {
+        let num = i + 1;
+        match a.kind {
+            0 => {
+                if a.text.trim().is_empty() {
+                    diags.push(EventDiagnostic::error(
+                        format!("動作 #{num} 訊息文字不可為空"),
+                        format!("Action #{num} message text cannot be empty"),
+                    ));
+                } else if a.text.contains('\0') {
+                    diags.push(EventDiagnostic::error(
+                        format!("動作 #{num} 訊息文字不可包含 NUL 字元"),
+                        format!("Action #{num} message text cannot contain NUL"),
+                    ));
+                } else if !is_windows_1251_compatible(&a.text) {
+                    diags.push(EventDiagnostic::error(
+                        format!("動作 #{num} 訊息包含無法以 Windows-1251 編碼的字元"),
+                        format!("Action #{num} message contains characters not encodable in Windows-1251"),
+                    ));
+                } else if a.text.encode_utf16().count() > 1000 {
+                    diags.push(EventDiagnostic::error(
+                        format!("動作 #{num} 訊息長度超過 1000 位元組"),
+                        format!("Action #{num} message exceeds 1000 bytes"),
+                    ));
+                }
+            }
+            1 => {
+                if a.team == a.other_team {
+                    diags.push(EventDiagnostic::error(
+                        format!("動作 #{num} 外交隊伍不可與對方隊伍相同（皆為隊伍 {}）", a.team),
+                        format!("Action #{num} diplomacy team cannot be the same as other team (both team {})", a.team),
+                    ));
+                }
+                if !(0..=7).contains(&a.team) || !(0..=7).contains(&a.other_team) {
+                    diags.push(EventDiagnostic::error(
+                        format!("動作 #{num} 隊伍編號超出有效範圍（0..7）"),
+                        format!("Action #{num} team number out of range (0..7)"),
+                    ));
+                }
+            }
+            2 => {
+                if a.alias.trim().is_empty() {
+                    diags.push(EventDiagnostic::error(
+                        format!("動作 #{num} 部隊別名不可為空"),
+                        format!("Action #{num} troop alias cannot be empty"),
+                    ));
+                } else if !aliases.is_empty() && !aliases.iter().any(|al| al.eq_ignore_ascii_case(&a.alias)) {
+                    diags.push(EventDiagnostic::warning(
+                        format!("動作 #{num} 使用了型錄中未登錄的部隊別名 \"{}\"", a.alias),
+                        format!("Action #{num} uses an unregistered troop alias \"{}\"", a.alias),
+                    ));
+                }
+                if !a.x.is_finite()
+                    || !a.z.is_finite()
+                    || !(0. ..=16383.).contains(&a.x)
+                    || !(0. ..=16383.).contains(&a.z)
+                {
+                    diags.push(EventDiagnostic::error(
+                        format!("動作 #{num} 生成座標超出地圖邊界（0..16383）"),
+                        format!("Action #{num} spawn coordinates out of map bounds (0..16383)"),
+                    ));
+                }
+                if let Some(dest) = &a.move_destination {
+                    if !(0..=16383).contains(&dest.x) || !(0..=16383).contains(&dest.z) {
+                        diags.push(EventDiagnostic::error(
+                            format!("動作 #{num} 移動目的地超出地圖邊界（0..16383）"),
+                            format!("Action #{num} destination out of map bounds (0..16383)"),
+                        ));
+                    }
+                }
+            }
+            3 | 4 => {
+                if i + 1 != event.actions.len() {
+                    let name = if a.kind == 3 { ("勝利", "Victory") } else { ("失敗", "Defeat") };
+                    diags.push(EventDiagnostic::error(
+                        format!("動作 #{num} {}動作必須置於事件的最後一個動作", name.0),
+                        format!("Action #{num} {} action must be the last action in the event", name.1),
+                    ));
+                }
+            }
+            _ => {
+                diags.push(EventDiagnostic::error(
+                    format!("動作 #{num} 不支援的動作種類 ({})", a.kind),
+                    format!("Action #{num} unsupported action kind ({})", a.kind),
+                ));
+            }
+        }
+    }
+
+    diags
 }
 fn kind_combo(ui: &mut egui::Ui, id: &str, value: &mut i32, names: &[&str]) {
     egui::ComboBox::from_id_source(id)
@@ -3660,6 +4070,260 @@ mod tests {
 
         fs::remove_dir_all(temp_dir).unwrap();
         fs::remove_dir_all(p).unwrap();
+    }
+
+    #[test]
+    fn test_validate_event_diagnostics_comprehensive() {
+        let spawn_id = uuid::Uuid::new_v4();
+        let targets = vec![(Spawn { id: spawn_id, alias: "GER_INF00".into(), ..Default::default() }, "Spawn 1".into())];
+        let aliases = vec!["GER_INF00".to_string(), "HUN_HAU00".to_string()];
+
+        // 1. Valid event has no errors or warnings
+        let valid_ev = Event {
+            name: "Valid_Event".into(),
+            delay_seconds: 10,
+            repeat: false,
+            conditions: vec![Condition {
+                kind: 0,
+                target_id: spawn_id,
+                ..Default::default()
+            }],
+            actions: vec![Action {
+                kind: 0,
+                text: "Hello World".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let diags = validate_event_diagnostics(&valid_ev, &targets, &aliases);
+        assert!(diags.is_empty(), "Expected clean diagnostics, got: {:?}", diags);
+
+        // 2. Empty name & repeat with delay 0
+        let mut bad_timing = valid_ev.clone();
+        bad_timing.name = "   ".into();
+        bad_timing.delay_seconds = 0;
+        bad_timing.repeat = true;
+        let diags = validate_event_diagnostics(&bad_timing, &targets, &aliases);
+        assert!(diags.iter().any(|d| d.level == DiagnosticLevel::Error && d.zh.contains("事件名稱不可為空")));
+        assert!(diags.iter().any(|d| d.level == DiagnosticLevel::Error && d.zh.contains("重複事件的延遲時間必須大於 0 秒")));
+
+        // 3. Rectangle condition with min > max
+        let mut bad_rect = valid_ev.clone();
+        bad_rect.conditions = vec![Condition {
+            kind: 2,
+            target_id: spawn_id,
+            min_x: 2000,
+            max_x: 1000,
+            min_z: 500,
+            max_z: 300,
+        }];
+        let diags = validate_event_diagnostics(&bad_rect, &targets, &aliases);
+        assert!(diags.iter().any(|d| d.level == DiagnosticLevel::Error && d.zh.contains("矩形範圍無效")));
+
+        // 4. Rectangle condition coordinates out of map bounds
+        let mut oob_rect = valid_ev.clone();
+        oob_rect.conditions = vec![Condition {
+            kind: 2,
+            target_id: spawn_id,
+            min_x: -10,
+            max_x: 20000,
+            min_z: 0,
+            max_z: 1000,
+        }];
+        let diags = validate_event_diagnostics(&oob_rect, &targets, &aliases);
+        assert!(diags.iter().any(|d| d.level == DiagnosticLevel::Error && d.zh.contains("超出地圖邊界")));
+
+        // 5. Nil target condition
+        let mut nil_target = valid_ev.clone();
+        nil_target.conditions = vec![Condition {
+            kind: 0,
+            target_id: uuid::Uuid::nil(),
+            ..Default::default()
+        }];
+        let diags = validate_event_diagnostics(&nil_target, &targets, &aliases);
+        assert!(diags.iter().any(|d| d.level == DiagnosticLevel::Error && d.zh.contains("尚未選擇目標物件")));
+
+        // 6. Diplomacy same team
+        let mut same_team = valid_ev.clone();
+        same_team.actions = vec![Action {
+            kind: 1,
+            team: 2,
+            other_team: 2,
+            hostile: true,
+            ..Default::default()
+        }];
+        let diags = validate_event_diagnostics(&same_team, &targets, &aliases);
+        assert!(diags.iter().any(|d| d.level == DiagnosticLevel::Error && d.zh.contains("外交隊伍不可與對方隊伍相同")));
+
+        // 7. Victory terminal action not last and repeat
+        let mut bad_victory = valid_ev.clone();
+        bad_victory.repeat = true;
+        bad_victory.actions = vec![
+            Action { kind: 3, ..Default::default() },
+            Action { kind: 0, text: "Extra message".into(), ..Default::default() },
+        ];
+        let diags = validate_event_diagnostics(&bad_victory, &targets, &aliases);
+        assert!(diags.iter().any(|d| d.level == DiagnosticLevel::Error && d.zh.contains("必須置於事件的最後一個動作")));
+        assert!(diags.iter().any(|d| d.level == DiagnosticLevel::Error && d.zh.contains("含勝利或失敗動作的事件不可設為週期重複")));
+
+        // 8. Unknown troop alias generates warning
+        let mut unknown_alias = valid_ev.clone();
+        unknown_alias.actions = vec![Action {
+            kind: 2,
+            alias: "NON_EXISTENT_UNIT".into(),
+            team: 1,
+            count: 2,
+            x: 5000.0,
+            z: 5000.0,
+            ..Default::default()
+        }];
+        let diags = validate_event_diagnostics(&unknown_alias, &targets, &aliases);
+        assert!(diags.iter().any(|d| d.level == DiagnosticLevel::Warning && d.zh.contains("未登錄的部隊別名")));
+
+        // 9. Message with non-Windows-1251 characters
+        let mut non_1251 = valid_ev.clone();
+        non_1251.actions = vec![Action {
+            kind: 0,
+            text: "\u{9019}\u{662f}\u{4e00}\u{6bb5}\u{4e2d}\u{6587}\u{6e2c}\u{8a66}\u{8a0a}\u{606f}".into(),
+            ..Default::default()
+        }];
+        let diags = validate_event_diagnostics(&non_1251, &targets, &aliases);
+        assert!(diags.iter().any(|d| d.level == DiagnosticLevel::Error && d.zh.contains("無法以 Windows-1251 編碼")));
+    }
+
+    #[test]
+    fn test_normalize_condition_bounds() {
+        let mut c = Condition {
+            kind: 2,
+            target_id: uuid::Uuid::new_v4(),
+            min_x: 5000,
+            max_x: 1000,
+            min_z: 8000,
+            max_z: 2000,
+        };
+        assert!(normalize_condition_bounds(&mut c));
+        assert_eq!(c.min_x, 1000);
+        assert_eq!(c.max_x, 5000);
+        assert_eq!(c.min_z, 2000);
+        assert_eq!(c.max_z, 8000);
+
+        // Already normalized returns false
+        assert!(!normalize_condition_bounds(&mut c));
+
+        // Non-rectangle returns false
+        let mut non_rect = Condition {
+            kind: 0,
+            target_id: uuid::Uuid::new_v4(),
+            min_x: 5000,
+            max_x: 1000,
+            min_z: 8000,
+            max_z: 2000,
+        };
+        assert!(!normalize_condition_bounds(&mut non_rect));
+    }
+
+    #[test]
+    fn test_move_condition_reordering() {
+        let id1 = uuid::Uuid::new_v4();
+        let id2 = uuid::Uuid::new_v4();
+        let id3 = uuid::Uuid::new_v4();
+        let mut conditions = vec![
+            Condition { target_id: id1, ..Default::default() },
+            Condition { target_id: id2, ..Default::default() },
+            Condition { target_id: id3, ..Default::default() },
+        ];
+
+        // Move middle condition up
+        assert_eq!(move_condition(&mut conditions, 1, -1), Some(0));
+        assert_eq!(conditions[0].target_id, id2);
+        assert_eq!(conditions[1].target_id, id1);
+
+        // Move first condition down
+        assert_eq!(move_condition(&mut conditions, 0, 1), Some(1));
+        assert_eq!(conditions[0].target_id, id1);
+        assert_eq!(conditions[1].target_id, id2);
+
+        // Out of bounds moves reject
+        assert_eq!(move_condition(&mut conditions, 0, -1), None);
+        assert_eq!(move_condition(&mut conditions, 2, 1), None);
+    }
+
+    #[test]
+    fn test_condition_normalization_and_reorder_is_one_undo_step() {
+        let p = source();
+        let mut ui = ScenarioUi::default();
+        ui.load_now(&p).unwrap();
+
+        let id1 = uuid::Uuid::new_v4();
+        let id2 = uuid::Uuid::new_v4();
+        ui.document.spawns.push(Spawn { id: id1, alias: "GER_INF00".into(), count: 1, ..Default::default() });
+        ui.document.spawns.push(Spawn { id: id2, alias: "GER_INF00".into(), count: 1, ..Default::default() });
+        let ev = Event {
+            name: "Test_Undo".into(),
+            delay_seconds: 5,
+            conditions: vec![
+                Condition { kind: 2, target_id: id1, min_x: 1000, max_x: 2000, min_z: 100, max_z: 200 },
+                Condition { kind: 0, target_id: id2, ..Default::default() },
+            ],
+            actions: vec![Action { kind: 0, text: "msg".into(), ..Default::default() }],
+            ..Default::default()
+        };
+        ui.add_events(&[ev.clone()]).unwrap();
+        assert_eq!(ui.document.events.len(), 1);
+
+        // 1. User inverts bounds via typing (intermediate edit via replace_event)
+        let mut inverted = ui.document.events[0].clone();
+        inverted.conditions[0].min_x = 5000;
+        inverted.conditions[0].max_x = 2000;
+        ui.replace_event(0, inverted).unwrap();
+        assert_eq!(ui.document.events[0].conditions[0].min_x, 5000);
+
+        // User clicks "Normalize bounds" button:
+        let mut normalized = ui.document.events[0].clone();
+        assert!(normalize_condition_bounds(&mut normalized.conditions[0]));
+        assert_eq!(normalized.conditions[0].min_x, 2000);
+        assert_eq!(normalized.conditions[0].max_x, 5000);
+        ui.replace_event(0, normalized).unwrap();
+        assert_eq!(ui.document.events[0].conditions[0].min_x, 2000);
+
+        // Undo normalization reverts bounds to inverted
+        assert!(ui.undo_events());
+        assert_eq!(ui.document.events[0].conditions[0].min_x, 5000);
+
+        // Redo re-applies normalization
+        assert!(ui.redo_events());
+        assert_eq!(ui.document.events[0].conditions[0].min_x, 2000);
+
+        // 2. Reorder condition via replace_event
+        let mut edited2 = ui.document.events[0].clone();
+        move_condition(&mut edited2.conditions, 0, 1).unwrap();
+        assert_eq!(edited2.conditions[0].target_id, id2);
+        ui.replace_event(0, edited2).unwrap();
+        assert_eq!(ui.document.events[0].conditions[0].target_id, id2);
+
+        // Undo reordering
+        assert!(ui.undo_events());
+        assert_eq!(ui.document.events[0].conditions[0].target_id, id1);
+
+        fs::remove_dir_all(p).unwrap();
+    }
+
+    #[test]
+    fn test_validate_draft_returns_pinpoint_event_name_and_reason() {
+        let ui = ScenarioUi::default();
+        let mut draft = ScenarioDocument::default();
+        let bad_event = Event {
+            name: "Wave_Attack_Alpha".into(),
+            delay_seconds: 0,
+            repeat: true, // Invalid repeat with delay 0
+            actions: vec![Action { kind: 0, text: "msg".into(), ..Default::default() }],
+            ..Default::default()
+        };
+        draft.events.push(bad_event);
+
+        let err = ui.validate_draft(&draft).unwrap_err();
+        assert!(err.contains("Wave_Attack_Alpha"));
+        assert!(err.contains("重複事件的延遲時間必須大於 0 秒"));
     }
 }
 
