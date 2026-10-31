@@ -3,7 +3,7 @@
 - 驗證：`designer_workflow_e2e` 匯出測試補斷言（非錯誤、訊息含已驗證）；`cargo test --workspace --locked`（獨立 %TEMP% target，已清理）287 組、2823 passed、0 failed、23 ignored。讀回失敗分支無自動測試（難以在不損壞檔案下觸發）；未驗證桌面視窗；未修改安裝遊戲。
 
 ## 2026-10-31 Codex：乾淨 HEAD 測試發現換行問題
-- 45045b3 乾淨 worktree 的 cargo test --workspace --locked 在 app_tables_generator 失敗（5 passed、1 failed），Windows checkout 將產生檔 761 行轉為 CRLF，位元組測試期待 LF。已在 .gitattributes 指定該產生檔 eol=lf；重新驗證進行中。
+- 45045b3 乾淨 worktree 的 cargo test --workspace --locked 在 app_tables_generator 失敗（5 passed、1 failed），Windows checkout 將產生檔 761 行轉為 CRLF，位元組測試期待 LF。已在 .gitattributes 指定該產生檔 eol=lf。原 HEAD 檔案轉回 LF 後測試 287 組、2822 passed、0 failed、23 ignored；dbfa5b8 全新乾淨 worktree 預設 checkout 確認 LF，完整測試 287 組、2823 passed、0 failed、23 ignored，已移除 worktree。
 
 ## 2026-10-31 Codex：地形水位建議與事件排序審查
 - 地形新增依完整非平坦高度圖第 10 百分位套用建議水位，沿用環境驗證及河流方案失效機制。主工作目錄 cargo check、cargo build --workspace --locked 通過；cargo test --workspace --locked 共 287 組、2823 passed、0 failed、23 ignored。未驗證桌面介面或遊戲。
