@@ -532,6 +532,8 @@ impl LandscapeUi {
 
     /// Plans hydraulic and thermal erosion in the selected tile rectangle, faithful to C# `MapEditorForm.Erosion.cs`.
     pub fn plan_erosion(&mut self, cx: &LandscapeContext) -> Result<ErosionPlan, String> {
+        self.last_erosion_plan = None;
+        self.erosion_apply_requested = false;
         let Some(heights) = cx.heights else {
             let msg = "Terrain heights are not available.".to_string();
             self.status_message = format!("Erosion planning error: {msg}");
@@ -1892,6 +1894,29 @@ impl LandscapeUi {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn erosion_replanning_invalidates_previous_plan_and_pending_request() {
+        let mut ui = LandscapeUi::default();
+        let size = 16;
+        let mut heights = vec![20; size * size];
+        for y in 4..=12 {
+            for x in 4..=12 {
+                heights[y * size + x] = 160;
+            }
+        }
+        ui.erosion_rectangle_text = "4,4\n12,12".into();
+        assert!(!ui.run_erosion_planning(size, Some(&heights)).unwrap().changes.is_empty());
+        ui.request_erosion_apply();
+        assert!(ui.erosion_apply_requested);
+        ui.apply_requested = Some(LandscapeApply::Road);
+        ui.erosion_rectangle_text = "invalid".into();
+        assert!(ui.run_erosion_planning(size, Some(&heights)).is_err());
+        assert!(ui.last_erosion_plan.is_none());
+        assert!(ui.take_erosion_apply_request().is_none());
+        assert_eq!(ui.apply_requested, Some(LandscapeApply::Road));
+        assert!(ui.status_is_error);
+    }
 
     #[test]
     fn test_landscape_ui_initial_state_and_dirty_guards() {

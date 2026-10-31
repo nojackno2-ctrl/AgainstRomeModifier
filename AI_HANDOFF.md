@@ -1,3 +1,6 @@
+## 2026-10-31 Codex：侵蝕重新規劃失效防護
+- 重新模擬侵蝕前清除舊方案與待套用請求，失敗後不會誤用舊結果，其他工具請求保持不變。新增回歸測試涵蓋有效方案、待套用及無效輸入。
+- 驗證：正常 TEMP 獨立 target 下 `cargo check --workspace --locked`、`cargo test --workspace --locked`（287 組、2805 passed、0 failed、23 ignored；新增案例通過）及 `cargo build --workspace --locked` 通過。測試期間另一代理並行修改並提交放置功能，測試結果反映編譯時的工作樹快照；桌面操作及遊戲內效果未驗證，未修改安裝遊戲。
 ## 2026-10-31 Claude：重疊放置警告
 - 在已有相同類型物件的完全相同位置再次放置時（點同一格），狀態列追加雙語警告，提示已重疊並可復原；放置仍成功（單步復原），不同位置不警告。僅改 spawn_placement_ui.rs。
 - 驗證：新增 `placing_on_occupied_spot_warns_about_stacked_duplicate` 1 passed；`cargo test --workspace --locked` 合計 2805 passed、0 failed、23 ignored（獨立 %TEMP% target，已移除）。未驗證實際桌面視窗；未修改安裝遊戲。
