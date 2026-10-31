@@ -167,6 +167,36 @@ pub fn map_name_error(english: bool, name: &str) -> Option<String> {
     Some(msg.to_string())
 }
 
+/// Non-blocking hint: another catalog map already uses this display name (case-insensitive), which
+/// makes the two indistinguishable in the game's map list. Returns the clashing map id.
+pub fn duplicate_map_name(maps: &[EndlessMapInfo], name: &str) -> Option<String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return None;
+    }
+    maps.iter()
+        .find(|m| m.display_name.as_deref().is_some_and(|d| d.trim().eq_ignore_ascii_case(name)))
+        .map(|m| format!("ENDL_{:03}", m.slot))
+}
+
+impl MapsUi {
+    fn duplicate_name_hint(&self, ui: &mut egui::Ui, name: &str) {
+        if map_name_error(self.english, name).is_some() {
+            return;
+        }
+        if let Some(id) = duplicate_map_name(&self.endless_maps, name) {
+            ui.colored_label(
+                Color32::YELLOW,
+                if self.english {
+                    format!("Note: {id} already uses this name; the maps will look identical in the game list.")
+                } else {
+                    format!("注意：{id} 已使用相同名稱，遊戲地圖清單中將難以區分。")
+                },
+            );
+        }
+    }
+}
+
 impl Default for MapsUi {
     fn default() -> Self {
         Self {
@@ -946,6 +976,7 @@ impl MapsUi {
         if let Some(e) = map_name_error(self.english, &self.clone_new_name) {
             ui.colored_label(Color32::LIGHT_RED, e);
         }
+        self.duplicate_name_hint(ui, &self.clone_new_name.clone());
 
         if ui.button(tl(self.english, "複製地圖", "Clone Map")).clicked() {
             match self.execute_clone() {
@@ -1045,6 +1076,7 @@ impl MapsUi {
         if let Some(e) = map_name_error(self.english, &self.blank_target_name) {
             ui.colored_label(Color32::LIGHT_RED, e);
         }
+        self.duplicate_name_hint(ui, &self.blank_target_name.clone());
 
         ui.horizontal(|ui| {
             ui.label(tl(self.english, "基礎地形高度：", "Base Height:"));
@@ -1421,6 +1453,15 @@ mod tests {
         assert!(ui.execute_copy_selected().is_err());
         assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn duplicate_map_name_finds_case_insensitive_clash_and_ignores_blank() {
+        let maps = vec![info(1, Some("Nordic Plains")), info(7, Some("  Desert ")), info(8, None)];
+        assert_eq!(duplicate_map_name(&maps, "nordic plains").as_deref(), Some("ENDL_001"));
+        assert_eq!(duplicate_map_name(&maps, " desert").as_deref(), Some("ENDL_007"));
+        assert!(duplicate_map_name(&maps, "Forest").is_none());
+        assert!(duplicate_map_name(&maps, "   ").is_none());
     }
 
     #[test]
