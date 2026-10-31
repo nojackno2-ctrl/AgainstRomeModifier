@@ -1,3 +1,14 @@
+## 2026-10-31 Agy：劇本事件上下移動排序與動作排序補強
+- 依設計者在劇本事件編輯器中建立多個事件（如開局劇情、進攻波次、勝負判定等）後無法調整執行順序，以及事件瀏覽器中無法快速調整事件順序之缺口，實作：
+  1. `move_event`：實作劇本事件上移與下移；越界安全回傳 `Ok(None)`，並自動將 `selected` 更新至新索引保持選取聚焦。
+  2. 單步復原整合：移動操作透過 `self.events.replace_all` 與 `record_event_commit` 納入單步復原流程；復原即時回復原順序，重做精準還原，且即時同步事件節點圖（`refresh_graph_after_event_change`）。未改變磁碟或序列化格式。
+  3. UI 按鈕：於事件操作列加入「上移事件 / Move event up」與「下移事件 / Move event down」按鈕；於事件瀏覽器工具列加入「上移選取 / Move up」與「下移選取 / Move down」按鈕，支援在瀏覽或編輯時直接排序。
+  4. 動作排序補強：將 `move_action` 設為 `pub(crate)` 並補齊專案測試。
+- 驗證：
+  - 新增專項回歸測試 3 項：`test_move_action_reordering`、`test_move_event_reordering_and_undo_redo`、`test_scenario_ui_renders_move_event_buttons` 全數通過。
+  - `scenario_ui` 64 項單元與無頭測試全數通過（64 passed, 0 failed）。
+  - `cargo test --workspace --locked` 287 組全數通過（2822 passed、0 failed、23 ignored）；使用獨立 `%TEMP%` target 建置目錄（已於驗證後清理）。未修改已安裝遊戲，未驗證桌面原生視窗操作。
+
 ## 2026-10-31 Claude：復原對話框可讀的還原／缺漏清單
 - 當機復原對話框原先直接輸出缺漏面板的 JSON；現新增 `recovery::describe_offer`，以雙語列出「將復原」與「無法復原」項目，空清單顯示「無」。僅改 recovery.rs 與 app_recovery.rs 的對話框兩行。
 - 驗證：新增 `describe_offer_lists_restored_and_omitted_parts_readably`；`cargo test --workspace --locked`（獨立 %TEMP% target）287 組、2819 passed、0 failed、23 ignored。首次編譯因閉包生命週期失敗，已改回傳 String。未驗證桌面視窗；未修改安裝遊戲。

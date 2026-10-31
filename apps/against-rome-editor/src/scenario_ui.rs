@@ -569,6 +569,33 @@ impl ScenarioUi {
         self.refresh_graph_after_event_change();
         Ok(selected)
     }
+    /// Moves an event up or down in the document event list.
+    /// Returns the event's new index, or `Ok(None)` when the move is out of bounds.
+    /// The move is recorded as a single undo step and updates selection to the new index.
+    pub fn move_event(&mut self, index: usize, offset: isize) -> Result<Option<usize>> {
+        self.sync_session();
+        let target = match index.checked_add_signed(offset) {
+            Some(t) => t,
+            None => return Ok(None),
+        };
+        if index >= self.document.events.len() || target >= self.document.events.len() {
+            return Ok(None);
+        }
+        if index == target {
+            return Ok(Some(index));
+        }
+        let mut reordered = self.document.events.clone();
+        reordered.swap(index, target);
+        let before = self.events.capture();
+        self.events.replace_all(&reordered)?;
+        self.record_event_commit(&before);
+        self.recovery_redo = None;
+        self.document.events = self.events.capture();
+        self.selected = target;
+        self.error = None;
+        self.refresh_graph_after_event_change();
+        Ok(Some(target))
+    }
     pub fn remove_event(&mut self, index: usize) -> Result<()> {
         self.sync_session();
         let before = self.events.capture();
@@ -1618,6 +1645,28 @@ impl ScenarioUi {
             }
             let has_selected = self.document.events.get(self.selected).is_some();
             if ui
+                .add_enabled(
+                    has_selected && self.selected > 0,
+                    egui::Button::new(tl(en, "上移選取", "Move up")),
+                )
+                .clicked()
+            {
+                if let Err(e) = self.move_event(self.selected, -1) {
+                    self.error = Some(e);
+                }
+            }
+            if ui
+                .add_enabled(
+                    has_selected && self.selected + 1 < self.document.events.len(),
+                    egui::Button::new(tl(en, "下移選取", "Move down")),
+                )
+                .clicked()
+            {
+                if let Err(e) = self.move_event(self.selected, 1) {
+                    self.error = Some(e);
+                }
+            }
+            if ui
                 .add_enabled(has_selected, egui::Button::new(tl(en, "複製選取事件", "Copy selected event")))
                 .clicked()
             {
@@ -1794,6 +1843,28 @@ impl ScenarioUi {
                                 .clicked()
                             {
                                 if let Err(e) = self.duplicate_event(self.selected) {
+                                    self.error = Some(e);
+                                }
+                            }
+                            if ui
+                                .add_enabled(
+                                    self.selected > 0 && self.selected < self.document.events.len(),
+                                    egui::Button::new(tl(en, "上移事件", "Move event up")),
+                                )
+                                .clicked()
+                            {
+                                if let Err(e) = self.move_event(self.selected, -1) {
+                                    self.error = Some(e);
+                                }
+                            }
+                            if ui
+                                .add_enabled(
+                                    self.selected + 1 < self.document.events.len(),
+                                    egui::Button::new(tl(en, "下移事件", "Move event down")),
+                                )
+                                .clicked()
+                            {
+                                if let Err(e) = self.move_event(self.selected, 1) {
                                     self.error = Some(e);
                                 }
                             }
@@ -2277,7 +2348,7 @@ fn event_editor(
 /// matters). Returns the action's new index, or `None` when the move is out of range.
 /// The caller edits a clone of the event, so the surrounding `replace_event` records exactly one
 /// undo step.
-fn move_action(actions: &mut [Action], index: usize, offset: isize) -> Option<usize> {
+pub(crate) fn move_action(actions: &mut [Action], index: usize, offset: isize) -> Option<usize> {
     let target = index.checked_add_signed(offset)?;
     if index >= actions.len() || target >= actions.len() {
         return None;
@@ -4539,6 +4610,130 @@ mod tests {
             }).collect();
             assert!(found_labels.contains(&cond_btn.to_string()), "missing {cond_btn}");
             assert!(found_labels.contains(&act_btn.to_string()), "missing {act_btn}");
+        }
+    }
+
+    #[test]
+    fn test_move_action_reordering() {
+        let mut actions = vec![
+            Action { text: "Act1".into(), ..Default::default() },
+            Action { text: "Act2".into(), ..Default::default() },
+            Action { text: "Act3".into(), ..Default::default() },
+        ];
+
+        // Move middle action up
+        assert_eq!(move_action(&mut actions, 1, -1), Some(0));
+        assert_eq!(actions[0].text, "Act2");
+        assert_eq!(actions[1].text, "Act1");
+
+        // Move first action down
+        assert_eq!(move_action(&mut actions, 0, 1), Some(1));
+        assert_eq!(actions[0].text, "Act1");
+        assert_eq!(actions[1].text, "Act2");
+
+        // Out of bounds moves reject
+        assert_eq!(move_action(&mut actions, 0, -1), None);
+        assert_eq!(move_action(&mut actions, 2, 1), None);
+        assert_eq!(move_action(&mut actions, 10, 1), None);
+    }
+
+    #[test]
+    fn test_move_event_reordering_and_undo_redo() {
+        let p = source();
+        let mut ui = ScenarioUi::default();
+        ui.load_now(&p).unwrap();
+
+        let ev_a = ev("Ev_A");
+        let ev_b = ev("Ev_B");
+        let ev_c = ev("Ev_C");
+        ui.add_events(&[ev_a, ev_b, ev_c]).unwrap();
+        assert_eq!(ui.document.events.len(), 3);
+        assert_eq!(ui.document.events[0].name, "Ev_A");
+        assert_eq!(ui.document.events[1].name, "Ev_B");
+        assert_eq!(ui.document.events[2].name, "Ev_C");
+
+        // Move middle event up
+        assert_eq!(ui.move_event(1, -1).unwrap(), Some(0));
+        assert_eq!(ui.document.events[0].name, "Ev_B");
+        assert_eq!(ui.document.events[1].name, "Ev_A");
+        assert_eq!(ui.document.events[2].name, "Ev_C");
+        assert_eq!(ui.selected, 0);
+
+        // Move first event down
+        assert_eq!(ui.move_event(0, 1).unwrap(), Some(1));
+        assert_eq!(ui.document.events[0].name, "Ev_A");
+        assert_eq!(ui.document.events[1].name, "Ev_B");
+        assert_eq!(ui.document.events[2].name, "Ev_C");
+        assert_eq!(ui.selected, 1);
+
+        // Out of bounds
+        assert_eq!(ui.move_event(0, -1).unwrap(), None);
+        assert_eq!(ui.move_event(2, 1).unwrap(), None);
+        assert_eq!(ui.move_event(99, 1).unwrap(), None);
+
+        // Undo & Redo
+        assert_eq!(ui.move_event(0, 1).unwrap(), Some(1));
+        assert_eq!(ui.document.events[0].name, "Ev_B");
+        assert_eq!(ui.document.events[1].name, "Ev_A");
+
+        assert!(ui.undo_events());
+        assert_eq!(ui.document.events[0].name, "Ev_A");
+        assert_eq!(ui.document.events[1].name, "Ev_B");
+
+        assert!(ui.redo_events());
+        assert_eq!(ui.document.events[0].name, "Ev_B");
+        assert_eq!(ui.document.events[1].name, "Ev_A");
+
+        fs::remove_dir_all(p).unwrap();
+    }
+
+    #[test]
+    fn test_scenario_ui_renders_move_event_buttons() {
+        fn collect_text(shape: &egui::epaint::Shape, out: &mut Vec<String>) {
+            match shape {
+                egui::epaint::Shape::Text(text) => out.push(text.galley.text().to_owned()),
+                egui::epaint::Shape::Vec(shapes) => {
+                    for s in shapes {
+                        collect_text(s, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        for (english, up_btn, down_btn) in [
+            (false, "上移事件", "下移事件"),
+            (true, "Move event up", "Move event down"),
+        ] {
+            let p = source();
+            let mut ui = ScenarioUi::default();
+            ui.load_now(&p).unwrap();
+            ui.english = english;
+            ui.open = true;
+
+            let ev1 = ev("E1");
+            let ev2 = ev("E2");
+            ui.add_events(&[ev1, ev2]).unwrap();
+            ui.selected = 1;
+
+            let ctx = egui::Context::default();
+            let input = || egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1800.0, 1400.0),
+                )),
+                ..Default::default()
+            };
+            let _ = ctx.run(input(), |ctx| ui.show(ctx));
+            let output = ctx.run(input(), |ctx| ui.show(ctx));
+            let mut found_labels = Vec::new();
+            for shape in &output.shapes {
+                collect_text(&shape.shape, &mut found_labels);
+            }
+            assert!(found_labels.iter().any(|l| l == up_btn), "missing {up_btn} in {found_labels:?}");
+            assert!(found_labels.iter().any(|l| l == down_btn), "missing {down_btn} in {found_labels:?}");
+
+            fs::remove_dir_all(p).unwrap();
         }
     }
 }
