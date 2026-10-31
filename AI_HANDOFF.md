@@ -1,3 +1,14 @@
+## 2026-10-31 Agy：設計檢查新增勝負動作非末位診斷與一鍵快速修正
+- 依設計者在劇本事件中若將勝利（kind 3）或失敗（kind 4）動作置於非末位（其後仍有其他動作如訊息或部隊生成），遊戲底層 BCI 編譯與執行規則嚴格要求勝負終止動作必須為最後一個動作，否則預檢將直接拒絕並導致設計檢查呈現未定位之 `check-unavailable` 缺口，實作：
+  1. `scenario-terminal-not-last` 設計檢查規則：檢查所有劇本事件，若包含勝利或失敗動作且非末位（`i + 1 != event.actions.len()`），產生具備明確事件序號、名稱、動作序號與雙語說明的 `MapIssue`（錯誤等級，附帶 `event_index`），並在預檢失敗或候選驗證失敗時精確攔截，抑制通用模糊錯誤。
+  2. 一鍵快速修正（`fix_terminal_not_last`）：設計檢查工具列偵測到勝負動作非末位時顯示雙語「將勝負動作移至最後 / Move win/loss actions to end」按鈕，一鍵將衝突事件動作重新排序，將所有勝利或失敗動作安全移至末位（若有重複勝負動作則去重保留末項）；透過 `replace_events` 納入單步復原流程並即時重新檢查，解除存檔封鎖且保留其餘動作內容。
+  3. 問題定位（Locate）：支援在設計檢查清單選取該問題後點擊「定位 / Locate」或雙擊，自動切換至劇本面板並展開定位至該問題事件。未改變任何磁碟或序列化格式。
+- 驗證：
+  - 新增專項回歸測試 2 項：`test_scenario_terminal_not_last_detection_and_quick_fix`、`test_quick_fix_button_shown_for_terminal_not_last` 全數通過。
+  - `design_check_ui` 27 項單元與無頭測試全數通過（27 passed, 0 failed）。
+  - `scenario_ui` 68 項單元與無頭測試全數通過（68 passed, 0 failed）。
+  - `cargo test --workspace --locked` 287 組全數通過（2839 passed、0 failed、23 ignored）；使用獨立 `%TEMP%` target 建置目錄（已於驗證後清理）。未修改已安裝遊戲，未驗證桌面原生視窗操作。
+
 ## 2026-10-31 Claude：新地圖名稱重複提示
 - 放置越界已由既有 move/place/匯入限制處理，故改做：`maps_ui.rs` 新增 `duplicate_map_name`，在複製與空白／平坦範本的名稱欄位旁，若目錄中已有同名（不分大小寫、忽略前後空白）地圖，顯示黃色雙語非阻擋提示並指出衝突的 `ENDL_###`；不阻止建置。
 - 驗證：新增 `duplicate_map_name_finds_case_insensitive_clash_and_ignores_blank`；`cargo test --workspace --locked`（獨立 %TEMP% target，已清理）287 組、2837 passed、0 failed、23 ignored。未驗證桌面視窗；未修改已安裝遊戲。僅提交 `maps_ui.rs` 與本條目。

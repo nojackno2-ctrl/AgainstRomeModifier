@@ -709,6 +709,45 @@ impl EditorApp {
         map_issues
     }
 
+    fn check_terminal_not_last_issues(events: &[against_rome_scenario::Event]) -> Vec<MapIssue> {
+        let mut map_issues = Vec::new();
+        for (idx, event) in events.iter().enumerate() {
+            let total = event.actions.len();
+            for (action_idx, action) in event.actions.iter().enumerate() {
+                if (action.kind == 3 || action.kind == 4) && action_idx + 1 != total {
+                    let name = if event.name.trim().is_empty() {
+                        format!("Event #{}", idx + 1)
+                    } else {
+                        event.name.clone()
+                    };
+                    let (term_zh, term_en) = if action.kind == 3 {
+                        ("勝利", "Victory")
+                    } else {
+                        ("失敗", "Defeat")
+                    };
+                    let mut issue = MapIssue::new(
+                        MapIssueSeverity::Error,
+                        "scenario-terminal-not-last",
+                        format!(
+                            "事件「{name}」（第 {} 項）包含{term_zh}動作（第 {} 項），但遊戲規定勝利或失敗動作必須置於事件的最後一個動作。請將其移至最後或點擊快速修正。",
+                            idx + 1,
+                            action_idx + 1
+                        ),
+                        format!(
+                            "Event '{name}' (#{idx_1}) contains a {term_en} action at position #{pos}, but game rules require victory or defeat actions to be the last action in the event. Please move it to the end or click quick fix.",
+                            idx_1 = idx + 1,
+                            pos = action_idx + 1
+                        ),
+                    );
+                    issue.event_index = idx as i32;
+                    map_issues.push(issue);
+                    break;
+                }
+            }
+        }
+        map_issues
+    }
+
     fn check_missing_target_issues(
         doc: &against_rome_scenario::model::ScenarioDocument,
     ) -> Vec<MapIssue> {
@@ -766,6 +805,7 @@ impl EditorApp {
                 let path = self.loaded_map_path.clone().unwrap_or_default();
                 let doc = self.candidate_scenario_document(&path, &[]);
                 let mut issues = Self::check_terminal_repeat_issues(&doc.events);
+                issues.extend(Self::check_terminal_not_last_issues(&doc.events));
                 issues.extend(Self::check_missing_target_issues(&doc));
                 if !issues.is_empty() {
                     return DesignCheckReport::Checked {
@@ -783,6 +823,7 @@ impl EditorApp {
             Err(e) => {
                 let doc = self.candidate_scenario_document(&path, &staged);
                 let mut issues = Self::check_terminal_repeat_issues(&doc.events);
+                issues.extend(Self::check_terminal_not_last_issues(&doc.events));
                 issues.extend(Self::check_missing_target_issues(&doc));
                 if !issues.is_empty() {
                     return DesignCheckReport::Checked {
@@ -803,11 +844,24 @@ impl EditorApp {
                 let repeat_issues = Self::check_terminal_repeat_issues(&doc.events);
                 if !repeat_issues.is_empty() {
                     if let Some(ref err) = preflight_error {
-                        if err.contains("含勝利或失敗動作的事件不可設為週期重複") {
+                        if err.contains("含勝利或失敗動作的事件不可設為週期重複")
+                            || err.contains("terminal action must be last and nonrepeating")
+                        {
                             preflight_error = None;
                         }
                     }
                     map_issues.extend(repeat_issues);
+                }
+                let not_last_issues = Self::check_terminal_not_last_issues(&doc.events);
+                if !not_last_issues.is_empty() {
+                    if let Some(ref err) = preflight_error {
+                        if err.contains("勝利或失敗動作必須置於最後")
+                            || err.contains("terminal action must be last and nonrepeating")
+                        {
+                            preflight_error = None;
+                        }
+                    }
+                    map_issues.extend(not_last_issues);
                 }
                 let missing_target_issues = Self::check_missing_target_issues(&doc);
                 if !missing_target_issues.is_empty() {
@@ -1225,6 +1279,49 @@ impl EditorApp {
         Ok(count)
     }
 
+    /// 將所有勝負動作非末位的劇本事件重新排序動作（勝負動作移至最後），整批套用並重新執行設計檢查。
+    pub fn fix_terminal_not_last(&mut self) -> Result<usize, String> {
+        let path = self
+            .loaded_map_path
+            .clone()
+            .ok_or_else(|| tr(self.lang(), "No map loaded.", "尚未載入地圖。").to_string())?;
+        if !self.scenario.is_loaded() {
+            self.scenario.load_session(&path)?;
+        }
+        let mut events = self.scenario.document().events.clone();
+        let mut count = 0;
+        for event in events.iter_mut() {
+            let total = event.actions.len();
+            let has_non_last = event.actions.iter().enumerate().any(|(i, a)| {
+                (a.kind == 3 || a.kind == 4) && i + 1 != total
+            });
+            if has_non_last {
+                let mut non_term = Vec::new();
+                let mut term = Vec::new();
+                for a in event.actions.drain(..) {
+                    if a.kind == 3 || a.kind == 4 {
+                        term.push(a);
+                    } else {
+                        non_term.push(a);
+                    }
+                }
+                if term.len() > 1 {
+                    let last_term = term.pop().unwrap();
+                    non_term.push(last_term);
+                } else {
+                    non_term.extend(term);
+                }
+                event.actions = non_term;
+                count += 1;
+            }
+        }
+        if count > 0 {
+            self.scenario.replace_events(events)?;
+        }
+        self.run_design_check();
+        Ok(count)
+    }
+
     /// 停用所有條件參照已刪除或不存在目標物件之事件，整批套用並重新執行設計檢查。
     pub fn fix_missing_target_events(&mut self) -> Result<usize, String> {
         let path = self
@@ -1335,6 +1432,7 @@ impl EditorApp {
         let mut fix_units = false;
         let mut fix_bases = false;
         let mut fix_terminal_repeat = false;
+        let mut fix_terminal_not_last = false;
         let mut fix_missing_targets = false;
         let mut locate: Option<usize> = None;
         let rows = self.design_check.get_or_compute_rows(lang).to_vec();
@@ -1427,6 +1525,19 @@ impl EditorApp {
                             .clicked()
                     {
                         fix_terminal_repeat = true;
+                    }
+                    let has_terminal_not_last = rows.iter().any(|r| r.code == "scenario-terminal-not-last");
+                    if has_terminal_not_last
+                        && ui
+                            .button(tr(lang, "Move win/loss actions to end", "將勝負動作移至最後"))
+                            .on_hover_text(tr(
+                                lang,
+                                "Automatically reorders event actions so that victory or defeat actions are placed at the end to comply with game rules",
+                                "自動重排劇本事件動作，將勝利或失敗動作移至最後一個動作，以符合遊戲規則並解除存檔封鎖",
+                            ))
+                            .clicked()
+                    {
+                        fix_terminal_not_last = true;
                     }
                     let has_missing_targets = rows.iter().any(|r| r.code == "scenario-missing-target");
                     if has_missing_targets
@@ -1700,6 +1811,26 @@ impl EditorApp {
                 }
                 Ok(_) => {
                     self.status_message = tr(lang, "No repeating win/loss events found.", "未發現重複的勝負事件。").into();
+                    self.status_is_error = false;
+                }
+                Err(e) => {
+                    self.status_message = e;
+                    self.status_is_error = true;
+                }
+            }
+        } else if fix_terminal_not_last {
+            match self.fix_terminal_not_last() {
+                Ok(n) if n > 0 => {
+                    self.status_message = match lang {
+                        AppLanguage::English => {
+                            format!("Moved win/loss actions to end in {n} event(s); Save to write them.")
+                        }
+                        _ => format!("已將 {n} 個事件的勝負動作移至最後；請存檔以寫入變更。"),
+                    };
+                    self.status_is_error = false;
+                }
+                Ok(_) => {
+                    self.status_message = tr(lang, "No misplaced win/loss actions found.", "未發現非置於末位的勝負動作。").into();
                     self.status_is_error = false;
                 }
                 Err(e) => {
@@ -2410,6 +2541,102 @@ mod tests {
             "scenario-missing-target",
             "事件條件參照已刪除或不存在的目標物件",
             "Event condition references a deleted or nonexistent target object",
+        );
+        issue.event_index = 0;
+        app.design_check.report = Some(DesignCheckReport::Checked {
+            map_issues: vec![issue],
+            preflight_error: None,
+            design_issues: vec![],
+        });
+
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| app.show_design_check(ctx));
+        assert!(app.design_check.open);
+    }
+
+    #[test]
+    fn test_scenario_terminal_not_last_detection_and_quick_fix() {
+        let temp_dir = std::env::temp_dir().join(format!("arm_terminal_not_last_{}", Uuid::new_v4()));
+        let script_dir = temp_dir.join("SCRIPT");
+        std::fs::create_dir_all(&script_dir).unwrap();
+        std::fs::write(temp_dir.join(".arm_custom_map"), b"{}").unwrap();
+        std::fs::write(
+            script_dir.join("ak_level.bci"),
+            against_rome_scenario::BciImage::idle().serialize(),
+        )
+        .unwrap();
+
+        let mut app = EditorApp::default();
+        let session = crate::TerrainSession::create_blank(5, 32);
+        app.set_loaded_map(temp_dir.clone(), session).unwrap();
+        app.scenario.load_session(&temp_dir).unwrap();
+
+        // Initially valid event: Message then Victory
+        let event = against_rome_scenario::Event {
+            name: "Trigger_Early_Victory".into(),
+            enabled: false,
+            repeat: false,
+            delay_seconds: 5,
+            actions: vec![
+                against_rome_scenario::Action {
+                    kind: 0, // Message
+                    text: "You have triumphed!".into(),
+                    ..Default::default()
+                },
+                against_rome_scenario::Action {
+                    kind: 3, // Victory
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        app.scenario.add_events(&[event]).unwrap();
+
+        // Simulate designer moving/adding Victory before Message in the event editor
+        let mut misplaced_event = app.scenario.document().events[0].clone();
+        misplaced_event.actions.swap(0, 1);
+        app.scenario.replace_event(0, misplaced_event).unwrap();
+
+        let report = app.design_check_report();
+        let rows = report_rows(&report, &[], AppLanguage::English);
+        let terminal_issue = rows.iter().find(|r| r.code == "scenario-terminal-not-last");
+        assert!(terminal_issue.is_some(), "Should detect event with terminal action not placed at end");
+        let issue = terminal_issue.unwrap();
+        assert_eq!(issue.severity, MapIssueSeverity::Error);
+        assert_eq!(issue.event_index, 0);
+        assert!(issue.is_locatable());
+        assert!(issue.text(AppLanguage::English).contains("Trigger_Early_Victory"));
+        assert!(issue.text(AppLanguage::TraditionalChinese).contains("Trigger_Early_Victory"));
+
+        let fixed = app.fix_terminal_not_last().unwrap();
+        assert_eq!(fixed, 1);
+        let event_after = &app.scenario.document().events[0];
+        assert_eq!(event_after.actions.len(), 2);
+        assert_eq!(event_after.actions[0].kind, 0, "Message action should now be first");
+        assert_eq!(event_after.actions[1].kind, 3, "Victory action should now be last");
+
+        let report_after = app.design_check_report();
+        let rows_after = report_rows(&report_after, &[], AppLanguage::English);
+        assert!(!rows_after.iter().any(|r| r.code == "scenario-terminal-not-last"));
+
+        // Single undo step recovers original action order
+        assert!(app.scenario.undo_events());
+        let event_undone = &app.scenario.document().events[0];
+        assert_eq!(event_undone.actions[0].kind, 3);
+        assert_eq!(event_undone.actions[1].kind, 0);
+
+        let _ = std::fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_quick_fix_button_shown_for_terminal_not_last() {
+        let mut app = EditorApp::default();
+        app.design_check.open = true;
+        let mut issue = MapIssue::new(
+            MapIssueSeverity::Error,
+            "scenario-terminal-not-last",
+            "事件包含勝利或失敗動作但未置於最後一項",
+            "Event contains a victory or defeat action that is not the last action",
         );
         issue.event_index = 0;
         app.design_check.report = Some(DesignCheckReport::Checked {
