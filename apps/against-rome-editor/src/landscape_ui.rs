@@ -929,9 +929,25 @@ impl LandscapeUi {
         }
     }
 
+    fn terrain_height_summary(cx: &LandscapeContext) -> Option<(u8, u8)> {
+        let expected = cx.vertex_size.checked_mul(cx.vertex_size)?;
+        let heights = cx.heights.filter(|h| expected > 0 && h.len() == expected)?;
+        Some((*heights.iter().min()?, *heights.iter().max()?))
+    }
+
     fn render_river_tab(&mut self, ui: &mut egui::Ui, cx: &LandscapeContext) {
         ui.heading(tl(self.english, "河流流向規劃器", "River Flow Planner"));
         ui.label(tl(self.english, "循自然順坡走向追蹤水流路徑，配置無縫水面與河岸材質。", "Traces natural downhill water courses with seamless water and riverbank textures."));
+
+        if ui.button(tl(self.english, "檢查高度圖範圍", "Check heightmap range")).clicked() {
+            if let Some((min, max)) = Self::terrain_height_summary(cx) {
+                self.status_message = format!("{}: {min} - {max}", tl(self.english, "高度圖原始值範圍", "Heightmap raw value range"));
+                self.status_is_error = false;
+            } else {
+                self.status_message = tl(self.english, "高度圖資料無法使用或大小不完整；請先載入完整地形。", "Heightmap is unavailable or incomplete; load a complete terrain first.").to_string();
+                self.status_is_error = true;
+            }
+        }
 
         ui.add_space(6.0);
         egui::Grid::new("river_settings").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
@@ -1974,6 +1990,14 @@ mod tests {
         assert!(ui.run_river_planning(16, None).is_ok());
         assert!(ui.last_river_plan.is_some());
         assert!(ui.is_dirty());
+    }
+
+    #[test]
+    fn terrain_height_summary_requires_complete_nonempty_grid() {
+        assert_eq!(LandscapeUi::terrain_height_summary(&LandscapeContext::plain(2, Some(&[9, 2, 7, 5]))), Some((2, 9)));
+        assert_eq!(LandscapeUi::terrain_height_summary(&LandscapeContext::plain(2, Some(&[9, 2]))), None);
+        assert_eq!(LandscapeUi::terrain_height_summary(&LandscapeContext::plain(0, Some(&[]))), None);
+        assert_eq!(LandscapeUi::terrain_height_summary(&LandscapeContext::plain(2, None)), None);
     }
 
     #[test]

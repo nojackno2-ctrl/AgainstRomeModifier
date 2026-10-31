@@ -3,6 +3,7 @@
 - 驗證：新增 `describe_offer_lists_restored_and_omitted_parts_readably`；`cargo test --workspace --locked`（獨立 %TEMP% target）287 組、2819 passed、0 failed、23 ignored。首次編譯因閉包生命週期失敗，已改回傳 String。未驗證桌面視窗；未修改安裝遊戲。
 
 ## 2026-10-31 Codex：河流高度圖檢查
+- 驗證：初次工作區測試 2818 passed、0 failed、23 ignored（編譯期間已開始地形修改）；最終專項 1 passed，`cargo check` 與 `cargo build --workspace --locked` 通過。獨立 HEAD 測試在耗時相容性測試期間終止，未完成。
 - 新增按需檢查高度圖原始值範圍，並提示資料缺失或尺寸不符。專項測試 1 passed。
 - 審查 ecd8671 與 0b5a10e，未發現確切的復原或未儲存狀態缺陷。工作樹完整測試受其他代理進行中的 scenario_ui 變更影響：985 passed、2 failed、6 ignored；兩個失敗測試均使用沒有動作的事件。未驗證 GUI 或遊戲。
 
