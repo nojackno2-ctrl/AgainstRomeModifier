@@ -172,6 +172,7 @@ pub struct LandscapeUi {
 
     /// Cached read-out of the ambience boden water level (not persisted separately).
     pub cached_water_level: Option<f32>,
+    water_suggestion_undo: Option<(f32, f32)>,
 
     pub english: bool,
     pub dirty: bool,
@@ -231,6 +232,7 @@ impl Default for LandscapeUi {
             region: RegionToolState::default(),
             apply_requested: None,
             cached_water_level: None,
+            water_suggestion_undo: None,
             dirty: false,
             pending_discard: false,
             status_message: "Ready.".to_string(),
@@ -241,6 +243,9 @@ impl Default for LandscapeUi {
 
 impl LandscapeUi {
     fn sync_water_level(&mut self, level: f32) {
+        if self.water_suggestion_undo.map(|(_, applied)| applied.to_bits() != level.to_bits()).unwrap_or(false) {
+            self.water_suggestion_undo = None;
+        }
         if self.cached_water_level.map(f32::to_bits) != Some(level.to_bits()) {
             if self.last_river_plan.take().is_some() {
                 if self.apply_requested == Some(LandscapeApply::River) {
@@ -274,6 +279,7 @@ impl LandscapeUi {
     /// Resets all map-bound plans, detection results, and pending apply requests (cliff, river, road, wall, erosion).
     /// Preserves user preferences (open state, current tab, brush/slope options, waypoint text, erosion params).
     pub fn reset_session(&mut self) {
+        self.water_suggestion_undo = None;
         self.dirty = false;
         self.pending_discard = false;
         self.last_cliff_result = None;
@@ -810,10 +816,7 @@ impl LandscapeUi {
                             .on_hover_text(tl(self.english, "以高度圖第 10 百分位的原始高度作為低窪處水位，套用後請檢查。", "Uses the heightmap's 10th percentile as a low-terrain water level; review after applying."))
                             .clicked() {
                             if let Some(level) = Self::suggest_water_level(cx) {
-                                ambience.profile.boden.waterlevel = level;
-                                ambience.dirty = true;
-                                ambience.validate_current();
-                                self.sync_water_level(level);
+                                self.apply_water_suggestion(ambience, level);
                                 self.status_is_error = false;
                                 self.status_message = format!("{}: {level:.1}", tl(self.english, "已套用高度圖低窪處建議水位，請檢查結果", "Applied low-terrain water level suggestion; review the result"));
                             } else {
@@ -822,6 +825,10 @@ impl LandscapeUi {
                             }
                         }
                     });
+                    let can_undo = self.water_suggestion_undo.map(|(_, applied)| applied.to_bits() == ambience.profile.boden.waterlevel.to_bits()).unwrap_or(false);
+                    if ui.add_enabled(can_undo, egui::Button::new(tl(self.english, "復原上次水位建議", "Undo last water level suggestion"))).clicked() {
+                        self.undo_water_suggestion(ambience);
+                    }
                     ui.separator();
                 } else if let Some(wl) = self.cached_water_level {
                     ui.horizontal(|ui| {
@@ -950,6 +957,26 @@ impl LandscapeUi {
         Some((*heights.iter().min()?, *heights.iter().max()?))
     }
 
+    fn apply_water_suggestion(&mut self, ambience: &mut AmbienceUi, level: f32) {
+        let previous = ambience.profile.boden.waterlevel;
+        if previous.to_bits() == level.to_bits() { return; }
+        self.water_suggestion_undo = Some((previous, level));
+        ambience.profile.boden.waterlevel = level;
+        ambience.dirty = true;
+        ambience.validate_current();
+        self.sync_water_level(level);
+    }
+    fn undo_water_suggestion(&mut self, ambience: &mut AmbienceUi) -> bool {
+        let Some((previous, applied)) = self.water_suggestion_undo.take() else { return false; };
+        if ambience.profile.boden.waterlevel.to_bits() != applied.to_bits() { return false; }
+        ambience.profile.boden.waterlevel = previous;
+        ambience.dirty = true;
+        ambience.validate_current();
+        self.sync_water_level(previous);
+        self.status_is_error = false;
+        self.status_message = tl(self.english, "已復原上次水位建議。", "Undid the last water level suggestion.").to_string();
+        true
+    }
     fn suggest_water_level(cx: &LandscapeContext) -> Option<f32> {
         let (min, max) = Self::terrain_height_summary(cx)?;
         if min == max { return None; }
@@ -1946,6 +1973,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn water_suggestion_undo_preserves_other_changes_and_rejects_stale_value() {
+        let mut ui = LandscapeUi::default();
+        let mut ambience = AmbienceUi::default();
+        ambience.profile.boden.waterlevel = 30.0;
+        ui.apply_water_suggestion(&mut ambience, 12.0);
+        ui.apply_water_suggestion(&mut ambience, 12.0);
+        assert!(ui.undo_water_suggestion(&mut ambience));
+        assert_eq!(ambience.profile.boden.waterlevel, 30.0);
+        assert!(ambience.dirty);
+        assert_eq!(ui.cached_water_level, Some(30.0));
+        assert!(!ui.undo_water_suggestion(&mut ambience));
+        ui.water_suggestion_undo = Some((30.0, 12.0));
+        ambience.profile.boden.waterlevel = 18.0;
+        assert!(!ui.undo_water_suggestion(&mut ambience));
+        assert_eq!(ambience.profile.boden.waterlevel, 18.0);
+        ui.water_suggestion_undo = Some((30.0, 12.0));
+        ui.reset_session();
+        assert!(ui.water_suggestion_undo.is_none());
+    }
+
+    #[test]
     fn erosion_replanning_invalidates_previous_plan_and_pending_request() {
         let mut ui = LandscapeUi::default();
         let size = 16;
@@ -2285,6 +2333,7 @@ mod tests {
 #[cfg(test)]
 mod small_ux_tests {
     use super::*;
+
     #[test]
     fn erosion_reset_preserves_disabled_mode() {
         let mut ui = LandscapeUi::default();

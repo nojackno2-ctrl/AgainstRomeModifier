@@ -2,6 +2,10 @@
 - 設計者原本要到按下建置、確認捨棄或交易回滾後才知道名稱含 `/ \ : * ? " < > |`、控制字元或遊戲無法編碼的字元（平坦範本與複製路徑僅檢查空白）。`maps_ui.rs` 新增 `map_name_error`（中英雙語），在名稱欄位旁即時顯示紅字，並於 `execute_clone`、`execute_copy_selected`、`request_build_flat_template` 與「建立空白場景」按鈕於任何磁碟動作前拒絕，不產生意圖、不碰檔案。
 - 驗證：新增 `map_name_error_rejects_bad_names_in_both_languages_before_any_disk_work`；`maps_ui` 20 passed；`cargo test --workspace --locked`（獨立 %TEMP% target，已清理）287 組、2829 passed、0 failed、23 ignored。未修改已安裝遊戲；未做桌面視窗驗收。僅提交 `maps_ui.rs` 與本條目，他人的 AI_HANDOFF／landscape／design_check 變更未納入。
 
+## 2026-10-31 Codex：水位建議復原與基準驗證
+- 地形水位建議新增面板內單次復原；水位遭後續修改或工作階段重設時停用，並同步失效舊河流規劃。非全域 Ctrl+Z；桌面操作未驗證。
+- 乾淨 c195b77 worktree：`cargo test --workspace --locked` 287 組、2827 passed、0 failed、23 ignored；已移除 worktree。首次並行共用 target 發生 os error 32，循序重跑通過。主工作區首次重用 worktree target，`app_localization` 因編譯時路徑已移除而失敗（3 passed、1 failed）；改用主工作區專屬 target 循序重跑：`cargo check --workspace --locked`、`cargo test --workspace --locked`（287 組、2829 passed、0 failed、23 ignored）及 `cargo build --workspace --locked` 均通過。
+- 審查 c195b77：實際條件目標名稱傳入 alias 副本，測試使用不同假名稱，顯示名稱搜尋未被實際接線驗證；未修改其他代理負責的劇本檔案。9b18096 讀回驗證失敗分支缺自動測試。
 ## 2026-10-31 Agy：劇本事件瀏覽器搜尋與條件／問題篩選強化
 - 依設計者在劇本事件瀏覽器中無法搜尋條件內容（目標物件 UUID、別名、矩形範圍與移動座標）、缺乏條件種類篩選，以及無法快速過濾存在診斷警告與錯誤事件之缺口，實作：
   1. 條件與座標深度搜尋：搜尋字串支援條件目標 UUID（含連字號或純十六進位）、目標生成物名稱與別名、條件種類標籤、矩形範圍座標（min/max x, z）以及動作移動目的地座標（destination x, z）。
