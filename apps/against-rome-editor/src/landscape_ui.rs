@@ -806,6 +806,21 @@ impl LandscapeUi {
                             ambience.validate_current();
                             self.sync_water_level(ambience.profile.boden.waterlevel);
                         }
+                        if ui.button(tl(self.english, "依高度圖建議水位", "Suggest water level from heightmap"))
+                            .on_hover_text(tl(self.english, "以高度圖第 10 百分位的原始高度作為低窪處水位，套用後請檢查。", "Uses the heightmap's 10th percentile as a low-terrain water level; review after applying."))
+                            .clicked() {
+                            if let Some(level) = Self::suggest_water_level(cx) {
+                                ambience.profile.boden.waterlevel = level;
+                                ambience.dirty = true;
+                                ambience.validate_current();
+                                self.sync_water_level(level);
+                                self.status_is_error = false;
+                                self.status_message = format!("{}: {level:.1}", tl(self.english, "已套用高度圖低窪處建議水位，請檢查結果", "Applied low-terrain water level suggestion; review the result"));
+                            } else {
+                                self.status_is_error = true;
+                                self.status_message = tl(self.english, "高度圖不完整或地形平坦，無法建議水位。", "Heightmap is incomplete or flat; cannot suggest a water level.").to_string();
+                            }
+                        }
                     });
                     ui.separator();
                 } else if let Some(wl) = self.cached_water_level {
@@ -933,6 +948,21 @@ impl LandscapeUi {
         let expected = cx.vertex_size.checked_mul(cx.vertex_size)?;
         let heights = cx.heights.filter(|h| expected > 0 && h.len() == expected)?;
         Some((*heights.iter().min()?, *heights.iter().max()?))
+    }
+
+    fn suggest_water_level(cx: &LandscapeContext) -> Option<f32> {
+        let (min, max) = Self::terrain_height_summary(cx)?;
+        if min == max { return None; }
+        let mut histogram = [0usize; 256];
+        let heights = cx.heights?;
+        for &height in heights { histogram[height as usize] += 1; }
+        let rank = (heights.len() - 1) / 10;
+        let mut count = 0;
+        for (height, frequency) in histogram.into_iter().enumerate() {
+            count += frequency;
+            if count > rank { return Some(height as f32); }
+        }
+        None
     }
 
     fn render_river_tab(&mut self, ui: &mut egui::Ui, cx: &LandscapeContext) {
@@ -1998,6 +2028,19 @@ mod tests {
         assert_eq!(LandscapeUi::terrain_height_summary(&LandscapeContext::plain(2, Some(&[9, 2]))), None);
         assert_eq!(LandscapeUi::terrain_height_summary(&LandscapeContext::plain(0, Some(&[]))), None);
         assert_eq!(LandscapeUi::terrain_height_summary(&LandscapeContext::plain(2, None)), None);
+    }
+
+    #[test]
+    fn water_level_suggestion_uses_low_tenth_and_rejects_invalid_grids() {
+        let mut heights = [80; 100];
+        heights[..10].fill(12);
+        heights[10] = 25;
+        assert_eq!(LandscapeUi::suggest_water_level(&LandscapeContext::plain(10, Some(&heights))), Some(12.0));
+        heights[9] = 25;
+        assert_eq!(LandscapeUi::suggest_water_level(&LandscapeContext::plain(10, Some(&heights))), Some(25.0));
+        assert_eq!(LandscapeUi::suggest_water_level(&LandscapeContext::plain(2, Some(&[4; 4]))), None);
+        assert_eq!(LandscapeUi::suggest_water_level(&LandscapeContext::plain(2, Some(&[1, 2]))), None);
+        assert_eq!(LandscapeUi::suggest_water_level(&LandscapeContext::plain(0, Some(&[]))), None);
     }
 
     #[test]

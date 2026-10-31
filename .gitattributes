@@ -3,6 +3,9 @@
 ###############################################################################
 * text=auto
 
+# 產生器以 LF 比對完整位元組，Windows checkout 亦須保留 LF。
+native/against-rome-ambience/src/app_tables.rs text eol=lf
+
 ###############################################################################
 # Set default behavior for command prompt diff.
 #

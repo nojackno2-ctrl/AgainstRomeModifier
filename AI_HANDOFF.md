@@ -1,3 +1,10 @@
+## 2026-10-31 Codex：乾淨 HEAD 測試發現換行問題
+- 45045b3 乾淨 worktree 的 cargo test --workspace --locked 在 app_tables_generator 失敗（5 passed、1 failed），Windows checkout 將產生檔 761 行轉為 CRLF，位元組測試期待 LF。已在 .gitattributes 指定該產生檔 eol=lf；重新驗證進行中。
+
+## 2026-10-31 Codex：地形水位建議與事件排序審查
+- 地形新增依完整非平坦高度圖第 10 百分位套用建議水位，沿用環境驗證及河流方案失效機制。主工作目錄 cargo check、cargo build --workspace --locked 通過；cargo test --workspace --locked 共 287 組、2823 passed、0 failed、23 ignored。未驗證桌面介面或遊戲。
+- 審查 45045b3：排序與復原會還原事件順序，復原／重做只裁切選取索引，可能改選另一事件；髒事件圖不會自動同步。未修改其他代理使用的 scenario_ui.rs。
+
 ## 2026-10-31 Agy：劇本事件上下移動排序與動作排序補強
 - 依設計者在劇本事件編輯器中建立多個事件（如開局劇情、進攻波次、勝負判定等）後無法調整執行順序，以及事件瀏覽器中無法快速調整事件順序之缺口，實作：
   1. `move_event`：實作劇本事件上移與下移；越界安全回傳 `Ok(None)`，並自動將 `selected` 更新至新索引保持選取聚焦。
