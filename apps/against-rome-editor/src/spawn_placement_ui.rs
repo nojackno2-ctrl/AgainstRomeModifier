@@ -241,6 +241,14 @@ pub(crate) fn team_color(team: i32) -> Color32 {
     Color32::from_rgb(r, g, b)
 }
 
+fn stacked_place_warning(english: bool) -> &'static str {
+    if english {
+        " Warning: an identical object already exists at this exact spot (duplicate stacked); undo if unintended."
+    } else {
+        " 注意：此位置已有相同類型的物件，已重疊放置；若非預期請復原。"
+    }
+}
+
 fn error_text(lang: AppLanguage, error: &PlacementError, out_of_range: (&'static str, &'static str)) -> String {
     match error {
         PlacementError::OutOfRange(_) => tr(lang, out_of_range.0, out_of_range.1).to_string(),
@@ -584,6 +592,7 @@ impl SpawnPlacementUi {
             }
         };
         let name = object_display_name(&object_type, cx.english());
+        let stacked = self.has_same_type_at(&item.obj_type.name_def, item.world_x, item.world_z);
         match self.mutate(scenario, lang, ("Cannot place here.", "無法在此放置。"), |s| s.add(item)) {
             Ok(()) => {
                 self.selection.clear();
@@ -598,10 +607,21 @@ impl SpawnPlacementUi {
                 if self.warns_landscape(&[self.session.count() - 1]) {
                     message.push_str(landscape_place_warning(cx.english()));
                 }
+                if stacked {
+                    message.push_str(stacked_place_warning(cx.english()));
+                }
                 self.set_status(message, false);
             }
             Err(e) => self.set_status(e, true),
         }
+    }
+
+    /// True when an object of the same type already sits at exactly this position (a click on an
+    /// occupied tile would otherwise silently stack a duplicate).
+    fn has_same_type_at(&self, name_def: &str, x: f32, z: f32) -> bool {
+        (0..self.session.count()).filter_map(|i| self.session.get(i)).any(|o| {
+            o.obj_type.name_def == name_def && (o.world_x - x).abs() < 0.01 && (o.world_z - z).abs() < 0.01
+        })
     }
 
     pub fn delete_selected(&mut self, scenario: &mut ScenarioUi, cx: &SpawnContext) {
@@ -1893,6 +1913,22 @@ mod palette_thumbnail_tests {
         panel.set_placement_values(4, 1, 0);
         panel.select_type("wolf");
         assert_eq!(panel.team(), 4);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn placing_on_occupied_spot_warns_about_stacked_duplicate() {
+        let (root, mut scenario, mut panel, cx) = shadow_fixture();
+        panel.select_type("wolf");
+        panel.place_at_tile(&mut scenario, &cx, 10, 10);
+        assert!(!panel.status().1);
+        assert!(!panel.status().0.contains("identical"), "{}", panel.status().0);
+        panel.place_at_tile(&mut scenario, &cx, 10, 10);
+        assert!(!panel.status().1);
+        assert!(panel.status().0.contains("identical"), "{}", panel.status().0);
+        panel.place_at_tile(&mut scenario, &cx, 11, 10);
+        assert!(!panel.status().0.contains("identical"), "{}", panel.status().0);
+        assert_eq!(panel.session().count(), 3);
         std::fs::remove_dir_all(root).unwrap();
     }
 
