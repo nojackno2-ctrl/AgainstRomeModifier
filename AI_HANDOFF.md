@@ -1,3 +1,19 @@
+## 2026-10-31 Agy：設計檢查新增條件目標遺失錯誤診斷與一鍵快速修正
+- 依設計者在編輯劇本或地圖物件時，若已啟用的事件條件參照已被刪除、不存在或未指定的目標物件（UUID），遊戲中將無法偵測觸發條件，且先前會因預檢失敗導致設計檢查呈現未定位之 `scenario-preflight` 或因反序列化驗證崩潰為無法修復之 `check-unavailable` 缺口，實作：
+  1. `scenario-missing-target` 設計檢查規則：檢查候選劇本所有啟用中事件，若條件目標為 nil 或不在有效生成物件清單中，產生具備明確事件序號、名稱、條件序號與雙語說明的 `MapIssue`（錯誤等級，附帶 `event_index`），並在預檢失敗或候選驗證失敗時精確攔截，抑制通用模糊錯誤。
+  2. 一鍵快速修正（`fix_missing_target_events`）：設計檢查工具列偵測到目標遺失事件時顯示雙語「停用遺失目標事件 / Disable events with missing targets」按鈕，一鍵將所有衝突事件之 `enabled` 批次設為 `false`；透過 `set_events_enabled` 納入單步復原流程並即時重新檢查，解除存檔封鎖且保留設計者條件設定。
+  3. 問題定位（Locate）：支援在設計檢查清單選取該問題後點擊「定位 / Locate」或雙擊，自動切換至劇本面板並展開選取該問題事件。未改變任何磁碟或序列化格式。
+- 驗證：
+  - 新增專項回歸測試 2 項：`test_scenario_missing_target_detection_and_quick_fix`、`test_quick_fix_button_shown_for_missing_targets` 全數通過。
+  - `design_check_ui` 25 項單元與無頭測試全數通過（25 passed, 0 failed）。
+  - `scenario_ui` 68 項單元與無頭測試全數通過（68 passed, 0 failed）。
+  - `cargo test --workspace --locked` 287 組全數通過（2835 passed、0 failed、23 ignored）；使用獨立 `%TEMP%` target 建置目錄（已於驗證後清理）。未修改已安裝遊戲，未驗證桌面原生視窗操作。
+
+## 2026-10-31 Codex：材質相容建議
+- 乾淨 HEAD 5f6aaa5：`cargo test --workspace --locked -j 1 -- --test-threads=1`，287 組、2831 passed、0 failed、23 ignored；獨立 TEMP worktree 與 target。
+- 檢視 5f6aaa5：複製現有事件並透過可復原的批次取代，未見直接寫檔或刪除其他事件；錯誤字串分支可能暫時遮蔽其他診斷。
+- 材質視窗加入目前範圍的相容材質試算與選取；測試進行中，尚未驗證桌面操作。
+
 ## 2026-10-31 Claude：匯出 ZIP 目的地副檔名／資料夾預檢
 - `packaging_ui::validate_export_destination` 新增：目的路徑若為既有資料夾、或副檔名不是 `.zip`（不分大小寫），匯出前即以雙語「ZIP 匯出目的地不安全」錯誤拒絕，不寫任何檔案。放置越界先前已由 move/place 拒絕，故改做此項。
 - 驗證：新增 `export_destination_must_be_zip_file_not_folder_or_other_extension`；`cargo test --workspace --locked`（獨立 %TEMP% target，已清理）287 組、2832 passed、0 failed、23 ignored。拒絕原因字串僅英文（外層訊息雙語）；未驗證桌面視窗；未修改安裝遊戲。僅提交 `packaging_ui.rs` 與本條目。

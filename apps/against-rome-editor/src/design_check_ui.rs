@@ -645,28 +645,37 @@ impl EditorApp {
         self.design_check.open = true;
     }
 
-    pub(crate) fn candidate_scenario_events(
+    pub(crate) fn candidate_scenario_document(
         &self,
         path: &Path,
         staged: &[(PathBuf, Vec<u8>)],
-    ) -> Vec<against_rome_scenario::Event> {
+    ) -> against_rome_scenario::model::ScenarioDocument {
         if self.scenario.is_loaded() {
-            return self.scenario.document().events.clone();
+            return self.scenario.document().clone();
         }
         if let Some((_, bytes)) = staged
             .iter()
             .find(|(p, _)| *p == Path::new("arm_scenario.json"))
         {
             if let Ok(doc) = serde_json::from_slice::<against_rome_scenario::model::ScenarioDocument>(bytes) {
-                return doc.events;
+                return doc;
             }
         }
         if let Ok(bytes) = std::fs::read(path.join("arm_scenario.json")) {
             if let Ok(doc) = serde_json::from_slice::<against_rome_scenario::model::ScenarioDocument>(&bytes) {
-                return doc.events;
+                return doc;
             }
         }
-        Vec::new()
+        against_rome_scenario::model::ScenarioDocument::default()
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn candidate_scenario_events(
+        &self,
+        path: &Path,
+        staged: &[(PathBuf, Vec<u8>)],
+    ) -> Vec<against_rome_scenario::Event> {
+        self.candidate_scenario_document(path, staged).events
     }
 
     fn check_terminal_repeat_issues(events: &[against_rome_scenario::Event]) -> Vec<MapIssue> {
@@ -700,6 +709,53 @@ impl EditorApp {
         map_issues
     }
 
+    fn check_missing_target_issues(
+        doc: &against_rome_scenario::model::ScenarioDocument,
+    ) -> Vec<MapIssue> {
+        let mut map_issues = Vec::new();
+        let valid_ids: std::collections::HashSet<_> = doc.spawns.iter().map(|s| s.id).collect();
+        for (idx, event) in doc.events.iter().enumerate() {
+            if !event.enabled {
+                continue;
+            }
+            for (cond_idx, cond) in event.conditions.iter().enumerate() {
+                if cond.target_id.is_nil() || !valid_ids.contains(&cond.target_id) {
+                    let name = if event.name.trim().is_empty() {
+                        format!("Event #{}", idx + 1)
+                    } else {
+                        event.name.clone()
+                    };
+                    let (reason_zh, reason_en) = if cond.target_id.is_nil() {
+                        (
+                            format!("條件 #{} 尚未指定目標物件", cond_idx + 1),
+                            format!("Condition #{} has no target object specified", cond_idx + 1),
+                        )
+                    } else {
+                        (
+                            format!("條件 #{} 參照的目標物件已刪除或不存在", cond_idx + 1),
+                            format!("Condition #{} references a target object that was deleted or does not exist", cond_idx + 1),
+                        )
+                    };
+                    let mut issue = MapIssue::new(
+                        MapIssueSeverity::Error,
+                        "scenario-missing-target",
+                        format!(
+                            "事件「{name}」（第 {} 項）無效：{reason_zh}。在遊戲中將無法偵測此條件並會阻止存檔。請重新指派目標物件或停用該事件。",
+                            idx + 1
+                        ),
+                        format!(
+                            "Event '{name}' (#{idx_1}) invalid: {reason_en}. Condition cannot trigger in-game and blocks saving. Please reassign the target object or disable the event.",
+                            idx_1 = idx + 1
+                        ),
+                    );
+                    issue.event_index = idx as i32;
+                    map_issues.push(issue);
+                }
+            }
+        }
+        map_issues
+    }
+
     /// Pure (`&self`) computation of the report; used by the button and by tests.
     pub fn design_check_report(&self) -> DesignCheckReport {
         #[cfg(test)]
@@ -707,16 +763,16 @@ impl EditorApp {
         let (path, staged) = match self.check_candidate_inputs() {
             Ok(v) => v,
             Err(e) => {
-                if e.contains("terminal action must be last and nonrepeating") {
-                    let path = self.loaded_map_path.clone().unwrap_or_default();
-                    let issues = Self::check_terminal_repeat_issues(&self.candidate_scenario_events(&path, &[]));
-                    if !issues.is_empty() {
-                        return DesignCheckReport::Checked {
-                            map_issues: issues,
-                            preflight_error: None,
-                            design_issues: Vec::new(),
-                        };
-                    }
+                let path = self.loaded_map_path.clone().unwrap_or_default();
+                let doc = self.candidate_scenario_document(&path, &[]);
+                let mut issues = Self::check_terminal_repeat_issues(&doc.events);
+                issues.extend(Self::check_missing_target_issues(&doc));
+                if !issues.is_empty() {
+                    return DesignCheckReport::Checked {
+                        map_issues: issues,
+                        preflight_error: None,
+                        design_issues: Vec::new(),
+                    };
                 }
                 return DesignCheckReport::Unavailable(e);
             }
@@ -725,15 +781,15 @@ impl EditorApp {
         eprintln!("Task42 scenario staging={:?}", timer.elapsed());
         match self.candidate_diagnostics_with_pending_data(&path, &staged, true) {
             Err(e) => {
-                if e.contains("terminal action must be last and nonrepeating") {
-                    let issues = Self::check_terminal_repeat_issues(&self.candidate_scenario_events(&path, &staged));
-                    if !issues.is_empty() {
-                        return DesignCheckReport::Checked {
-                            map_issues: issues,
-                            preflight_error: None,
-                            design_issues: Vec::new(),
-                        };
-                    }
+                let doc = self.candidate_scenario_document(&path, &staged);
+                let mut issues = Self::check_terminal_repeat_issues(&doc.events);
+                issues.extend(Self::check_missing_target_issues(&doc));
+                if !issues.is_empty() {
+                    return DesignCheckReport::Checked {
+                        map_issues: issues,
+                        preflight_error: None,
+                        design_issues: Vec::new(),
+                    };
                 }
                 DesignCheckReport::Unavailable(e)
             }
@@ -743,7 +799,8 @@ impl EditorApp {
                     Err(e) => (Some(e), Vec::new()),
                 };
                 let mut map_issues = c.map_issues;
-                let repeat_issues = Self::check_terminal_repeat_issues(&self.candidate_scenario_events(&path, &staged));
+                let doc = self.candidate_scenario_document(&path, &staged);
+                let repeat_issues = Self::check_terminal_repeat_issues(&doc.events);
                 if !repeat_issues.is_empty() {
                     if let Some(ref err) = preflight_error {
                         if err.contains("含勝利或失敗動作的事件不可設為週期重複") {
@@ -751,6 +808,15 @@ impl EditorApp {
                         }
                     }
                     map_issues.extend(repeat_issues);
+                }
+                let missing_target_issues = Self::check_missing_target_issues(&doc);
+                if !missing_target_issues.is_empty() {
+                    if let Some(ref err) = preflight_error {
+                        if err.contains("目標物件已刪除") || err.contains("missing condition target") {
+                            preflight_error = None;
+                        }
+                    }
+                    map_issues.extend(missing_target_issues);
                 }
                 DesignCheckReport::Checked {
                     map_issues,
@@ -1159,6 +1225,34 @@ impl EditorApp {
         Ok(count)
     }
 
+    /// 停用所有條件參照已刪除或不存在目標物件之事件，整批套用並重新執行設計檢查。
+    pub fn fix_missing_target_events(&mut self) -> Result<usize, String> {
+        let path = self
+            .loaded_map_path
+            .clone()
+            .ok_or_else(|| tr(self.lang(), "No map loaded.", "尚未載入地圖。").to_string())?;
+        if !self.scenario.is_loaded() {
+            self.scenario.load_session(&path)?;
+        }
+        let doc = self.scenario.document();
+        let valid_ids: std::collections::HashSet<_> = doc.spawns.iter().map(|s| s.id).collect();
+        let indices: Vec<usize> = doc
+            .events
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| {
+                e.enabled
+                    && e.conditions
+                        .iter()
+                        .any(|c| c.target_id.is_nil() || !valid_ids.contains(&c.target_id))
+            })
+            .map(|(i, _)| i)
+            .collect();
+        let count = self.scenario.set_events_enabled(&indices, false)?;
+        self.run_design_check();
+        Ok(count)
+    }
+
     /// Pure generation of the current Design Check report as a Markdown document.
     pub fn export_design_check_markdown(&self) -> String {
         let report = match &self.design_check.report {
@@ -1241,6 +1335,7 @@ impl EditorApp {
         let mut fix_units = false;
         let mut fix_bases = false;
         let mut fix_terminal_repeat = false;
+        let mut fix_missing_targets = false;
         let mut locate: Option<usize> = None;
         let rows = self.design_check.get_or_compute_rows(lang).to_vec();
         let mut selected = self.design_check.selected.filter(|i| *i < rows.len());
@@ -1332,6 +1427,19 @@ impl EditorApp {
                             .clicked()
                     {
                         fix_terminal_repeat = true;
+                    }
+                    let has_missing_targets = rows.iter().any(|r| r.code == "scenario-missing-target");
+                    if has_missing_targets
+                        && ui
+                            .button(tr(lang, "Disable events with missing targets", "停用遺失目標事件"))
+                            .on_hover_text(tr(
+                                lang,
+                                "Automatically disables scenario events whose conditions reference deleted or nonexistent target objects",
+                                "自動停用條件參照已刪除或不存在目標物件之劇本事件，避免無效判定並解除存檔封鎖",
+                            ))
+                            .clicked()
+                    {
+                        fix_missing_targets = true;
                     }
                     let can_locate = selected
                         .and_then(|i| rows.get(i))
@@ -1592,6 +1700,26 @@ impl EditorApp {
                 }
                 Ok(_) => {
                     self.status_message = tr(lang, "No repeating win/loss events found.", "未發現重複的勝負事件。").into();
+                    self.status_is_error = false;
+                }
+                Err(e) => {
+                    self.status_message = e;
+                    self.status_is_error = true;
+                }
+            }
+        } else if fix_missing_targets {
+            match self.fix_missing_target_events() {
+                Ok(n) if n > 0 => {
+                    self.status_message = match lang {
+                        AppLanguage::English => {
+                            format!("Disabled {n} event(s) referencing missing targets; Save to write them.")
+                        }
+                        _ => format!("已停用 {n} 個參照已遺失目標的劇本事件；請存檔以寫入變更。"),
+                    };
+                    self.status_is_error = false;
+                }
+                Ok(_) => {
+                    self.status_message = tr(lang, "No events with missing targets found.", "未發現參照遺失目標的事件。").into();
                     self.status_is_error = false;
                 }
                 Err(e) => {
@@ -2193,6 +2321,95 @@ mod tests {
             "scenario-terminal-repeat",
             "事件包含勝利或失敗動作，但啟用了循環重複",
             "Event contains Victory or Defeat action with Repeat enabled",
+        );
+        issue.event_index = 0;
+        app.design_check.report = Some(DesignCheckReport::Checked {
+            map_issues: vec![issue],
+            preflight_error: None,
+            design_issues: vec![],
+        });
+
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| app.show_design_check(ctx));
+        assert!(app.design_check.open);
+    }
+
+    #[test]
+    fn test_scenario_missing_target_detection_and_quick_fix() {
+        let temp_dir = std::env::temp_dir().join(format!("arm_missing_target_{}", Uuid::new_v4()));
+        let script_dir = temp_dir.join("SCRIPT");
+        std::fs::create_dir_all(&script_dir).unwrap();
+        std::fs::write(temp_dir.join(".arm_custom_map"), b"{}").unwrap();
+        std::fs::write(
+            script_dir.join("ak_level.bci"),
+            against_rome_scenario::BciImage::idle().serialize(),
+        )
+        .unwrap();
+
+        let mut app = EditorApp::default();
+        let session = crate::TerrainSession::create_blank(5, 32);
+        app.set_loaded_map(temp_dir.clone(), session).unwrap();
+        app.scenario.load_session(&temp_dir).unwrap();
+
+        let missing_uuid = Uuid::new_v4();
+        let event = against_rome_scenario::Event {
+            name: "Trigger_Missing_Unit".into(),
+            enabled: false,
+            repeat: false,
+            delay_seconds: 5,
+            conditions: vec![against_rome_scenario::Condition {
+                kind: 1,
+                target_id: missing_uuid,
+                ..Default::default()
+            }],
+            actions: vec![against_rome_scenario::Action {
+                kind: 0,
+                text: "Target perished".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        app.scenario.add_events(&[event]).unwrap();
+
+        // Simulate designer toggling event enabled in the event editor
+        let mut enabled_event = app.scenario.document().events[0].clone();
+        enabled_event.enabled = true;
+        app.scenario.replace_event(0, enabled_event).unwrap();
+
+        let report = app.design_check_report();
+        let rows = report_rows(&report, &[], AppLanguage::English);
+        let target_issue = rows.iter().find(|r| r.code == "scenario-missing-target");
+        assert!(target_issue.is_some(), "Should detect event with missing target object");
+        let issue = target_issue.unwrap();
+        assert_eq!(issue.severity, MapIssueSeverity::Error);
+        assert_eq!(issue.event_index, 0);
+        assert!(issue.is_locatable());
+        assert!(issue.text(AppLanguage::English).contains("Trigger_Missing_Unit"));
+        assert!(issue.text(AppLanguage::TraditionalChinese).contains("Trigger_Missing_Unit"));
+
+        let fixed = app.fix_missing_target_events().unwrap();
+        assert_eq!(fixed, 1);
+        assert!(!app.scenario.document().events[0].enabled);
+
+        let report_after = app.design_check_report();
+        let rows_after = report_rows(&report_after, &[], AppLanguage::English);
+        assert!(!rows_after.iter().any(|r| r.code == "scenario-missing-target"));
+
+        assert!(app.scenario.undo_events());
+        assert!(app.scenario.document().events[0].enabled);
+
+        let _ = std::fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_quick_fix_button_shown_for_missing_targets() {
+        let mut app = EditorApp::default();
+        app.design_check.open = true;
+        let mut issue = MapIssue::new(
+            MapIssueSeverity::Error,
+            "scenario-missing-target",
+            "事件條件參照已刪除或不存在的目標物件",
+            "Event condition references a deleted or nonexistent target object",
         );
         issue.event_index = 0;
         app.design_check.report = Some(DesignCheckReport::Checked {
