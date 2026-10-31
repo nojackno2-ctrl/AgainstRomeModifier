@@ -484,14 +484,32 @@ impl PackagingUi {
 
         match ModBundleExporter::export_to_zip(dir, zip, Some(&options)) {
             Ok(result) => {
+                // Read the finished ZIP back (archive invariants + SHA-256 of every payload) so a
+                // truncated or corrupt write is never reported as a good package.
+                if let Err(e) = ModBundleExporter::verify_zip(Path::new(&result.output_zip_path)) {
+                    let msg = if self.english {
+                        format!(
+                            "Export wrote {} but read-back verification failed: {e}. Do not distribute this ZIP; export again.",
+                            result.output_zip_path
+                        )
+                    } else {
+                        format!(
+                            "已寫出 {}，但讀回驗證失敗：{e}。請勿散布此 ZIP，請重新匯出。",
+                            result.output_zip_path
+                        )
+                    };
+                    self.status_message = msg.clone();
+                    self.status_is_error = true;
+                    return Err(msg);
+                }
                 self.status_message = if self.english {
                     format!(
-                        "Bundle exported successfully: {} ({} files, {} bytes)",
+                        "Bundle exported and verified: {} ({} files, {} bytes, checksums re-read OK)",
                         result.output_zip_path, result.file_count, result.total_size_bytes
                     )
                 } else {
                     format!(
-                        "模組套件匯出成功：{}（共 {} 個檔案，{} 位元組）",
+                        "模組套件匯出並通過讀回驗證：{}（共 {} 個檔案，{} 位元組，雜湊已重新讀取確認）",
                         result.output_zip_path, result.file_count, result.total_size_bytes
                     )
                 };

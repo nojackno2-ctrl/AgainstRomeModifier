@@ -734,6 +734,9 @@ fn packaging_temp_map_zip_payload_hashes_and_safe_default_directory() {
     app.packaging.request_export();
     app.process_packaging_export_request();
     assert!(zip.is_file());
+    // 匯出後 UI 自動讀回驗證，狀態訊息須標示已驗證且非錯誤。
+    assert!(!app.packaging.status_is_error, "{}", app.packaging.status_message);
+    assert!(app.packaging.status_message.contains("讀回驗證") || app.packaging.status_message.contains("verified"));
     // verify_zip 實際讀取所有 ZIP payload 並驗證 SHA-256；再與來源逐檔比對。
     let manifest = ModBundleExporter::verify_zip(&zip).unwrap();
     assert!(!manifest.files.is_empty());

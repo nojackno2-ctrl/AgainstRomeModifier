@@ -1,3 +1,7 @@
+## 2026-10-31 Claude：匯出 ZIP 後自動讀回驗證
+- 匯出模組套件後原本直接顯示成功；現於 `packaging_ui::run_export` 寫出後立刻呼叫 `ModBundleExporter::verify_zip`（封包不變式＋每個 payload 的 SHA-256 重新讀取），失敗則顯示錯誤並提示勿散布、重新匯出。成功訊息改為「匯出並通過讀回驗證」。放置越界已由 move/place 拒絕，故未重做。
+- 驗證：`designer_workflow_e2e` 匯出測試補斷言（非錯誤、訊息含已驗證）；`cargo test --workspace --locked`（獨立 %TEMP% target，已清理）287 組、2823 passed、0 failed、23 ignored。讀回失敗分支無自動測試（難以在不損壞檔案下觸發）；未驗證桌面視窗；未修改安裝遊戲。
+
 ## 2026-10-31 Codex：乾淨 HEAD 測試發現換行問題
 - 45045b3 乾淨 worktree 的 cargo test --workspace --locked 在 app_tables_generator 失敗（5 passed、1 failed），Windows checkout 將產生檔 761 行轉為 CRLF，位元組測試期待 LF。已在 .gitattributes 指定該產生檔 eol=lf；重新驗證進行中。
 
