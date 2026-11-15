@@ -28,6 +28,16 @@ pub enum LandscapeApply {
     Wall,
 }
 
+/// Read-only preview summary of the current erosion rectangle before simulation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ErosionSelectionSummary {
+    pub tile_width: usize,
+    pub tile_height: usize,
+    pub tile_count: usize,
+    pub vertex_count: usize,
+    pub height_range: Option<(u8, u8)>,
+}
+
 /// Result of an erosion simulation in a rectangle, faithful to C# MapEditorForm.Erosion.cs.
 /// Provides a standalone apply contract to preserve existing application architecture.
 #[derive(Clone, Debug, PartialEq)]
@@ -540,24 +550,82 @@ impl LandscapeUi {
         self.plan_erosion(&LandscapeContext::plain(vertex_size, heights))
     }
 
+    /// Computes a read-only preview summary of the erosion rectangle without modifying terrain.
+    pub fn erosion_selection_summary(&self, cx: &LandscapeContext) -> Result<ErosionSelectionSummary, String> {
+        let (tiles, step) = cx.geometry();
+        let (p1, p2) = self.parse_erosion_rectangle(tiles)?;
+        let min_x = p1.0.min(p2.0);
+        let max_x = p1.0.max(p2.0);
+        let min_y = p1.1.min(p2.1);
+        let max_y = p1.1.max(p2.1);
+        let tile_width = (max_x - min_x + 1) as usize;
+        let tile_height = (max_y - min_y + 1) as usize;
+        let vx_min = (min_x as usize) * step;
+        let vx_max = ((max_x as usize + 1) * step).min(cx.vertex_size.saturating_sub(1));
+        let vy_min = (min_y as usize) * step;
+        let vy_max = ((max_y as usize + 1) * step).min(cx.vertex_size.saturating_sub(1));
+        let vertex_count = if vx_min <= vx_max && vy_min <= vy_max {
+            (vx_max - vx_min + 1) * (vy_max - vy_min + 1)
+        } else {
+            0
+        };
+        let height_range = cx
+            .heights
+            .filter(|h| h.len() == cx.vertex_size * cx.vertex_size && vertex_count > 0)
+            .map(|heights| {
+                let mut min_h = u8::MAX;
+                let mut max_h = u8::MIN;
+                for y in vy_min..=vy_max {
+                    let row = y * cx.vertex_size;
+                    for x in vx_min..=vx_max {
+                        let h = heights[row + x];
+                        min_h = min_h.min(h);
+                        max_h = max_h.max(h);
+                    }
+                }
+                (min_h, max_h)
+            });
+        Ok(ErosionSelectionSummary {
+            tile_width,
+            tile_height,
+            tile_count: tile_width * tile_height,
+            vertex_count,
+            height_range,
+        })
+    }
+
     /// Plans hydraulic and thermal erosion in the selected tile rectangle, faithful to C# `MapEditorForm.Erosion.cs`.
     pub fn plan_erosion(&mut self, cx: &LandscapeContext) -> Result<ErosionPlan, String> {
         self.last_erosion_plan = None;
         self.erosion_apply_requested = false;
         let Some(heights) = cx.heights else {
-            let msg = "Terrain heights are not available.".to_string();
-            self.status_message = format!("Erosion planning error: {msg}");
+            let msg = tl(
+                self.english,
+                "無法規劃侵蝕：尚未載入地形高度資料。",
+                "Erosion planning error: Terrain heights are not available.",
+            )
+            .to_string();
+            self.status_message = msg.clone();
             self.status_is_error = true;
             return Err(msg);
         };
         if heights.len() != cx.vertex_size * cx.vertex_size {
-            let msg = format!(
-                "Terrain height buffer length ({}) does not match vertex size {}x{}.",
-                heights.len(),
-                cx.vertex_size,
-                cx.vertex_size
-            );
-            self.status_message = format!("Erosion planning error: {msg}");
+            let msg = if self.english {
+                format!(
+                    "Erosion planning error: Terrain height buffer length ({}) does not match vertex size {}x{}.",
+                    heights.len(),
+                    cx.vertex_size,
+                    cx.vertex_size
+                )
+            } else {
+                format!(
+                    "無法規劃侵蝕：地形高度緩衝區長度（{}）與頂點尺寸 {}x{} 不符。",
+                    heights.len(),
+                    cx.vertex_size,
+                    cx.vertex_size
+                )
+            };
+            self.status_message = msg.clone();
             self.status_is_error = true;
             return Err(msg);
         }
@@ -566,15 +634,23 @@ impl LandscapeUi {
         let (p1, p2) = match self.parse_erosion_rectangle(tiles) {
             Ok(pair) => pair,
             Err(e) => {
-                self.status_message = format!("Erosion planning error: {e}");
+                self.status_message = format!(
+                    "{}: {e}",
+                    tl(self.english, "無法規劃侵蝕", "Erosion planning error")
+                );
                 self.status_is_error = true;
                 return Err(e);
             }
         };
 
         if !self.erosion_enable_hydraulic && !self.erosion_enable_thermal {
-            let msg = "Both hydraulic and thermal erosion are disabled; nothing to simulate.".to_string();
-            self.status_message = format!("Erosion planning error: {msg}");
+            let msg = tl(
+                self.english,
+                "無法規劃侵蝕：水力與熱力侵蝕皆已停用，沒有可模擬的項目。",
+                "Erosion planning error: Both hydraulic and thermal erosion are disabled; nothing to simulate.",
+            )
+            .to_string();
+            self.status_message = msg.clone();
             self.status_is_error = true;
             return Err(msg);
         }
@@ -1287,7 +1363,36 @@ impl LandscapeUi {
             });
 
         ui.add_space(8.0);
-        if ui.button(tl(self.english, "在選區內模擬侵蝕", "Simulate Erosion in Selection")).clicked() {
+        let summary = self.erosion_selection_summary(cx);
+        match &summary {
+            Ok(s) => {
+                let height_text = match s.height_range {
+                    Some((min_h, max_h)) => format!("{} {min_h}..{max_h}", tl(self.english, "目前高度範圍", "current height")),
+                    None => tl(self.english, "尚未載入高度資料", "heights not loaded").to_string(),
+                };
+                ui.label(format!(
+                    "{}: {}×{} {} ({} {})，{}",
+                    tl(self.english, "選區預覽", "Selection preview"),
+                    s.tile_width,
+                    s.tile_height,
+                    tl(self.english, "圖塊", "tiles"),
+                    s.vertex_count,
+                    tl(self.english, "頂點", "vertices"),
+                    height_text,
+                ));
+            }
+            Err(err) => {
+                ui.colored_label(
+                    Color32::from_rgb(235, 110, 90),
+                    format!("{}: {err}", tl(self.english, "選區座標無效", "Invalid selection")),
+                );
+            }
+        }
+        let can_simulate = summary.is_ok() && (self.erosion_enable_hydraulic || self.erosion_enable_thermal);
+        if ui
+            .add_enabled(can_simulate, egui::Button::new(tl(self.english, "在選區內模擬侵蝕", "Simulate Erosion in Selection")))
+            .clicked()
+        {
             let _ = self.plan_erosion(cx);
         }
 
@@ -1805,7 +1910,11 @@ impl LandscapeUi {
         });
         match result {
             Ok(plan) => {
-                self.status_message = format!("Region planned: {} tiles.", plan.cells.len());
+                self.status_message = if self.english {
+                    format!("Region planned: {} tiles.", plan.cells.len())
+                } else {
+                    format!("區域規劃完成：共 {} 個圖塊。", plan.cells.len())
+                };
                 self.status_is_error = false;
                 self.region.plan = Some(plan);
                 self.dirty = true;
@@ -1813,7 +1922,10 @@ impl LandscapeUi {
             }
             Err(e) => {
                 self.region.plan = None;
-                self.status_message = format!("Region planning error: {e}");
+                self.status_message = format!(
+                    "{}: {e}",
+                    tl(self.english, "無法規劃區域", "Region planning error")
+                );
                 self.status_is_error = true;
                 Err(e)
             }
@@ -1823,14 +1935,24 @@ impl LandscapeUi {
     /// Turns the planned region into a host request (what the "Apply" button does).
     pub fn request_region_apply(&mut self) -> Result<(), String> {
         let Some(plan) = self.region.plan.clone() else {
-            return Err("No region plan available.".into());
+            return Err(tl(
+                self.english,
+                "尚未建立區域規劃。",
+                "No region plan available.",
+            )
+            .into());
         };
         let request = match plan.op {
             RegionOperation::SelectObjects => RegionRequest::SelectObjects(plan.rect),
             _ => {
                 let material = self.region.material.trim().to_string();
                 if material.is_empty() {
-                    let msg = "Select an available material first (e.g. 4BA___51).".to_string();
+                    let msg = tl(
+                        self.english,
+                        "請先選擇可用的材質代碼（例如 4BA___51）。",
+                        "Select an available material first (e.g. 4BA___51).",
+                    )
+                    .to_string();
                     self.apply_failed(msg.clone());
                     return Err(msg);
                 }
@@ -2219,6 +2341,7 @@ mod tests {
     #[test]
     fn test_landscape_ui_erosion_bounds_and_invalid_input_guard() {
         let mut ui = LandscapeUi::default();
+        ui.english = true;
         let size = 16;
         let heights = vec![100u8; size * size];
 
@@ -2552,5 +2675,47 @@ mod small_ux_tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn erosion_selection_summary_reports_counts_and_height_range_and_rejects_bad_coords() {
+        let mut ui = LandscapeUi::default();
+        let size = 16;
+        let mut heights = vec![20u8; size * size];
+        heights[5 * size + 5] = 45;
+        heights[6 * size + 6] = 180;
+        ui.erosion_rectangle_text = "4,4\n6,6".into();
+        let cx = LandscapeContext::plain(size, Some(&heights));
+        let summary = ui.erosion_selection_summary(&cx).expect("valid summary");
+        assert_eq!(summary.tile_width, 3);
+        assert_eq!(summary.tile_height, 3);
+        assert_eq!(summary.tile_count, 9);
+        assert_eq!(summary.vertex_count, 16);
+        assert_eq!(summary.height_range, Some((20, 180)));
+
+        ui.erosion_rectangle_text = "4,4\n99,99".into();
+        assert!(ui.erosion_selection_summary(&cx).is_err());
+    }
+
+    #[test]
+    fn plan_erosion_and_region_report_bilingual_refusals() {
+        let mut ui = LandscapeUi::default();
+        ui.english = false;
+        let cx_no_heights = LandscapeContext::plain(16, None);
+        let err_zh = ui.plan_erosion(&cx_no_heights).unwrap_err();
+        assert!(err_zh.contains("無法規劃侵蝕"));
+        assert!(ui.status_is_error);
+
+        ui.english = true;
+        let err_en = ui.plan_erosion(&cx_no_heights).unwrap_err();
+        assert!(err_en.contains("Erosion planning error"));
+
+        ui.english = false;
+        ui.region.vertices_text = "1,1\n3,3".into();
+        ui.region.material = "   ".into();
+        ui.plan_region(&cx_no_heights).expect("region plan succeeds");
+        assert!(ui.status_message.contains("區域規劃完成"));
+        let apply_err = ui.request_region_apply().unwrap_err();
+        assert!(apply_err.contains("請先選擇可用的材質代碼"));
     }
 }

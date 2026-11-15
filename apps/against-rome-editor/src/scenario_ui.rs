@@ -101,6 +101,7 @@ pub struct ScenarioUi {
     objective_team: i32,
     objective_targets: [Option<uuid::Uuid>; 2],
     pub(crate) objective_notice: Option<Result<bool>>,
+    pending_delete_event: Option<usize>,
     pub(crate) wave_generator: WaveGenerator,
     pub(crate) wave_target: Option<WorldPosition>,
     pub(crate) wave_target_requested: bool,
@@ -148,6 +149,7 @@ impl Default for ScenarioUi {
             objective_team: 1,
             objective_targets: [None, None],
             objective_notice: None,
+            pending_delete_event: None,
             open: false,
             wave_generator: WaveGenerator::default(),
             wave_target: None,
@@ -472,6 +474,7 @@ impl ScenarioUi {
     }
 
     fn record_event_commit(&mut self, before: &[Event]) {
+        if before != self.events.capture() { self.pending_delete_event = None; }
         self.history.commit(before != self.events.capture());
         self.receipts.extend(self.history.tokens.take_receipts().into_iter().map(
             |(before_token, after_token)| crate::undo_journal::SubsystemStep {
@@ -555,14 +558,18 @@ impl ScenarioUi {
         if index >= self.document.events.len() {
             return;
         }
-        self.selected = index;
+        self.select_event(index);
         let targets = self.spawn_targets();
         if !self.browser.indices_filtered(&self.document.events, &targets, &self.aliases).contains(&index) {
             self.browser.clear_filters();
         }
     }
+    fn select_event(&mut self, index: usize) {
+        if self.selected != index { self.pending_delete_event = None; }
+        self.selected = index;
+    }
     fn clamp_selected(&mut self) {
-        self.selected = self.selected.min(self.document.events.len().saturating_sub(1));
+        self.select_event(self.selected.min(self.document.events.len().saturating_sub(1)));
     }
     fn refresh_graph_after_event_change(&mut self) {
         if !self.graph_ui.is_dirty() {
@@ -685,6 +692,7 @@ impl ScenarioUi {
         self.record_event_commit(&before);
         self.recovery_redo = None;
         self.document.events = self.events.capture();
+        self.pending_delete_event = None;
         self.clamp_selected();
         self.refresh_graph_after_event_change();
         Ok(())
@@ -740,6 +748,7 @@ impl ScenarioUi {
         Ok(changed_count)
     }
     pub fn undo_events(&mut self) -> bool {
+        self.pending_delete_event = None;
         self.sync_session();
         if !self.events.can_undo() {
             if let Some((document, camera, events, history)) = self.recovery_undo.take() {
@@ -763,6 +772,7 @@ impl ScenarioUi {
         changed
     }
     pub fn redo_events(&mut self) -> bool {
+        self.pending_delete_event = None;
         self.sync_session();
         if let Some((document, camera, events, history)) = self.recovery_redo.take() {
             self.recovery_undo = Some((self.document.clone(), self.camera.clone(), self.events.clone(), self.history.clone()));
@@ -975,6 +985,7 @@ impl ScenarioUi {
         self.camera = camera;
         self.recovery_undo = None; self.recovery_redo = None;
         self.source = None;
+        self.pending_delete_event = None;
         self.watched.clear();
         self.active_bindings = None;
         self.load_path = map_path.map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
@@ -1067,6 +1078,7 @@ impl ScenarioUi {
         self.aliases = aliases;
         self.active_bindings=active_bindings;
         self.source = Some(source);
+        self.pending_delete_event = None;
         self.canvas = Default::default();
         self.watched = watched;
         self.selected = 0;
@@ -1546,6 +1558,40 @@ impl ScenarioUi {
         self.selected = self.add_events(&[event])?;
         Ok(true)
     }
+    /// 新增「對指定隊伍設為敵對」的遭遇戰預設事件（若已存在同隊敵對外交則回傳 Ok(false)）。
+    pub(crate) fn add_skirmish_hostile_preset(&mut self, team: i32) -> Result<bool> {
+        if !(1..=7).contains(&team) {
+            return Err("隊伍需為 1–7 / Team must be 1–7".into());
+        }
+        let already_hostile = self.document.events.iter().filter(|e| e.enabled).flat_map(|e| &e.actions).any(|a| {
+            a.kind == 1 && a.hostile && ((a.team == 0 && a.other_team == team) || (a.team == team && a.other_team == 0))
+        });
+        if already_hostile {
+            return Ok(false);
+        }
+        let mut event = hostile_wave_event(team);
+        event.name = unused_event_name(&event.name, &self.document.events);
+        self.check_objective(&event)?;
+        self.selected = self.add_events(&[event])?;
+        Ok(true)
+    }
+    /// 新增「開局提示訊息」遭遇戰預設事件。
+    pub(crate) fn add_skirmish_briefing_preset(&mut self) -> Result<bool> {
+        let event = Event {
+            name: unused_event_name("Skirmish_briefing", &self.document.events),
+            delay_seconds: 0,
+            actions: vec![Action {
+                kind: 0,
+                team: 0,
+                text: "Defeat the enemy or survive!".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        self.check_objective(&event)?;
+        self.selected = self.add_events(&[event])?;
+        Ok(true)
+    }
     fn objective_button(&mut self, ui: &mut egui::Ui, label: &str, seconds: Option<i32>, target: Option<uuid::Uuid>, team: i32) {
         let event = self.objective_event(seconds, target, team);
         let exists = event.as_ref().is_ok_and(|e| self.has_objective(e));
@@ -1588,6 +1634,14 @@ impl ScenarioUi {
                 self.objective_button(ui, if team == 0 { tl(en, "玩家主屋摧毀即失敗", "Player main house destroyed: Defeat") }
                     else { tl(en, "敵方主屋摧毀即勝利", "Enemy main house destroyed: Victory") }, None, self.objective_targets[slot], team);
             }
+            ui.horizontal(|ui| {
+                if ui.button(tl(en, "新增敵對外交預設", "Add hostile diplomacy preset")).clicked() {
+                    self.objective_notice = Some(self.add_skirmish_hostile_preset(self.objective_team));
+                }
+                if ui.button(tl(en, "新增開局提示訊息", "Add opening briefing message")).clicked() {
+                    self.objective_notice = Some(self.add_skirmish_briefing_preset());
+                }
+            });
         });
     }
     fn show_wave_generator(&mut self, ui: &mut egui::Ui) {
@@ -1738,13 +1792,13 @@ impl ScenarioUi {
                 .add_enabled(!indices.is_empty(), egui::Button::new(tl(en, "上一個事件", "Previous event")))
                 .clicked()
             {
-                self.selected = adjacent_event(&indices, self.selected, false);
+                self.select_event(adjacent_event(&indices, self.selected, false));
             }
             if ui
                 .add_enabled(!indices.is_empty(), egui::Button::new(tl(en, "下一個事件", "Next event")))
                 .clicked()
             {
-                self.selected = adjacent_event(&indices, self.selected, true);
+                self.select_event(adjacent_event(&indices, self.selected, true));
             }
             let has_selected = self.document.events.get(self.selected).is_some();
             if ui
@@ -1810,7 +1864,7 @@ impl ScenarioUi {
                 label.color(egui::Color32::GRAY)
             };
             if ui.push_id(("event_browser_row", i), |ui| ui.selectable_label(self.selected == i, label)).inner.clicked() {
-                self.selected = i;
+                self.select_event(i);
             }
         }
     }
@@ -1970,11 +2024,27 @@ impl ScenarioUi {
                                     self.error = Some(e);
                                 }
                             }
-                            if !self.document.events.is_empty()
-                                && ui.button(tl(en, "刪除選取事件", "Delete selected event")).clicked()
-                            {
-                                if let Err(e) = self.remove_event(self.selected) {
-                                    self.error = Some(e);
+                            if !self.document.events.is_empty() {
+                                if self.pending_delete_event == Some(self.selected) {
+                                    if ui
+                                        .add(
+                                            egui::Button::new(
+                                                egui::RichText::new(tl(en, "確定刪除？", "Confirm delete?"))
+                                                    .color(egui::Color32::WHITE),
+                                            )
+                                            .fill(egui::Color32::from_rgb(170, 45, 45)),
+                                        )
+                                        .clicked()
+                                    {
+                                        if let Err(e) = self.remove_event(self.selected) {
+                                            self.error = Some(e);
+                                        }
+                                    }
+                                    if ui.button(tl(en, "取消", "Cancel")).clicked() {
+                                        self.pending_delete_event = None;
+                                    }
+                                } else if ui.button(tl(en, "刪除選取事件", "Delete selected event")).clicked() {
+                                    self.pending_delete_event = Some(self.selected);
                                 }
                             }
                             if ui
@@ -5053,6 +5123,49 @@ mod tests {
 
             fs::remove_dir_all(p).unwrap();
         }
+    }
+
+    #[test]
+    fn test_skirmish_hostile_and_briefing_presets_undo_and_dedup() {
+        let mut ui = ScenarioUi::default();
+        let p = source();
+        ui.load_session(&p).unwrap();
+        assert!(ui.add_skirmish_hostile_preset(2).unwrap());
+        assert_eq!(ui.document.events.len(), 1);
+        assert_eq!(ui.document.events[0].actions[0].kind, 1);
+        assert!(ui.document.events[0].actions[0].hostile);
+        assert!(!ui.add_skirmish_hostile_preset(2).unwrap());
+        assert_eq!(ui.document.events.len(), 1);
+        assert!(ui.add_skirmish_briefing_preset().unwrap());
+        assert_eq!(ui.document.events.len(), 2);
+        assert_eq!(ui.document.events[1].actions[0].kind, 0);
+        assert!(ui.undo_events());
+        assert_eq!(ui.document.events.len(), 1);
+        assert!(ui.redo_events());
+        assert_eq!(ui.document.events.len(), 2);
+        fs::remove_dir_all(p).unwrap();
+    }
+
+    #[test]
+    fn test_delete_event_confirmation_state_clears_on_remove() {
+        let mut ui = ScenarioUi::default();
+        ui.add_events(&[hostile_wave_event(1)]).unwrap();
+        ui.pending_delete_event = Some(0);
+        ui.remove_event(0).unwrap();
+        assert_eq!(ui.pending_delete_event, None);
+        assert!(ui.document.events.is_empty());
+    }
+
+    #[test]
+    fn test_delete_confirmation_clears_when_selection_changes() {
+        let mut ui = ScenarioUi::default();
+        ui.add_events(&[ev("first"), ev("second")]).unwrap();
+        ui.pending_delete_event = Some(0);
+        ui.reveal_event(1);
+        assert_eq!(ui.pending_delete_event, None);
+        ui.reveal_event(0);
+        assert_eq!(ui.pending_delete_event, None);
+        assert_eq!(ui.document.events.len(), 2);
     }
 }
 

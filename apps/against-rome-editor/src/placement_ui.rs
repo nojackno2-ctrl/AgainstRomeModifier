@@ -1177,7 +1177,7 @@ impl PlacementUi {
             .parse::<f32>()
             .ok()
             .filter(|d| d.is_finite())
-            .ok_or("角度不是有效數值")?;
+            .ok_or("角度不是有效數值 / Angle is not a valid number")?;
         let store = self.store.as_mut().unwrap();
         if absolute {
             store.set_families_rotation(&families, degrees)?;
@@ -1197,7 +1197,7 @@ impl PlacementUi {
         let team = if text == "-1" {
             65535
         } else {
-            text.parse::<u16>().map_err(|_| "隊伍必須是 0..15 或 -1")?
+            text.parse::<u16>().map_err(|_| "隊伍必須是 0..15 或 -1 / Team must be 0..15 or -1")?
         };
         self.validate_team_for_families(&families, if team == 65535 { -1 } else { i32::from(team) })?;
         self.store
@@ -1222,6 +1222,119 @@ impl PlacementUi {
         }
         Ok(())
     }
+    /// Aligns all selected families' X coordinate to the primary selected object in one undo step.
+    pub fn align_selection_x(&mut self) -> Result<()> {
+        self.align_selection_axis(0)
+    }
+
+    /// Aligns all selected families' Z coordinate to the primary selected object in one undo step.
+    pub fn align_selection_z(&mut self) -> Result<()> {
+        self.align_selection_axis(2)
+    }
+
+    fn align_selection_axis(&mut self, axis: usize) -> Result<()> {
+        if self.selected_families().len() < 2 {
+            return Err("請先選取至少 2 個物件以進行對齊 / Select at least 2 objects to align".into());
+        }
+        let families = self.current_families()?;
+        let store = self.store.as_mut().ok_or("尚未載入 DATA / DATA not loaded")?;
+        let anchor_key = self
+            .selected
+            .filter(|k| families.contains(k))
+            .unwrap_or(families[0]);
+        let anchor_pos = store
+            .objects()
+            .iter()
+            .find(|o| (o.slot, o.uid) == anchor_key)
+            .map(|o| o.position[axis])
+            .ok_or("找不到基準物件座標 / Anchor object position not found")?;
+
+        let mut ops = 0usize;
+        for &family in &families {
+            if family == anchor_key {
+                continue;
+            }
+            let Some(pos) = store
+                .objects()
+                .iter()
+                .find(|o| (o.slot, o.uid) == family)
+                .map(|o| o.position[axis])
+            else {
+                continue;
+            };
+            let diff = ((f64::from(anchor_pos) - f64::from(pos)) * 65536.0).round();
+            if !diff.is_finite() || diff < i32::MIN as f64 || diff > i32::MAX as f64 {
+                return Err("對齊位移超出 16.16 範圍 / Alignment delta exceeds 16.16 range".into());
+            }
+            let fixed = diff as i32;
+            if fixed == 0 {
+                continue;
+            }
+            let mut delta = [0i32; 3];
+            delta[axis] = fixed;
+            if let Err(e) = store.translate_families_fixed(&[family], delta) {
+                // 已套用的位移仍須納入復原紀錄，避免留下無法復原的部分對齊。
+                if ops > 0 {
+                    self.record_edit(ops);
+                }
+                return Err(e.into());
+            }
+            ops += 1;
+        }
+        if ops > 0 {
+            self.record_edit(ops);
+        }
+        Ok(())
+    }
+
+    /// Returns a bilingual summary of the current multi-selection (count, teams, types, X/Z bounds).
+    pub fn multi_select_summary(&self) -> Option<String> {
+        let families = self.selected_families();
+        if families.len() < 2 {
+            return None;
+        }
+        let store = self.store.as_ref()?;
+        let mut teams = std::collections::BTreeSet::new();
+        let mut types = std::collections::BTreeSet::new();
+        let mut min_x = f32::INFINITY;
+        let mut max_x = f32::NEG_INFINITY;
+        let mut min_z = f32::INFINITY;
+        let mut max_z = f32::NEG_INFINITY;
+        let mut matched = 0usize;
+        for o in store.objects() {
+            if families.contains(&(o.slot, o.uid)) {
+                matched += 1;
+                teams.insert(if o.team == 65535 { -1 } else { i32::from(o.team) });
+                types.insert(o.type_id);
+                min_x = min_x.min(o.position[0]);
+                max_x = max_x.max(o.position[0]);
+                min_z = min_z.min(o.position[2]);
+                max_z = max_z.max(o.position[2]);
+            }
+        }
+        if matched < 2 {
+            return None;
+        }
+        let team_text = if teams.len() <= 4 {
+            teams
+                .iter()
+                .map(|t| t.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        } else {
+            format!("{} {}", teams.len(), tl(self.english, "個隊伍", "teams"))
+        };
+        Some(format!(
+            "{} {matched} {} | {} {team_text} | {} {} {} | X [{min_x:.1}..{max_x:.1}], Z [{min_z:.1}..{max_z:.1}]",
+            tl(self.english, "已選取", "Selected"),
+            tl(self.english, "個物件", "objects"),
+            tl(self.english, "隊伍：", "Teams:"),
+            tl(self.english, "類型：", "Types:"),
+            types.len(),
+            tl(self.english, "種", ""),
+        ))
+    }
+
     /// Batch edits team and/or rotation for the selected families in a single atomic transaction.
     pub fn batch_edit(&mut self, team: Option<u16>, degrees: Option<f32>) -> Result<()> {
         let families = self.current_families()?;
@@ -1834,7 +1947,18 @@ impl PlacementUi {
                 if ui.add_enabled(self.is_loaded(),egui::Button::new(tl(self.english, "還原 DATA…", "Reset DATA…"))).clicked() {let r=self.request_reset();self.report(r);}
             });
             self.layout_section(ui);
-            ui.separator();ui.label(&self.status);
+            ui.separator();
+            if self.status.contains("不是有效數值")
+                || self.status.contains("必須是")
+                || self.status.contains("超出")
+                || self.status.contains("至少 2 個")
+                || self.status.contains("失敗")
+                || self.status.contains("Error")
+            {
+                ui.colored_label(egui::Color32::from_rgb(255, 110, 110), &self.status);
+            } else {
+                ui.label(&self.status);
+            }
         });
         self.show_layout_apply(ctx);
         // The title-bar close button follows the same dirty guard as the explicit Close tool.
@@ -3422,6 +3546,37 @@ mod tests {
     }
 
     #[test]
+    fn align_selection_moves_to_anchor_as_one_undo_step() {
+        let temp = Temp::new();
+        fixture(&temp.0);
+        let mut ui = PlacementUi::default();
+        ui.load_now(&temp.0.display().to_string()).unwrap();
+        ui.select_objects(&[(0, 1), (1, 2), (2, 3)]);
+        assert!(ui.multi_select_summary().is_some());
+        // 無效輸入以雙語訊息拒絕，且不留下復原紀錄。
+        ui.angle = "bad".into();
+        let rot_err = ui.rotate_family(true).unwrap_err();
+        assert!(rot_err.contains("Angle is not a valid number"), "{rot_err}");
+        ui.team = "bad".into();
+        let team_err = ui.set_team().unwrap_err();
+        assert!(team_err.contains("Team must be 0..15 or -1"), "{team_err}");
+        assert_eq!(ui.undo_depth(), 0);
+        ui.align_selection_x().unwrap();
+        assert_eq!(ui.undo_depth(), 1);
+        let xs: Vec<f32> = ui.objects().iter().take(3).map(|o| o.position[0]).collect();
+        assert!(xs.iter().all(|x| *x == xs[0]), "{xs:?}");
+        // 已對齊時不產生多餘的復原紀錄。
+        ui.align_selection_x().unwrap();
+        assert_eq!(ui.undo_depth(), 1);
+        ui.undo().unwrap();
+        assert!(!ui.is_dirty());
+        let objs = ui.objects();
+        assert_eq!(objs[0].position, [0.0, 0.0, 0.0]);
+        assert_eq!(objs[1].position, [20.0, 0.0, 0.0]);
+        assert_eq!(objs[2].position, [40.0, 0.0, 0.0]);
+    }
+
+    #[test]
     fn test_batch_move_atomic_and_undoable() {
         let temp = Temp::new();
         fixture(&temp.0);
@@ -3935,5 +4090,21 @@ mod batch20_tests {
             assert!(!panel.is_dirty());
             assert!(panel.selection.is_empty());
         }
+    }
+
+    #[test]
+    fn align_selection_requires_two_objects_and_returns_bilingual_error() {
+        let mut panel = PlacementUi::default();
+        let err = panel.align_selection_x().unwrap_err();
+        assert!(
+            err.contains("至少 2 個") && err.contains("at least 2"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn multi_select_summary_returns_none_when_fewer_than_two_selected() {
+        let panel = PlacementUi::default();
+        assert!(panel.multi_select_summary().is_none());
     }
 }

@@ -9,6 +9,20 @@ use crate::app::{tr, EditorApp};
 use against_rome_ambience::Language as AppLanguage;
 use eframe::egui::{self, Color32, Grid, RichText, ScrollArea};
 
+fn starting_force_difference(teams: &[crate::balance_summary::TeamBalance; 8], lang: AppLanguage) -> Option<String> {
+    let active: Vec<_> = teams.iter().filter(|team| team.spawn_count > 0).collect();
+    let min = active.iter().min_by_key(|team| team.total_units)?;
+    let max = active.iter().max_by_key(|team| team.total_units)?;
+    if active.len() < 2 || min.total_units == max.total_units {
+        return None;
+    }
+    Some(if lang == AppLanguage::English {
+        format!("Starting scripted forces differ: Team {} has {} units; Team {} has {}. Review whether this is intentional. Placed units and resources are not included.", min.team, min.total_units, max.team, max.total_units)
+    } else {
+        format!("起始腳本兵力不同：隊伍 {} 有 {} 個單位，隊伍 {} 有 {} 個單位。請確認是否符合設計；不包含放置的單位與資源。", min.team, min.total_units, max.team, max.total_units)
+    })
+}
+
 /// Fingerprint used to invalidate cached balance summary.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct BalanceCacheKey {
@@ -182,6 +196,10 @@ impl EditorApp {
                             }
                         });
 
+                    if let Some(message) = starting_force_difference(&summary.teams, lang) {
+                        ui.colored_label(Color32::from_rgb(230, 160, 60), message);
+                    }
+
                     ui.add_space(8.0);
                     ui.separator();
                     ui.add_space(4.0);
@@ -289,6 +307,22 @@ impl EditorApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn starting_force_difference_compares_only_teams_with_spawns() {
+        use against_rome_scenario::{ScenarioDocument, Spawn};
+        let mut doc = ScenarioDocument::default();
+        doc.spawns.push(Spawn { team: 0, count: 4, ..Default::default() });
+        assert!(starting_force_difference(&crate::balance_summary::summarize(&doc, None).teams, AppLanguage::English).is_none());
+        doc.spawns.push(Spawn { team: 2, count: 4, ..Default::default() });
+        assert!(starting_force_difference(&crate::balance_summary::summarize(&doc, None).teams, AppLanguage::English).is_none());
+        doc.spawns[1].count = 8;
+        let summary = crate::balance_summary::summarize(&doc, None);
+        let en = starting_force_difference(&summary.teams, AppLanguage::English).unwrap();
+        let zh = starting_force_difference(&summary.teams, AppLanguage::TraditionalChinese).unwrap();
+        assert!(en.contains("Team 0 has 4") && en.contains("Team 2 has 8") && en.contains("resources are not included"));
+        assert!(zh.contains("隊伍 0 有 4") && zh.contains("隊伍 2 有 8") && zh.contains("不包含放置的單位與資源"));
+    }
 
     #[test]
     fn test_balance_summary_ui_renders_default_app() {

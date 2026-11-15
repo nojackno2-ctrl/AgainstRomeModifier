@@ -17,7 +17,7 @@
 use crate::app::{tr, ShortcutAction};
 use crate::scenario_ui::ScenarioUi;
 use crate::spawn_placement::{
-    category_text, landscape_move_warning, landscape_nearby, landscape_place_warning, load_spawns, spawn_to_placed,
+    category_text, is_squad, landscape_move_warning, landscape_nearby, landscape_place_warning, load_spawns, spawn_to_placed,
     matches_search, nearest_placement, new_placement, normalize_angle, object_display_name, session_to_spawns, takes_unit_count, team_range, tile_center, tile_ground_height, tribe_text,
     type_for_alias, world_ground_height, PlacementError, SpawnPlacementSession,
 };
@@ -254,6 +254,40 @@ fn stacked_group_warning(english: bool, count: usize) -> String {
         format!(" Warning: {count} object(s) now sit exactly on another object of the same type (stacked duplicates); undo if unintended.")
     } else {
         format!(" 注意：{count} 個物件現在與相同類型的物件完全重疊；若非預期請復原。")
+    }
+}
+
+/// Summarizes placed object counts and total squad unit counts per team.
+fn team_summary_text(objects: &[SdlPlacedObject], english: bool) -> String {
+    if objects.is_empty() {
+        return String::new();
+    }
+    let mut by_team: std::collections::BTreeMap<i32, (usize, i32)> = std::collections::BTreeMap::new();
+    for item in objects {
+        let entry = by_team.entry(item.team).or_insert((0, 0));
+        entry.0 += 1;
+        if is_squad(item) {
+            entry.1 += item.unit_count.max(1);
+        }
+    }
+    let parts: Vec<String> = by_team
+        .into_iter()
+        .map(|(team, (objs, units))| {
+            if units > 0 {
+                if english {
+                    format!("T{team}: {objs} ({units} units)")
+                } else {
+                    format!("T{team}: {objs} ({units} 兵)")
+                }
+            } else {
+                format!("T{team}: {objs}")
+            }
+        })
+        .collect();
+    if english {
+        format!("Teams: {}", parts.join(" | "))
+    } else {
+        format!("各隊統計：{}", parts.join(" | "))
     }
 }
 
@@ -1429,6 +1463,10 @@ impl SpawnPlacementUi {
                         ui.colored_label(Color32::YELLOW, tr(lang, "[unsaved]", "[未儲存]"));
                     }
                 });
+                let summary = team_summary_text(self.session.objects(), en);
+                if !summary.is_empty() {
+                    ui.small(summary);
+                }
                 let list = egui::ScrollArea::vertical().id_source("spawn_placed").max_height(200.0).show(ui, |ui| {
                     let modifiers = ui.input(|i| i.modifiers);
                     for (index, item) in self.session.objects().iter().enumerate() {
@@ -2250,5 +2288,19 @@ mod batch35_tests {
         assert!(panel.session.is_empty());
         panel.search = "missing".into();
         assert!(panel.visible_aliases_text().is_empty());
+    }
+
+    #[test]
+    fn team_summary_text_counts_objects_and_units_per_team() {
+        assert!(team_summary_text(&[], true).is_empty());
+        let unit_type = SdlObjectType::new("roman_legion", 1, SdlObjectCategory::Figure, "", 0, Default::default());
+        let bldg_type = SdlObjectType::new("roman_house", 2, SdlObjectCategory::Building, "", 0, Default::default());
+        let u0 = new_placement(&unit_type, 100.0, 0.0, 100.0, 0, 0.0, 5).unwrap();
+        let b0 = new_placement(&bldg_type, 200.0, 0.0, 200.0, 0, 0.0, 1).unwrap();
+        let u1 = new_placement(&unit_type, 300.0, 0.0, 300.0, 1, 0.0, 8).unwrap();
+        let en = team_summary_text(&[u0.clone(), b0.clone(), u1.clone()], true);
+        assert_eq!(en, "Teams: T0: 2 (5 units) | T1: 1 (8 units)");
+        let zh = team_summary_text(&[u0, b0, u1], false);
+        assert_eq!(zh, "各隊統計：T0: 2 (5 兵) | T1: 1 (8 兵)");
     }
 }

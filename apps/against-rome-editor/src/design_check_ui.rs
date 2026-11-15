@@ -827,6 +827,69 @@ impl EditorApp {
         map_issues
     }
 
+    fn check_repeat_zero_delay_issues(events: &[against_rome_scenario::Event]) -> Vec<MapIssue> {
+        let mut map_issues = Vec::new();
+        for (idx, event) in events.iter().enumerate() {
+            if event.enabled && event.repeat && event.delay_seconds == 0 {
+                let name = if event.name.trim().is_empty() {
+                    format!("Event #{}", idx + 1)
+                } else {
+                    event.name.clone()
+                };
+                let mut issue = MapIssue::new(
+                    MapIssueSeverity::Error,
+                    "scenario-repeat-zero-delay",
+                    format!(
+                        "事件「{name}」（第 {} 項）啟用了重複觸發但延遲為 0 秒，劇本驗證要求延遲至少為 1 秒。可使用快速修正調整。",
+                        idx + 1
+                    ),
+                    format!(
+                        "Event '{name}' (#{idx_1}) repeats with 0s delay. Scenario validation requires at least 1s. Use the quick fix to adjust it.",
+                        idx_1 = idx + 1
+                    ),
+                );
+                issue.event_index = idx as i32;
+                map_issues.push(issue);
+            }
+        }
+        map_issues
+    }
+
+    fn check_diplomacy_same_team_issues(events: &[against_rome_scenario::Event]) -> Vec<MapIssue> {
+        let mut map_issues = Vec::new();
+        for (idx, event) in events.iter().enumerate() {
+            for (action_idx, action) in event.actions.iter().enumerate() {
+                if action.kind == 1 && action.team == action.other_team {
+                    let name = if event.name.trim().is_empty() {
+                        format!("Event #{}", idx + 1)
+                    } else {
+                        event.name.clone()
+                    };
+                    let mut issue = MapIssue::new(
+                        MapIssueSeverity::Error,
+                        "scenario-diplomacy-same-team",
+                        format!(
+                            "事件「{name}」（第 {} 項）動作 #{} 的隊伍外交設定指向相同隊伍（隊伍 {}）。請在劇本面板中選擇兩個不同的隊伍。",
+                            idx + 1,
+                            action_idx + 1,
+                            action.team
+                        ),
+                        format!(
+                            "Event '{name}' (#{idx_1}) action #{act_1} sets diplomacy between the same team (team {team}). Please select two distinct teams in the Scenario panel.",
+                            idx_1 = idx + 1,
+                            act_1 = action_idx + 1,
+                            team = action.team
+                        ),
+                    );
+                    issue.event_index = idx as i32;
+                    map_issues.push(issue);
+                    break;
+                }
+            }
+        }
+        map_issues
+    }
+
     /// Pure (`&self`) computation of the report; used by the button and by tests.
     pub fn design_check_report(&self) -> DesignCheckReport {
         #[cfg(test)]
@@ -840,6 +903,8 @@ impl EditorApp {
                 issues.extend(Self::check_terminal_not_last_issues(&doc.events));
                 issues.extend(Self::check_missing_target_issues(&doc));
                 issues.extend(Self::check_inverted_rect_issues(&doc.events));
+                issues.extend(Self::check_repeat_zero_delay_issues(&doc.events));
+                issues.extend(Self::check_diplomacy_same_team_issues(&doc.events));
                 if !issues.is_empty() {
                     return DesignCheckReport::Checked {
                         map_issues: issues,
@@ -859,6 +924,8 @@ impl EditorApp {
                 issues.extend(Self::check_terminal_not_last_issues(&doc.events));
                 issues.extend(Self::check_missing_target_issues(&doc));
                 issues.extend(Self::check_inverted_rect_issues(&doc.events));
+                issues.extend(Self::check_repeat_zero_delay_issues(&doc.events));
+                issues.extend(Self::check_diplomacy_same_team_issues(&doc.events));
                 if !issues.is_empty() {
                     return DesignCheckReport::Checked {
                         map_issues: issues,
@@ -917,6 +984,27 @@ impl EditorApp {
                         }
                     }
                     map_issues.extend(inverted_rect_issues);
+                }
+                let repeat_zero_delay_issues = Self::check_repeat_zero_delay_issues(&doc.events);
+                if !repeat_zero_delay_issues.is_empty() {
+                    if let Some(ref err) = preflight_error {
+                        if err.contains("重複事件的延遲時間必須大於 0")
+                            || err.contains("Repeating event delay must be greater than 0")
+                            || err.contains("delay_seconds")
+                        {
+                            preflight_error = None;
+                        }
+                    }
+                    map_issues.extend(repeat_zero_delay_issues);
+                }
+                let diplomacy_same_team_issues = Self::check_diplomacy_same_team_issues(&doc.events);
+                if !diplomacy_same_team_issues.is_empty() {
+                    if let Some(ref err) = preflight_error {
+                        if err.contains("diplomacy") || err.contains("相同隊伍") {
+                            preflight_error = None;
+                        }
+                    }
+                    map_issues.extend(diplomacy_same_team_issues);
                 }
                 DesignCheckReport::Checked {
                     map_issues,
@@ -1395,7 +1483,29 @@ impl EditorApp {
         Ok(count)
     }
 
-    /// 停用所有條件參照已刪除或不存在目標物件之事件，整批套用並重新執行設計檢查。
+    /// 將所有啟用中、重複觸發且延遲為 0 秒的劇本事件延遲設為 1 秒，整批套用並重新執行設計檢查。
+    pub fn fix_repeat_zero_delay(&mut self) -> Result<usize, String> {
+        let path = self
+            .loaded_map_path
+            .clone()
+            .ok_or_else(|| tr(self.lang(), "No map loaded.", "尚未載入地圖。").to_string())?;
+        if !self.scenario.is_loaded() {
+            self.scenario.load_session(&path)?;
+        }
+        let mut events = self.scenario.document().events.clone();
+        let mut count = 0;
+        for event in events.iter_mut() {
+            if event.enabled && event.repeat && event.delay_seconds == 0 {
+                event.delay_seconds = 1;
+                count += 1;
+            }
+        }
+        if count > 0 {
+            self.scenario.replace_events(events)?;
+        }
+        self.run_design_check();
+        Ok(count)
+    }
     pub fn fix_missing_target_events(&mut self) -> Result<usize, String> {
         let path = self
             .loaded_map_path
@@ -1508,6 +1618,7 @@ impl EditorApp {
         let mut fix_terminal_not_last = false;
         let mut fix_missing_targets = false;
         let mut fix_inverted_rects = false;
+        let mut fix_repeat_zero_delay = false;
         let mut locate: Option<usize> = None;
         let rows = self.design_check.get_or_compute_rows(lang).to_vec();
         let mut selected = self.design_check.selected.filter(|i| *i < rows.len());
@@ -1638,6 +1749,19 @@ impl EditorApp {
                             .clicked()
                     {
                         fix_inverted_rects = true;
+                    }
+                    let has_repeat_zero_delay = rows.iter().any(|r| r.code == "scenario-repeat-zero-delay");
+                    if has_repeat_zero_delay
+                        && ui
+                            .button(tr(lang, "Set 1s delay on repeating events", "將重複事件延遲設為 1 秒"))
+                            .on_hover_text(tr(
+                                lang,
+                                "Set the delay to 1 second on repeating events with 0s delay",
+                                "將延遲為 0 秒的重複觸發事件設為 1 秒",
+                            ))
+                            .clicked()
+                    {
+                        fix_repeat_zero_delay = true;
                     }
                     let can_locate = selected
                         .and_then(|i| rows.get(i))
@@ -1958,6 +2082,26 @@ impl EditorApp {
                 }
                 Ok(_) => {
                     self.status_message = tr(lang, "No inverted rectangular conditions found.", "未發現座標顛倒的矩形條件。").into();
+                    self.status_is_error = false;
+                }
+                Err(e) => {
+                    self.status_message = e;
+                    self.status_is_error = true;
+                }
+            }
+        } else if fix_repeat_zero_delay {
+            match self.fix_repeat_zero_delay() {
+                Ok(n) if n > 0 => {
+                    self.status_message = match lang {
+                        AppLanguage::English => {
+                            format!("Set 1s delay on {n} repeating event(s); Save to write them.")
+                        }
+                        _ => format!("已將 {n} 個重複事件的延遲設為 1 秒；請存檔以寫入變更。"),
+                    };
+                    self.status_is_error = false;
+                }
+                Ok(_) => {
+                    self.status_message = tr(lang, "No repeating events with 0s delay found.", "未發現延遲為 0 秒的重複事件。").into();
                     self.status_is_error = false;
                 }
                 Err(e) => {
@@ -2892,5 +3036,111 @@ mod tests {
         let ctx = egui::Context::default();
         let _ = ctx.run(egui::RawInput::default(), |ctx| app.show_design_check(ctx));
         assert!(app.design_check.open);
+    }
+
+    #[test]
+    fn test_scenario_repeat_zero_delay_detection_and_quick_fix() {
+        let temp_dir = std::env::temp_dir().join(format!("ar_repeat_zero_delay_{}", Uuid::new_v4()));
+        let script_dir = temp_dir.join("SCRIPT");
+        std::fs::create_dir_all(&script_dir).unwrap();
+        std::fs::write(temp_dir.join(".arm_custom_map"), b"{}").unwrap();
+        std::fs::write(script_dir.join("ak_level.bci"), against_rome_scenario::BciImage::idle().serialize()).unwrap();
+        let mut app = EditorApp::default();
+        app.set_loaded_map(temp_dir.clone(), crate::TerrainSession::create_blank(5, 32)).unwrap();
+        app.scenario.load_session(&temp_dir).unwrap();
+        let event = against_rome_scenario::Event {
+            name: "RepeatZeroDelay".into(),
+            enabled: true,
+            repeat: true,
+            delay_seconds: 1,
+            actions: vec![against_rome_scenario::Action {
+                kind: 0,
+                text: "Ping".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        app.scenario.add_events(&[event]).unwrap();
+        let mut event = app.scenario.document().events[0].clone();
+        event.delay_seconds = 0;
+        app.scenario.replace_event(0, event).unwrap();
+
+        let report = app.design_check_report();
+        let rows = report_rows(&report, &[], AppLanguage::English);
+        let delay_issue = rows.iter().find(|r| r.code == "scenario-repeat-zero-delay");
+        assert!(delay_issue.is_some(), "Expected scenario-repeat-zero-delay issue in {rows:?}");
+        assert_eq!(delay_issue.unwrap().event_index, 0);
+        assert!(delay_issue.unwrap().is_locatable());
+
+        let fixed = app.fix_repeat_zero_delay().expect("fix_repeat_zero_delay should succeed");
+        assert_eq!(fixed, 1);
+        assert_eq!(app.scenario.document().events[0].delay_seconds, 1);
+
+        let report_after = app.design_check_report();
+        let rows_after = report_rows(&report_after, &[], AppLanguage::English);
+        assert!(!rows_after.iter().any(|r| r.code == "scenario-repeat-zero-delay"));
+
+        assert!(app.scenario.undo_events());
+        assert_eq!(app.scenario.document().events[0].delay_seconds, 0);
+
+        let _ = std::fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_quick_fix_button_shown_for_repeat_zero_delay() {
+        let mut app = EditorApp::default();
+        app.design_check.open = true;
+        let mut issue = MapIssue::new(
+            MapIssueSeverity::Error,
+            "scenario-repeat-zero-delay",
+            "重複事件延遲為 0 秒",
+            "Repeating event has 0s delay",
+        );
+        issue.event_index = 0;
+        app.design_check.report = Some(DesignCheckReport::Checked {
+            map_issues: vec![issue],
+            preflight_error: None,
+            design_issues: vec![],
+        });
+
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| app.show_design_check(ctx));
+        assert!(app.design_check.open);
+    }
+
+    #[test]
+    fn test_scenario_diplomacy_same_team_detection_and_locatable() {
+        let temp_dir = std::env::temp_dir().join(format!("ar_diplomacy_same_team_{}", Uuid::new_v4()));
+        let script_dir = temp_dir.join("SCRIPT");
+        std::fs::create_dir_all(&script_dir).unwrap();
+        std::fs::write(temp_dir.join(".arm_custom_map"), b"{}").unwrap();
+        std::fs::write(script_dir.join("ak_level.bci"), against_rome_scenario::BciImage::idle().serialize()).unwrap();
+        let mut app = EditorApp::default();
+        app.set_loaded_map(temp_dir.clone(), crate::TerrainSession::create_blank(5, 32)).unwrap();
+        app.scenario.load_session(&temp_dir).unwrap();
+        let event = against_rome_scenario::Event {
+            name: "SameTeamDiplomacy".into(),
+            enabled: true,
+            actions: vec![against_rome_scenario::Action {
+                kind: 1,
+                team: 2,
+                other_team: 1,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        app.scenario.add_events(&[event]).unwrap();
+        let mut event = app.scenario.document().events[0].clone();
+        event.actions[0].other_team = 2;
+        app.scenario.replace_event(0, event).unwrap();
+
+        let report = app.design_check_report();
+        let rows = report_rows(&report, &[], AppLanguage::English);
+        let dip_issue = rows.iter().find(|r| r.code == "scenario-diplomacy-same-team");
+        assert!(dip_issue.is_some(), "Expected scenario-diplomacy-same-team issue in {rows:?}");
+        assert_eq!(dip_issue.unwrap().event_index, 0);
+        assert!(dip_issue.unwrap().is_locatable());
+
+        let _ = std::fs::remove_dir_all(temp_dir);
     }
 }

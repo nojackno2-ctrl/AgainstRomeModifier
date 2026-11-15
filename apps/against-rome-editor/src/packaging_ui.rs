@@ -1135,6 +1135,22 @@ impl PackagingUi {
         });
 
         if let Some(pre) = &self.last_preflight_report {
+            if pre.error_count() > 0 {
+                ui.colored_label(
+                    Color32::from_rgb(255, 90, 90),
+                    if self.english {
+                        format!(
+                            "⚠ Warning: {} blocking preflight error(s) found; resolve before exporting.",
+                            pre.error_count()
+                        )
+                    } else {
+                        format!(
+                            "⚠ 警告：目前預檢存在 {} 項錯誤，請先修正後再匯出。",
+                            pre.error_count()
+                        )
+                    },
+                );
+            }
             ui.separator();
             ui.label(format!(
                 "{}: {} ({}: {}, {}: {})",
@@ -1169,6 +1185,33 @@ impl PackagingUi {
                             color,
                             format!("[{:?}] {}: {}", issue.category, issue.code, msg),
                         );
+                    }
+                });
+        }
+
+        if let Some(res) = &self.last_export_result {
+            ui.separator();
+            ui.label(if self.english {
+                format!(
+                    "Export Summary: {} file(s), {} bytes",
+                    res.file_count, res.total_size_bytes
+                )
+            } else {
+                format!(
+                    "匯出摘要：共 {} 個檔案，{} 位元組",
+                    res.file_count, res.total_size_bytes
+                )
+            });
+            egui::ScrollArea::vertical()
+                .id_source("export_summary_files")
+                .max_height(140.0)
+                .show(ui, |ui| {
+                    for entry in &res.manifest.files {
+                        ui.label(if self.english {
+                            format!("• {} ({} bytes)", entry.relative_path, entry.size_bytes)
+                        } else {
+                            format!("• {}（{} 位元組）", entry.relative_path, entry.size_bytes)
+                        });
                     }
                 });
         }
@@ -1441,6 +1484,7 @@ impl PackagingUi {
             }
         }
     }
+
 }
 
 /// Resolves a path through existing symlinks/junctions while allowing missing trailing
@@ -2173,6 +2217,73 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn render_exporter_tab_shows_summary_and_blocking_error_warning() {
+        use against_rome_packaging::manifest::{MapFileCategory, MapPackageFileEntry, MapPackageManifest};
+        use against_rome_packaging::preflight::{MapPreflightIssue, PreflightCategory, PreflightSeverity};
+
+        fn render(panel: &mut PackagingUi) -> String {
+            let ctx = egui::Context::default();
+            let input = || egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(3000.0, 5000.0))),
+                ..Default::default()
+            };
+            let draw = |ctx: &egui::Context, panel: &mut PackagingUi| {
+                egui::CentralPanel::default().show(ctx, |ui| panel.render_exporter_tab(ui));
+            };
+            let _ = ctx.run(input(), |ctx| draw(ctx, panel));
+            let output = ctx.run(input(), |ctx| draw(ctx, panel));
+            fn collect(shape: &egui::epaint::Shape, texts: &mut Vec<String>) {
+                match shape {
+                    egui::epaint::Shape::Text(text) => texts.push(text.galley.text().to_owned()),
+                    egui::epaint::Shape::Vec(shapes) => for shape in shapes { collect(shape, texts); },
+                    _ => {}
+                }
+            }
+            let mut texts = Vec::new();
+            for shape in &output.shapes { collect(&shape.shape, &mut texts); }
+            texts.join("\n")
+        }
+
+        let mut panel = PackagingUi::default();
+        panel.open = true;
+        panel.current_tab = PackagingTab::ModExporter;
+        panel.last_preflight_report = Some(MapPreflightReport {
+            issues: vec![MapPreflightIssue::new(PreflightSeverity::Error, PreflightCategory::Diagnostics, "test-err", "阻擋錯誤", "Blocking error")],
+            ..Default::default()
+        });
+        panel.last_export_result = Some(ModExportResult {
+            success: true,
+            output_zip_path: "out.zip".into(),
+            file_count: 1,
+            total_size_bytes: 512,
+            manifest: MapPackageManifest {
+                package_id: "pkg".into(),
+                files: vec![MapPackageFileEntry {
+                    relative_path: "LAND.DAT".into(),
+                    size_bytes: 512,
+                    sha256: "00".into(),
+                    category: MapFileCategory::TerrainHeight,
+                    is_required: true,
+                }],
+                ..Default::default()
+            },
+            preflight_report: MapPreflightReport::default(),
+        });
+
+        panel.english = false;
+        let zh = render(&mut panel);
+        assert!(zh.contains("目前預檢存在 1 項錯誤"), "{zh}");
+        assert!(zh.contains("匯出摘要：共 1 個檔案，512 位元組"), "{zh}");
+        assert!(zh.contains("LAND.DAT（512 位元組）"), "{zh}");
+
+        panel.english = true;
+        let en = render(&mut panel);
+        assert!(en.contains("1 blocking preflight error(s) found"), "{en}");
+        assert!(en.contains("Export Summary: 1 file(s), 512 bytes"), "{en}");
+        assert!(en.contains("LAND.DAT (512 bytes)"), "{en}");
     }
 }
 

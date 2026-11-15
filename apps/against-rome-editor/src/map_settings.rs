@@ -50,6 +50,31 @@ impl MapSettings {
         }
     }
     pub fn water_surface(&self) -> f32 { self.water_world / self.height_step }
+    pub fn is_water_above_max_height(&self) -> bool { self.water_surface() > 255.0 }
+    pub fn validate_bilingual(&self, english: bool) -> Result<(), String> {
+        if !self.height_step.is_finite() || self.height_step <= 0.0 {
+            return Err(if english {
+                "Heightmapstep must be a finite number greater than 0.".into()
+            } else {
+                "高度步階（Heightmapstep）必須為大於 0 的有限數值。".into()
+            });
+        }
+        if !self.water_world.is_finite() {
+            return Err(if english {
+                "Waterlevel must be a finite number.".into()
+            } else {
+                "水位高度（Waterlevel）必須為有限數值。".into()
+            });
+        }
+        if !self.water_surface().is_finite() {
+            return Err(if english {
+                "Water height conversion overflow (Waterlevel / Heightmapstep).".into()
+            } else {
+                "水位高度換算溢位（Waterlevel / Heightmapstep）。".into()
+            });
+        }
+        Ok(())
+    }
     pub fn suggested_bed(&self) -> u8 {
         (self.water_surface().floor() - 16.0).clamp(0.0, 255.0) as u8
     }
@@ -71,5 +96,25 @@ mod tests {
         let mut pfil=vec![0;64];pfil[..4].copy_from_slice(b"PFIL");pfil[16..20].copy_from_slice(&(raw.len() as u32).to_le_bytes());
         for chunk in raw.chunks(8) {pfil.push(0xff);pfil.extend_from_slice(chunk);}
         assert_eq!(MapSettings::parse(&pfil).unwrap(),s);
+    }
+
+    #[test]
+    fn validate_bilingual_and_water_above_max_height() {
+        let valid = MapSettings { height_step: 4.0, water_world: 100.0 };
+        assert!(valid.validate_bilingual(false).is_ok());
+        assert!(valid.validate_bilingual(true).is_ok());
+        assert!(!valid.is_water_above_max_height());
+
+        let submerged = MapSettings { height_step: 1.0, water_world: 300.0 };
+        assert!(submerged.validate_bilingual(false).is_ok());
+        assert!(submerged.is_water_above_max_height());
+
+        let bad_step = MapSettings { height_step: 0.0, water_world: 0.0 };
+        assert!(bad_step.validate_bilingual(false).unwrap_err().contains("Heightmapstep"));
+        assert!(bad_step.validate_bilingual(true).unwrap_err().contains("Heightmapstep"));
+
+        let bad_water = MapSettings { height_step: 4.0, water_world: f32::NAN };
+        assert!(bad_water.validate_bilingual(false).unwrap_err().contains("Waterlevel"));
+        assert!(bad_water.validate_bilingual(true).unwrap_err().contains("Waterlevel"));
     }
 }

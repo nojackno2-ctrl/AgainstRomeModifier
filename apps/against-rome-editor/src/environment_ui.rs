@@ -730,6 +730,16 @@ impl EnvironmentUi {
 
     /// `dimension` is the height-grid vertex count; `heights` is the matching raw u8 grid.
     pub fn generate_flora_scatter(&mut self, dimension: usize, heights: Option<&[u8]>, water_level: f32) {
+        if dimension < 2 {
+            self.status_message = tl(
+                self.english,
+                "請先載入地形再產生植物散布。",
+                "Load a terrain session before generating flora scatter.",
+            )
+            .to_string();
+            self.status_is_error = true;
+            return;
+        }
         let (ids, names) = match Self::parse_templates(&self.flora_templates_text) {
             Ok(t) => t,
             Err(e) => {
@@ -767,15 +777,46 @@ impl EnvironmentUi {
         let result = FloraScatterEngine::generate(&context, &params);
         self.generated_flora = result.additions;
         self.dirty = true;
-        self.status_message = format!(
-            "Generated {} flora objects for {:?} ecology (canopy {}, understory {}, ground {}, rocks {}).",
-            result.report.total_planted,
-            self.selected_biome,
-            result.report.canopy_count,
-            result.report.understory_count,
-            result.report.ground_flora_count,
-            result.report.rock_count,
-        );
+        self.status_message = if self.english {
+            format!(
+                "Generated {} flora objects for {:?} ecology (canopy {}, understory {}, ground {}, rocks {}).",
+                result.report.total_planted,
+                self.selected_biome,
+                result.report.canopy_count,
+                result.report.understory_count,
+                result.report.ground_flora_count,
+                result.report.rock_count,
+            )
+        } else {
+            format!(
+                "已為 {:?} 生態產生 {} 個植物物件（樹冠 {}、林下 {}、地表 {}、岩石 {}）。",
+                self.selected_biome,
+                result.report.total_planted,
+                result.report.canopy_count,
+                result.report.understory_count,
+                result.report.ground_flora_count,
+                result.report.rock_count,
+            )
+        };
+        self.status_is_error = false;
+    }
+
+    pub fn reset_flora_defaults(&mut self) {
+        let defaults = Self::default();
+        self.selected_biome = defaults.selected_biome;
+        self.flora_seed = defaults.flora_seed;
+        self.flora_density = defaults.flora_density;
+        self.forest_coverage = defaults.forest_coverage;
+        self.forest_patch_scale = defaults.forest_patch_scale;
+        self.flora_jitter = defaults.flora_jitter;
+        self.avoid_roads = defaults.avoid_roads;
+        self.flora_templates_text = defaults.flora_templates_text;
+        self.status_message = tl(
+            self.english,
+            "已重設植物散布參數為預設值。",
+            "Reset flora scatter parameters to defaults.",
+        )
+        .to_string();
         self.status_is_error = false;
     }
 
@@ -1231,6 +1272,9 @@ impl EnvironmentUi {
                 self.generated_flora.clear();
                 self.status_message = tl(self.english, "已清除產生的植物。", "Cleared generated flora.").to_string();
                 self.status_is_error = false;
+            }
+            if ui.button(tl(self.english, "重設預設值", "Reset Defaults")).clicked() {
+                self.reset_flora_defaults();
             }
             if ui
                 .add_enabled(!self.generated_flora.is_empty(), egui::Button::new(tl(self.english, "套用至物件工作階段", "Apply to Objects session")))
@@ -2378,5 +2422,35 @@ mod batch20_tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn flora_scatter_validates_dimension_and_resets_defaults_bilingually() {
+        let mut panel = EnvironmentUi::default();
+        panel.english = false;
+        panel.generate_flora_scatter(0, None, 0.0);
+        assert!(panel.status_is_error);
+        assert!(panel.status_message.contains("地形"));
+
+        panel.english = true;
+        panel.generate_flora_scatter(1, None, 0.0);
+        assert!(panel.status_is_error);
+        assert!(panel.status_message.contains("terrain"));
+
+        panel.selected_biome = BiomeType::ItalianHills;
+        panel.flora_seed = 9999;
+        panel.flora_density = 2.5;
+        panel.avoid_roads = false;
+        panel.flora_templates_text = "1,Custom".into();
+        panel.reset_flora_defaults();
+
+        let defaults = EnvironmentUi::default();
+        assert_eq!(panel.selected_biome, defaults.selected_biome);
+        assert_eq!(panel.flora_seed, defaults.flora_seed);
+        assert_eq!(panel.flora_density, defaults.flora_density);
+        assert_eq!(panel.avoid_roads, defaults.avoid_roads);
+        assert_eq!(panel.flora_templates_text, defaults.flora_templates_text);
+        assert!(!panel.status_is_error);
+        assert!(panel.status_message.contains("defaults"));
     }
 }

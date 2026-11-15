@@ -1,3 +1,23 @@
+## 2026-11-15 Claude（派工）＋ Agy／Codex 子代理：10 主題並行的設計者功能補強
+- 派工：第一輪 10 個子代理並行（實際分配 Agy 9、Codex 1），每個只改自己的檔案；第二輪 5 個修正任務（Codex 4 成功、1 個因 Codex Windows 沙箱 `setup refresh had errors` 失敗後由 Agy 接手）。Claude 負責整合、修正與驗證。
+- **環境問題（重要）**：本機 Visual Studio 2026 安裝不完整（`vswhere` 回報 `isComplete=False`，`VC\Tools\MSVC\14.51.36231\bin` 為空），`link.exe` 不存在，所有 `cargo` 建置都會失敗。暫行作法（未更動系統）：PowerShell 先設定
+  `$env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER="$env:USERPROFILE\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\x86_64-pc-windows-msvc\bin\rust-lld.exe"`、
+  `$env:LIB="<MSVC 14.51.36231>\lib\x64;<Windows Kits 10.0.26100.0>\Lib\um\x64;...\ucrt\x64"`。Git Bash 的 `/usr/bin/link.exe` 會誤被當成連結器，請用 PowerShell。修復 VS 安裝後即可不用此作法。桌面套件名稱為 `against-rome-editor-app`（`-p against-rome-editor` 是 native crate，不含 UI 測試）。
+- 變更（皆無磁碟／序列化格式變更，未動 `app.rs`）：
+  1. `textures_ui.rs`：保留並完成先前未提交的 `preview_brush` 唯讀試算；新增 `brush_validation_error` 供 `paint`／`preview_brush` 共用，無效輸入時停用按鈕並顯示雙語原因。
+  2. `scenario_ui.rs`：刪除事件改為兩段式確認（`pending_delete_event`，切換選取／復原／重載時清除）；新增「敵對外交」「開局提示訊息」一鍵預設（單步復原、去重）。
+  3. `design_check_ui.rs`：新增 `scenario-repeat-zero-delay`（附「延遲設為 1 秒」快速修正）與 `scenario-diplomacy-same-team`（僅定位、不自動修正）。Codex 核對劇本模型驗證與預檢確實會拒絕這兩種情況，故維持錯誤等級；文案已移除未經實機證實的「遊戲卡死」說法。
+  4. `placement_ui.rs`：多選摘要 `multi_select_summary`、X／Z 對齊至基準物件（單步復原；部分失敗時已套用的位移仍記入復原）、雙語拒絕訊息。Claude 補上實際載入 fixture 的 `align_selection_moves_to_anchor_as_one_undo_step`。
+  5. `landscape_ui.rs`：侵蝕前唯讀選區摘要（圖塊／頂點數、高度範圍），座標無效時停用按鈕；規劃／拒絕訊息雙語化。
+  6. `environment_ui.rs`、`map_settings.rs`：植被散布在未載入地形時明確拒絕、重設預設值按鈕；`MapSettings::validate_bilingual`、`is_water_above_max_height`（後兩者目前只有單元測試，尚未接到介面）。
+  7. `spawn_placement_ui.rs`：已放置物件清單上方顯示各隊物件數與小隊兵力合計。
+  8. `ready_to_test_ui.rs`、`packaging_ui.rs`：遊戲內驗收四項勾選並納入可複製報告（不含本機路徑）；匯出分頁顯示預檢錯誤警告與匯出檔案／大小清單。
+  9. `skirmish_wizard_ui.rs`：精靈第 1、2 步即驗證地圖名稱（重用 `maps_ui::map_name_error`），「下一步」停用原因直接顯示。
+  10. `balance_summary_ui.rs`：起始腳本兵力差異提示（唯讀，註明未計入放置單位與資源）。
+- 驗證：`cargo test --workspace --locked --no-fail-fast`（上述 rust-lld 環境）287 組、2861 passed、2 failed、23 ignored；兩項失敗處理後 `cargo test -p against-rome-editor-app --locked` 全數通過（lib 1028 passed、0 failed、6 ignored，含 `ui_literal_sweep`）。另一項 `against-rome-modifier` `install_integrity_regressions::widescreen_...` 為既有的暫存目錄命名競態（`process id + nanos` 於平行測試相撞，`AlreadyExists`），單獨重跑 3 次皆 3 passed，與本次變更無關、尚未修正。修正後未再重跑整個 workspace 一次。
+- 未驗證：所有新介面的實際桌面視窗操作與遊戲內行為；未修改已安裝遊戲。
+- 已知待辦：`scenario_ui.rs:215` `indices` 未使用警告；`textures_ui.rs` 被 Git 視為 binary（既有狀況，diff 需 `--text`）；`delegate_parallel` 的 `agent: auto` 並未平均分配，需要 Codex 時請明確指定 `agent: codex`。
+
 ## 2026-10-31 Agy：設計檢查新增矩形條件範圍顛倒錯誤診斷與一鍵快速修正（回應審查）
 - 回應 Codex 審查：修正 `fix_terminal_not_last` 僅在單一勝負動作時安全移動至末位；若存在多重勝負動作則完全保留原有動作不作刪除，杜絕資料流失風險，並補齊防護測試。
 - 新增矩形條件範圍顛倒（min > max）診斷與快速修正：

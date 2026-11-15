@@ -119,8 +119,8 @@ impl SkirmishWizardUi {
                         path.display()
                     ));
                 }
-                if self.target_name.trim().is_empty() {
-                    return Err("Map name must not be blank. / 地圖名稱不得為空。".to_string());
+                if let Some(err) = Self::validate_target_name(&self.target_name) {
+                    return Err(err);
                 }
                 if self.source_slot < 0 {
                     return Err("Source slot must be non-negative. / 來源槽位不得為負數。".to_string());
@@ -128,8 +128,8 @@ impl SkirmishWizardUi {
                 Ok(())
             }
             SkirmishWizardStep::TitleBriefing => {
-                if self.target_name.trim().is_empty() {
-                    return Err("Map name must not be blank. / 地圖名稱不得為空。".to_string());
+                if let Some(err) = Self::validate_target_name(&self.target_name) {
+                    return Err(err);
                 }
                 Ok(())
             }
@@ -153,6 +153,12 @@ impl SkirmishWizardUi {
             }
             SkirmishWizardStep::Summary => Ok(()),
         }
+    }
+
+    fn validate_target_name(name: &str) -> Option<String> {
+        let en = crate::maps_ui::map_name_error(true, name)?;
+        let zh = crate::maps_ui::map_name_error(false, name)?;
+        Some(format!("{en} / {zh}"))
     }
 
     fn validate_wave_alias(&self) -> Result<(), String> {
@@ -249,6 +255,16 @@ impl SkirmishWizardUi {
 
                 ui.separator();
 
+                let step_validation = self.validate_current_step();
+                if self.step != SkirmishWizardStep::Summary {
+                    if let Err(reason) = &step_validation {
+                        ui.colored_label(
+                            Color32::from_rgb(255, 190, 90),
+                            format!("⚠ {reason}"),
+                        );
+                    }
+                }
+
                 // Footer: Navigation Buttons
                 ui.horizontal(|ui| {
                     if ui.button(tr(lang, "Cancel", "取消")).clicked() {
@@ -266,16 +282,16 @@ impl SkirmishWizardUi {
                                 }
                             }
                             SkirmishWizardStep::Template => {
-                                if ui.button(tr(lang, "Next", "下一步")).clicked() {
+                                if ui.add_enabled(step_validation.is_ok(), egui::Button::new(tr(lang, "Next", "下一步")))
+                                    .on_disabled_hover_text(step_validation.err().unwrap_or_default()).clicked() {
                                     if let Err(e) = self.next_step() {
                                         self.error_message = Some(e);
                                     }
                                 }
                             }
                             _ => {
-                                let validation = self.validate_current_step();
-                                if ui.add_enabled(validation.is_ok(), egui::Button::new(tr(lang, "Next", "下一步")))
-                                    .on_disabled_hover_text(validation.err().unwrap_or_default()).clicked() {
+                                if ui.add_enabled(step_validation.is_ok(), egui::Button::new(tr(lang, "Next", "下一步")))
+                                    .on_disabled_hover_text(step_validation.err().unwrap_or_default()).clicked() {
                                     if let Err(e) = self.next_step() {
                                         self.error_message = Some(e);
                                     }
@@ -1148,5 +1164,49 @@ pub(crate) mod tests {
         // Cancel closes the window
         app.skirmish_wizard.cancel();
         assert!(!app.skirmish_wizard.open);
+    }
+
+    #[test]
+    fn test_skirmish_wizard_validates_map_name_characters_bilingually() {
+        let (root, _src) = setup_test_game_fixture("bad_name");
+        let mut wizard = SkirmishWizardUi::default();
+        wizard.game_path_input = root.to_string_lossy().into_owned();
+
+        // Forbidden filename character
+        wizard.step = SkirmishWizardStep::Template;
+        wizard.target_name = "Bad:Name".to_string();
+        let err = wizard.validate_current_step().unwrap_err();
+        assert!(err.contains("forbidden characters") && err.contains("不允許的字元"), "{err}");
+
+        // Non-Windows-1251 character
+        wizard.step = SkirmishWizardStep::TitleBriefing;
+        wizard.target_name = "測試地圖".to_string();
+        let err = wizard.validate_current_step().unwrap_err();
+        assert!(err.contains("cannot store") && err.contains("無法儲存"), "{err}");
+
+        // Valid name passes
+        wizard.target_name = "Valid Skirmish 01".to_string();
+        assert!(wizard.validate_current_step().is_ok());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_skirmish_wizard_shows_bilingual_reason_when_next_disabled() {
+        let mut app = EditorApp::initial_state();
+        app.open_skirmish_wizard();
+        app.skirmish_wizard.game_path_input.clear();
+
+        let ctx = egui::Context::default();
+        let mut has_warning = false;
+        let _ = ctx.run(Default::default(), |ctx| {
+            app.show_skirmish_wizard(ctx);
+        });
+        // Re-verify validate_current_step returns bilingual error for empty game path
+        let err = app.skirmish_wizard.validate_current_step().unwrap_err();
+        if err.contains("must not be empty") && err.contains("不得為空") {
+            has_warning = true;
+        }
+        assert!(has_warning, "expected bilingual reason, got: {err}");
     }
 }
