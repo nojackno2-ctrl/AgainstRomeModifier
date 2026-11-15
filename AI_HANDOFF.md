@@ -1,3 +1,9 @@
+## 2026-11-15 Claude：劇情地圖遊戲內試跑再次受阻——桌面工作階段已中斷且鎖定（非地圖問題）
+- 乾淨重試（只啟動一次、不點任何東西）：computer-use 截圖回報 `desktopCapturer returned no screen sources`，遊戲未執行時也一樣；`quser` 顯示工作階段 `STATE=Disc`，`LogonUI` 執行中（鎖定畫面）。
+- `Against_Rome.exe` 直接啟動後約 20 秒以 ExitCode 0 結束、10 秒時 `Responding=False`、無當機傾印、無 Application 事件。A/B 對照：把 `ENDL_005` 暫時換回原備份再啟動，同樣 20 秒結束 → **與劇情地圖無關**，是沒有可用顯示時遊戲無法建立畫面。（同日稍早桌面未鎖定時，同一程序可存活數分鐘。）
+- 對照後已重新安裝劇情地圖：安裝版 `MAPS\ENDL_005` 與 `re_workspace\story-map-the-last-granary\ENDL_005` 56/56 SHA-256 相符。原備份仍在 `%TEMP%\arm-ENDL_005-backup-20261115`。
+- 結論：遊戲內驗收需要有人在已解鎖的本機桌面上操作；代理在目前環境無法完成。
+
 ## 2026-11-15 Claude（派工）＋ Agy：可遊玩劇情地圖〈The Last Granary〉已製作並安裝到 ENDL_005；視窗化包裝診斷
 - 使用者要求「真的做出一個可以玩的劇情地圖」並指示都交給子代理。Agy 以編輯器公開 API 寫出 `apps/against-rome-editor/tests/story_map_builder.rs`（`#[ignore]`，`AR_STORY_MAP_DIR`，拒絕含 `program files` 的路徑），在 `%TEMP%\arm_story_20261115\Against Rome`（SYSTEM 與 ENDL_005 副本）建置並 Safe Save。為此把 `EditorApp::design_check`、`effective_map_settings`、`ScenarioUi::replace_events`／`add_objective`／`add_skirmish_hostile_preset` 改為 `pub`。
 - 劇本（7 事件，取代 ENDL_005 原有 6 個測試事件）：0:00 簡報＋隊伍 0/1 敵對；1:00／3:00／5:00 三波匈人（`HUN_KAVINF00` 5／6／8、`HUN_KAVSCH00` 0／3／5）自 `(1280,1280)` 進攻主屋 `(10624,10112)`；`GER_INF01` 進入 `(7680,7680)..=(8192,8192)` 的偵察提示；8:00 勝利；主屋 `GER_HAU00` 被毀則失敗。事件表與安裝／還原步驟見 `docs/story-map-the-last-granary.md`。
