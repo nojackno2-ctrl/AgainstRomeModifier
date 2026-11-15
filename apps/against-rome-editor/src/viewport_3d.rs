@@ -2200,6 +2200,33 @@ impl Viewport3d {
         });
     }
 
+    /// Returns the localized HUD controls hint for the current interaction mode.
+    fn hud_controls_hint(&self) -> &'static str {
+        if self.spawn_place_mode {
+            if self.english {
+                "Controls: Left-click: Place spawn | Right-click/Esc: Cancel placement | Right-drag: Orbit | Middle/Alt-drag: Pan | Wheel: Zoom"
+            } else {
+                "操作指南：左鍵：放置生成物件 | 右鍵/Esc：取消放置 | 右鍵拖曳：旋轉視角 | 中鍵/Alt+左鍵拖曳：平移 | 滾輪：縮放"
+            }
+        } else if self.terrain_pick_mode {
+            if self.english {
+                "Controls: Left-click: Pick terrain point | Right-click/Esc: Cancel | Right-drag: Orbit | Middle/Alt-drag: Pan | Wheel: Zoom"
+            } else {
+                "操作指南：左鍵：選取地形點 | 右鍵/Esc：取消 | 右鍵拖曳：旋轉視角 | 中鍵/Alt+左鍵拖曳：平移 | 滾輪：縮放"
+            }
+        } else if self.landscape_pick {
+            if self.english {
+                "Controls: Right-drag: Orbit | Middle/Alt-drag: Pan | Wheel: Zoom | Left-drag: Select landscape region | Right-click/Esc: Cancel"
+            } else {
+                "操作指南：右鍵拖曳：旋轉視角 | 中鍵/Alt+左鍵拖曳：平移 | 滾輪：縮放 | 左鍵拖曳：框選地景區域 | 右鍵/Esc：取消框選"
+            }
+        } else if self.english {
+            "Controls: Right-drag: Orbit | Middle/Alt-drag: Pan | Wheel: Zoom | Click: Paint / Pick Object"
+        } else {
+            "操作指南：右鍵拖曳：旋轉視角 | 中鍵/Alt+左鍵拖曳：平移 | 滾輪：縮放 | 左鍵點選：繪製／選取物件"
+        }
+    }
+
     /// Renders the floating HUD overlay in the viewport.
     fn render_hud(
         &self,
@@ -2241,23 +2268,16 @@ impl Viewport3d {
         } else {
             ""
         };
-        let controls_str = if self.spawn_place_mode {
+        let tile_str = if let Some((tx, ty)) = self.hover_tile {
             if self.english {
-                "Controls: Left-click: Place spawn | Right-click/Esc: Cancel placement | Right-drag: Orbit | Middle/Alt-drag: Pan | Wheel: Zoom"
+                format!(" | Tile: ({}, {})", tx, ty)
             } else {
-                "操作指南：左鍵：放置生成物件 | 右鍵/Esc：取消放置 | 右鍵拖曳：旋轉視角 | 中鍵/Alt+左鍵拖曳：平移 | 滾輪：縮放"
+                format!(" | 地塊：({}, {})", tx, ty)
             }
-        } else if self.landscape_pick {
-            if self.english {
-                "Controls: Right-drag: Orbit | Middle/Alt-drag: Pan | Wheel: Zoom | Left-drag: Select landscape region | Right-click/Esc: Cancel"
-            } else {
-                "操作指南：右鍵拖曳：旋轉視角 | 中鍵/Alt+左鍵拖曳：平移 | 滾輪：縮放 | 左鍵拖曳：框選地景區域 | 右鍵/Esc：取消框選"
-            }
-        } else if self.english {
-            "Controls: Right-drag: Orbit | Middle/Alt-drag: Pan | Wheel: Zoom | Click: Paint / Pick Object"
         } else {
-            "操作指南：右鍵拖曳：旋轉視角 | 中鍵/Alt+左鍵拖曳：平移 | 滾輪：縮放 | 左鍵點選：繪製／選取物件"
+            String::new()
         };
+        let controls_str = self.hud_controls_hint();
         let objects_label = if self.english { "Objects:" } else { "物件數：" };
         let notice = if self.english {
             Self::NON_PARITY_NOTICE
@@ -2265,12 +2285,13 @@ impl Viewport3d {
             "3D 地形視角：透過 EditorCamera 與 TerrainRayPicker 進行編輯預覽。非遊戲原生精確著色器。"
         };
         let text = format!(
-            "{}\n{} {}{}{}{}\n{}",
+            "{}\n{} {}{}{}{}{}\n{}",
             controls_str,
             objects_label,
             objects.len(),
             sel_str,
             hov_str,
+            tile_str,
             atlas_str,
             notice
         );
@@ -4946,5 +4967,21 @@ mod troop_tests {
                 "HUD controls should mention cancellation: {text}"
             );
         }
+    }
+
+    #[test]
+    fn terrain_pick_mode_hud_controls_hint_is_bilingual() {
+        let mut vp = Viewport3d::new();
+        vp.terrain_pick_mode = true;
+
+        vp.english = true;
+        let en = vp.hud_controls_hint();
+        assert!(en.contains("Left-click: Pick terrain point"));
+        assert!(en.contains("Right-click/Esc: Cancel"));
+
+        vp.english = false;
+        let zh = vp.hud_controls_hint();
+        assert!(zh.contains("左鍵：選取地形點"));
+        assert!(zh.contains("右鍵/Esc：取消"));
     }
 }

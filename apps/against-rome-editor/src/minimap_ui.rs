@@ -283,6 +283,12 @@ impl Default for MinimapUi {
     }
 }
 
+fn format_hovered_tile_readout(tile_pos: Pos2, lang: AppLanguage) -> String {
+    let tile_x = tile_pos.x.floor() as i32;
+    let tile_y = tile_pos.y.floor() as i32;
+    format!("{} ({tile_x}, {tile_y})", tr(lang, "Tile", "圖塊"))
+}
+
 impl MinimapUi {
     /// 顯示小地圖視窗，繪製縮圖、主 2D 畫布視野矩形、選取物件與劇本標記，並處理點擊/拖曳導航。
     /// 若觸發視野跳轉，回傳計算後之導航目標結構 `MinimapNavResult`。
@@ -316,9 +322,17 @@ impl MinimapUi {
                     ui.label(tr(lang, "Click to navigate", "點擊導航視角"));
                     ui.separator();
                     ui.checkbox(&mut self.show_selection, tr(lang, "Selection", "選取物件"))
-                        .on_hover_text(tr(lang, "Show selected objects indicator on minimap", "在小地圖上顯示當前選取物件標記"));
+                        .on_hover_text(tr(
+                            lang,
+                            "Show selected objects indicator on minimap (yellow dot with white ring)",
+                            "在小地圖上顯示當前選取物件標記（黃點白環）",
+                        ));
                     ui.checkbox(&mut self.show_markers, tr(lang, "Markers", "劇本標記"))
-                        .on_hover_text(tr(lang, "Show scenario camera and spawn markers", "在小地圖上顯示劇本相機與部隊生成標記"));
+                        .on_hover_text(tr(
+                            lang,
+                            "Show scenario markers: cyan diamond = camera, team-colored dot = spawn",
+                            "在小地圖上顯示劇本標記：青藍菱形 = 起始相機，隊伍色圓點 = 部隊生成點",
+                        ));
                 });
 
                 let dimension = session.map_or(64, |s| s.vertex_size as u32);
@@ -434,6 +448,28 @@ impl MinimapUi {
                         0.0,
                         Stroke::new(1.5_f32, Color32::from_rgb(255, 230, 40)),
                     );
+                }
+
+                // 懸停時於指標旁顯示雙語 Tile 座標提示（不影響視窗與影像矩形配置）
+                if response.hovered() {
+                    if let Some(hover_pos) = response.hover_pos() {
+                        let local_pt = Pos2::new(
+                            hover_pos.x - client_rect.min.x,
+                            hover_pos.y - client_rect.min.y,
+                        );
+                        if let Some(tile_pos) =
+                            MinimapNavigator::try_point_to_tile(local_pt, local_bounds, dimension)
+                        {
+                            let readout = format_hovered_tile_readout(tile_pos, lang);
+                            egui::show_tooltip_at_pointer(
+                                ctx,
+                                egui::Id::new("minimap_tile_tooltip"),
+                                |ui| {
+                                    ui.label(readout);
+                                },
+                            );
+                        }
+                    }
                 }
 
                 // 處理左鍵點擊與拖曳導航
@@ -782,6 +818,19 @@ mod tests {
         assert_eq!(
             reopened_rect.min, moved_rect.min,
             "default position must not overwrite the user-moved position"
+        );
+    }
+
+    #[test]
+    fn format_hovered_tile_readout_supports_both_languages() {
+        let pos = Pos2::new(12.8, 45.2);
+        assert_eq!(
+            format_hovered_tile_readout(pos, AppLanguage::English),
+            "Tile (12, 45)"
+        );
+        assert_eq!(
+            format_hovered_tile_readout(pos, AppLanguage::TraditionalChinese),
+            "圖塊 (12, 45)"
         );
     }
 }

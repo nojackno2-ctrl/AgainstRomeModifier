@@ -1,3 +1,10 @@
+## 2026-11-15 Claude＋Agy：補回 3D 視圖提示、小地圖提示與測試競態（第三批）
+- `viewport_3d.rs`：抽出 `hud_controls_hint`，新增 `terrain_pick_mode` 的雙語操作提示；HUD 狀態列附加游標所在地塊座標。未動點擊／拖曳處理。新增 `terrain_pick_mode_hud_controls_hint_is_bilingual`。
+- `minimap_ui.rs`：地圖影像上以 tooltip 顯示游標所在圖塊座標，標記圖例放進既有核取方塊的 hover 說明；未改視窗尺寸、影像矩形與點擊映射（前一次嘗試因此退化而還原）。新增 `format_hovered_tile_readout_supports_both_languages`。
+- `tests/family_ui.rs`：暫存目錄名稱加入 `AtomicU64` 計數器。`tests/editor_tests.rs` 的同類修改被 Agy 寫入字面 `` `r`n `` 而無法編譯，已還原（該處用 `create_dir_all`，不會因同名而失敗）。
+- 驗證：`cargo test --workspace --locked --no-fail-fast`（rust-lld 環境）**287 組、2875 passed、0 failed、23 ignored**。
+- 桌面驗收嘗試：以 scratch 內的 `ENDL_000` 副本啟動 `against-rome-editor.exe --map <dir>`，視窗建立且 `Responding=True`；但電腦操作工具只接受「開始」選單內的應用程式，無法授權開發版執行檔，`PrintWindow` 也擷取不到 OpenGL 內容（全白），因此**新介面的實際視窗操作仍未驗證**。
+
 ## 2026-11-15 Claude（派工）＋ Agy／Codex 子代理：第二批 10 主題（存檔安全、設計檢查、文件、測試競態）
 - 派工：Codex 5 ＋ Agy 5（明確指定）。**Codex CLI 在本機幾乎每次都因 Windows 沙箱 `helper_unknown_error: setup refresh had errors` 無法啟動**（兩批共 15 個 Codex 任務只有 6 個成功），其餘由 Agy 備援。Agy 多次交回未編譯或重複貼上的程式碼，由 Claude 修正或還原。
 - 已整合（Claude 修正後通過測試）：
