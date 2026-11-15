@@ -1287,6 +1287,15 @@ impl EditorApp {
                 crate::storage::require_unchanged_source(&dir.join("collision.bmp"), source.collision.as_deref())
             });
         }
+        // 載入時沒有浮雕圖：高度變更前仍須確認外部沒有新增，避免留下與新地形不一致的光照。
+        // 尚未綁定來源的空白地圖第一次儲存也必須拒絕覆蓋含浮雕圖的目標。
+        if self.emboss.is_none()
+            && (session.heights() != session.original_heights() || session.source_files.is_none())
+        {
+            tx.add_preflight_validator(|dir, _| {
+                crate::storage::require_unchanged_source(&dir.join("emboss.bmp"), None)
+            });
+        }
         // C# parity: emboss.bmp is rebuilt only when heights changed and an original layer exists.
         let staged_emboss = match &self.emboss {
             Some(emboss) if emboss.session.is_dirty(session.heights()) => emboss
@@ -1326,23 +1335,25 @@ impl EditorApp {
             tx.stage_height_cache_invalidation()?;
         }
         let ambience_dirty = self.ambience.is_dirty();
-        if ambience_dirty {
-            tx.stage_file("boden.ini", self.ambience.stage_boden_ini_bytes(&path)?)?;
+        let staged_ambience = if ambience_dirty {
+            self.ambience.guard_source_files(&path, &mut tx)?;
+            let ini = self.ambience.stage_boden_ini_bytes(&path)?;
+            tx.stage_file("boden.ini", ini.clone())?;
             let snapshot = SoundscapeSnapshot {
                 global_ambience_id: self.ambience.global_sound_id.clone(),
                 global_ambience_volume: self.ambience.global_volume,
                 zones: self.ambience.zones.clone(),
             };
-            tx.stage_file(
-                "soundscape.sndz",
-                SoundscapeBinaryStorage::serialize_to_binary(&snapshot)
-                    .map_err(|e| format!("Ambience soundscape.sndz serialization: {e}"))?,
-            )?;
+            let soundscape = SoundscapeBinaryStorage::serialize_to_binary(&snapshot)
+                .map_err(|e| format!("Ambience soundscape.sndz serialization: {e}"))?;
+            tx.stage_file("soundscape.sndz", soundscape.clone())?;
             // Native location TEXT/US/briefing.put; None means no briefing field changed.
-            if let Some(bytes) = self.ambience.stage_briefing_bytes(&path)? {
-                tx.stage_file("TEXT/US/briefing.put", bytes)?;
+            let briefing = self.ambience.stage_briefing_bytes(&path)?;
+            if let Some(bytes) = &briefing {
+                tx.stage_file("TEXT/US/briefing.put", bytes.clone())?;
             }
-        }
+            Some((ini, soundscape, briefing))
+        } else { None };
         let placement_dirty = self.placement.is_dirty();
         let nature_dirty = self.nature.session.is_dirty();
         let staged_placement = if placement_dirty && !nature_dirty {
@@ -1497,8 +1508,8 @@ impl EditorApp {
         }
         session.commit_baseline();
         if aux_reset { self.reset_auxiliary_layers = false; }
-        if ambience_dirty {
-            self.ambience.clear_dirty();
+        if let Some((ini, soundscape, briefing)) = staged_ambience {
+            self.ambience.accept_saved_sources(&path, ini, soundscape, briefing);
             self.ambience.status_message = "Ambience saved in whole-map transaction.".into();
             self.ambience.status_is_error = false;
         }
@@ -6482,6 +6493,78 @@ mod tests {
     }
 
     #[test]
+    fn safe_save_rejects_external_ambience_and_briefing_changes() {
+        for case in ["ini", "briefing", "soundscape", "legacy", "new_native"] {
+            let (dir, _) = emboss_fixture_dir(case, false);
+            let native_dir = dir.join("TEXT").join("US");
+            std::fs::create_dir_all(&native_dir).unwrap();
+            let script_dir = dir.join("SCRIPT");
+            std::fs::create_dir_all(&script_dir).unwrap();
+            let ini = dir.join("boden.ini");
+            std::fs::write(&ini, "[Dimension]\r\n64\r\n[Waterlevel]\r\n30\r\n[Heightmapstep]\r\n2\r\n").unwrap();
+            let native = native_dir.join("briefing.put");
+            let legacy = script_dir.join("briefing.put");
+            let original = "var: briefing_titel_1 = \"Original\";\r\n";
+            if case == "legacy" || case == "new_native" {
+                std::fs::write(&legacy, original).unwrap();
+            } else {
+                std::fs::write(&native, original).unwrap();
+            }
+            let mut app = emboss_app(&dir);
+            app.ambience.global_volume = 0.5;
+            app.ambience.mark_dirty();
+            match case {
+                "ini" => std::fs::write(&ini, "[Dimension]\r\n64\r\n[Waterlevel]\r\n40\r\n[Heightmapstep]\r\n2\r\n").unwrap(),
+                "briefing" => std::fs::write(&native, "var: briefing_titel_1 = \"External\";\r\n").unwrap(),
+                "soundscape" => std::fs::write(dir.join("soundscape.sndz"), b"external").unwrap(),
+                "legacy" => std::fs::write(&legacy, "var: briefing_titel_1 = \"External\";\r\n").unwrap(),
+                _ => std::fs::write(&native, "var: briefing_titel_1 = \"External\";\r\n").unwrap(),
+            }
+            let before = save_file_snapshot(&dir);
+            app.safe_save_current();
+            assert!(app.status_is_error, "{case}: {}", app.status_message);
+            assert!(app.status_message.contains("Map source changed externally"), "{case}: {}", app.status_message);
+            assert!(app.ambience.is_dirty(), "{case}");
+            assert_eq!(app.ambience.global_volume, 0.5);
+            assert_eq!(save_file_snapshot(&dir), before, "{case}");
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn ambience_source_tracks_successful_save_and_preserves_failed_retry() {
+        use against_rome_maps::TransactionFailurePoint;
+        let (dir, _) = emboss_fixture_dir("ambience_source_retry", false);
+        let mut app = emboss_app(&dir);
+        app.ambience.briefing_title = "First".into();
+        app.ambience.mark_dirty();
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(dir.join("boden.ini").is_file());
+        assert!(dir.join("soundscape.sndz").is_file());
+        let native = dir.join("TEXT").join("US").join("briefing.put");
+        assert!(native.is_file());
+        app.ambience.briefing_title = "Second".into();
+        app.ambience.mark_dirty();
+        let before = save_file_snapshot(&dir);
+        app.safe_save_current_using(|tx| {
+            let mut injected = std::mem::replace(tx, against_rome_maps::MapSaveTransaction::new("unused"))
+                .with_injected_failure(TransactionFailurePoint::BeforeFinalCommit, "注入失敗");
+            injected.commit().map_err(|e| e.to_string())
+        });
+        assert!(app.status_is_error);
+        assert!(app.ambience.is_dirty());
+        assert_eq!(save_file_snapshot(&dir), before);
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(!app.ambience.is_dirty());
+        app.ambience.mark_dirty();
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn test_flat_build_keeps_briefing() {
         let temp_root = temp_map_dir("flat_briefing");
         let src = temp_root.join("MAPS").join("ENDL_001");
@@ -7700,9 +7783,11 @@ mod tests {
         assert!(!app.status_is_error, "{}", app.status_message);
         assert!(app.status_message.contains("Added 2 win/loss objective event(s)"));
 
-        // 復原可撤回新增之勝負事件
+        // 一次復原與重做須完整處理兩個勝負事件。
         assert!(app.scenario.undo_events());
-        assert_eq!(app.scenario.document().events.len(), 1);
+        assert_eq!(app.scenario.document().events.len(), 0);
+        assert!(app.scenario.redo_events());
+        assert_eq!(app.scenario.document().events.len(), 2);
         assert!(app.scenario.undo_events());
         assert_eq!(app.scenario.document().events.len(), 0);
 
@@ -8663,6 +8748,8 @@ HUN_KAVINF00=FigHunKav00
                     briefing_fixture_with_extras(),
                 )
                 .unwrap();
+                // 將測試夾具載入為來源，再驗證交易失敗後的回滾。
+                app.ambience.load_from_map(&dir).unwrap();
                 edit_save_terrain(&mut app);
                 app.ambience.global_sound_id = "rain_new".into();
                 app.ambience.profile.boden.waterlevel = 61.0;

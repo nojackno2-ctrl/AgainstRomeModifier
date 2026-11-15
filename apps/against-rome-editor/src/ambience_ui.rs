@@ -28,6 +28,11 @@ use uuid::Uuid;
 
 /// Native briefing location (C# `MapEditorForm.Persistence.cs`): `TEXT/US/briefing.put`.
 const BRIEFING_NATIVE_RELATIVE: [&str; 3] = ["TEXT", "US", "briefing.put"];
+#[derive(Clone)]
+struct AmbienceSources {
+    map_path: PathBuf,
+    files: Vec<(PathBuf, Option<Vec<u8>>)>,
+}
 /// Number of `briefing_text_teamname{n}` slots edited by the C# editor.
 pub const BRIEFING_TEAM_COUNT: usize = 8;
 // 與 stage_boden_ini_bytes 的唯一 profile 儲存入口一致；其餘欄位沒有地圖序列化。
@@ -201,6 +206,7 @@ pub struct AmbienceUi {
     pub pending_discard: bool,
     pub status_message: String,
     pub status_is_error: bool,
+    sources: Option<AmbienceSources>,
     /// Raised by the Save button; `EditorApp` consumes it and routes to the central Safe Save.
     save_requested: bool,
 }
@@ -237,6 +243,7 @@ impl Default for AmbienceUi {
             pending_discard: false,
             status_message: "Ready.".to_string(),
             status_is_error: false,
+            sources: None,
             save_requested: false,
         };
         ui.evaluate_scene_lighting();
@@ -323,6 +330,83 @@ impl AmbienceUi {
         self.pending_discard = false;
     }
 
+    /// 防止已載入的氛圍、音景或簡報覆蓋外部程序之後的修改。
+    pub(crate) fn guard_source_files(
+        &self,
+        map_path: &Path,
+        tx: &mut against_rome_maps::MapSaveTransaction,
+    ) -> Result<(), String> {
+        let files = if let Some(source) = &self.sources {
+            let loaded = fs::canonicalize(&source.map_path).map_err(|e| e.to_string())?;
+            let target = fs::canonicalize(map_path).map_err(|e| e.to_string())?;
+            if loaded != target {
+                return Err("氛圍來源與儲存目標不同 / Ambience source and save target differ".into());
+            }
+            source.files.clone()
+        } else {
+            // 空白地圖首次儲存不能覆寫既有地圖中的氛圍文件。
+            [
+                PathBuf::from("boden.ini"),
+                PathBuf::from("soundscape.sndz"),
+                BRIEFING_NATIVE_RELATIVE.iter().collect::<PathBuf>(),
+                PathBuf::from("SCRIPT").join(format!(
+                    "briefing_{}.put",
+                    self.selected_language.to_directory_code()
+                )),
+                PathBuf::from("SCRIPT").join("briefing.put"),
+            ]
+            .into_iter()
+            .map(|path| (path, None))
+            .collect()
+        };
+        tx.add_preflight_validator(move |dir, _| {
+            for (relative, expected) in &files {
+                crate::storage::require_unchanged_source(&dir.join(relative), expected.as_deref())?;
+            }
+            Ok(())
+        });
+        Ok(())
+    }
+
+    /// 只在交易成功後，以已提交的位元組更新來源；失敗時保留舊快照與草稿。
+    pub(crate) fn accept_saved_sources(
+        &mut self,
+        map_path: &Path,
+        ini: Vec<u8>,
+        soundscape: Vec<u8>,
+        briefing: Option<Vec<u8>>,
+    ) {
+        let native = BRIEFING_NATIVE_RELATIVE.iter().collect::<PathBuf>();
+        let mut files = self.sources.as_ref().map(|s| s.files.clone()).unwrap_or_else(|| {
+            vec![
+                (PathBuf::from("SCRIPT").join(format!(
+                    "briefing_{}.put",
+                    self.selected_language.to_directory_code()
+                )), None),
+                (PathBuf::from("SCRIPT").join("briefing.put"), None),
+            ]
+        });
+        for (path, bytes) in [
+            (PathBuf::from("boden.ini"), Some(ini)),
+            (PathBuf::from("soundscape.sndz"), Some(soundscape)),
+        ] {
+            files.retain(|(p, _)| p != &path);
+            files.push((path, bytes));
+        }
+        if let Some(bytes) = briefing {
+            // 原本來自舊版 SCRIPT 時，原生檔建立後不再依賴舊來源。
+            files.retain(|(p, _)| p != &native && !p.starts_with("SCRIPT"));
+            files.push((native, Some(bytes)));
+        } else if !files.iter().any(|(p, _)| p == &native) {
+            files.push((native, None));
+        }
+        self.sources = Some(AmbienceSources {
+            map_path: map_path.to_path_buf(),
+            files,
+        });
+        self.clear_dirty();
+    }
+
     /// Reset map-bound ambience, soundscape, lighting context, and briefing documents to clean defaults.
     /// Preserves user preferences such as app_language, selected_language, current_tab, open state,
     /// game_hour, and new-zone creation templates.
@@ -342,6 +426,7 @@ impl AmbienceUi {
         self.briefing_team_names = Default::default();
         self.dirty = false;
         self.pending_discard = false;
+        self.sources = None;
         self.status_message = "Ready.".to_string();
         self.status_is_error = false;
         self.evaluate_scene_lighting();
@@ -635,10 +720,9 @@ impl AmbienceUi {
 
         // 1. Stage boden.ini (or fresh default)
         let ini_path = map_path.join("boden.ini");
-        let staged_boden = if ini_path.is_file() {
-            let bytes = fs::read(&ini_path)
-                .map_err(|e| format!("Failed to read {}: {e}", ini_path.display()))?;
-            let content = decode_game_text(&bytes)
+        let ini_source = crate::storage::read_optional_source(&ini_path)?;
+        let staged_boden = if let Some(bytes) = &ini_source {
+            let content = decode_game_text(bytes)
                 .map_err(|e| format!("Failed to decode {}: {e}", ini_path.display()))?;
             report.boden_ini_loaded = true;
             BodenIniSerializer::parse_text(&content)
@@ -661,10 +745,9 @@ impl AmbienceUi {
 
         // 3. Stage Soundscape SNDZ (or fresh default)
         let sndz_path = map_path.join("soundscape.sndz");
-        let (staged_zones, staged_global_id, staged_global_vol) = if sndz_path.is_file() {
-            let bytes = fs::read(&sndz_path)
-                .map_err(|e| format!("Failed to read {}: {e}", sndz_path.display()))?;
-            let snapshot = SoundscapeBinaryStorage::deserialize_from_binary(&bytes)
+        let sndz_source = crate::storage::read_optional_source(&sndz_path)?;
+        let (staged_zones, staged_global_id, staged_global_vol) = if let Some(bytes) = &sndz_source {
+            let snapshot = SoundscapeBinaryStorage::deserialize_from_binary(bytes)
                 .map_err(|e| format!("Corrupted {}: {e}", sndz_path.display()))?;
             report.soundscape_loaded = true;
             report.soundscape_zones_count = snapshot.zones.len();
@@ -691,9 +774,24 @@ impl AmbienceUi {
         let mut staged_body = String::new();
         let mut staged_subtitle = String::new();
         let mut staged_teams: [String; BRIEFING_TEAM_COUNT] = Default::default();
-        if let Some(path) = candidates.iter().find(|p| p.is_file()) {
-            let bytes =
-                fs::read(path).map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+        let native_source = crate::storage::read_optional_source(&candidates[0])?;
+        let mut legacy_sources = Vec::new();
+        let selected = if let Some(bytes) = &native_source {
+            Some((candidates[0].clone(), bytes.clone()))
+        } else {
+            let mut found = None;
+            for path in &candidates[1..] {
+                let bytes = crate::storage::read_optional_source(path)?;
+                let relative = path.strip_prefix(map_path).map_err(|e| e.to_string())?.to_path_buf();
+                legacy_sources.push((relative, bytes.clone()));
+                if let Some(bytes) = bytes {
+                    found = Some((path.clone(), bytes));
+                    break;
+                }
+            }
+            found
+        };
+        if let Some((path, bytes)) = &selected {
             let text = decode_game_text(&bytes)
                 .map_err(|e| format!("Failed to decode {}: {e}", path.display()))?;
             let table = BriefingTextTable::parse(&text)
@@ -710,6 +808,13 @@ impl AmbienceUi {
             report.briefing_loaded = true;
         }
 
+        let native = BRIEFING_NATIVE_RELATIVE.iter().collect::<PathBuf>();
+        let mut files = vec![
+            (PathBuf::from("boden.ini"), ini_source),
+            (PathBuf::from("soundscape.sndz"), sndz_source),
+            (native, native_source),
+        ];
+        files.extend(legacy_sources);
         // Staged parsing succeeded completely without errors. Now atomically commit to self.
         self.profile = WeatherPresets::create_clear_sky();
         self.profile.boden = staged_boden;
@@ -723,6 +828,10 @@ impl AmbienceUi {
         self.briefing_body = staged_body;
         self.briefing_subtitle = staged_subtitle;
         self.briefing_team_names = staged_teams;
+        self.sources = Some(AmbienceSources {
+            map_path: map_path.to_path_buf(),
+            files,
+        });
         self.dirty = false;
         self.pending_discard = false;
         self.validate_current();
@@ -1554,6 +1663,20 @@ pub fn validate_soundscape_zone(zone: &SoundscapeZone, lang: AppLanguage) -> Vec
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn blank_ambience_refuses_existing_legacy_briefing() {
+        let dir = temp_map("blank_legacy_guard");
+        fs::create_dir_all(dir.join("SCRIPT")).unwrap();
+        fs::write(dir.join("SCRIPT").join("briefing.put"), b"external").unwrap();
+        let ui = AmbienceUi::default();
+        let mut tx = against_rome_maps::MapSaveTransaction::new(&dir);
+        tx.stage_file("boden.ini", b"new".to_vec()).unwrap();
+        ui.guard_source_files(&dir, &mut tx).unwrap();
+        assert!(tx.validate().unwrap_err().to_string().contains("Map source changed externally"));
+        assert_eq!(fs::read(dir.join("SCRIPT").join("briefing.put")).unwrap(), b"external");
+        fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn test_ambience_ui_initial_state_and_dirty_guards() {

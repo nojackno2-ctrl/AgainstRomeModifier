@@ -1528,7 +1528,12 @@ impl ScenarioUi {
         Ok(waves as usize)
     }
     /// 只建立引用已知 Spawn 的死亡條件；原生 DATA 物件不會被臆測成 Spawn。
-    fn objective_event(&self, seconds: Option<i32>, target: Option<uuid::Uuid>, team: i32) -> Result<Event> {
+    pub(crate) fn objective_event(
+        &self,
+        seconds: Option<i32>,
+        target: Option<uuid::Uuid>,
+        team: i32,
+    ) -> Result<Event> {
         let (name, delay_seconds, conditions, kind) = if let Some(seconds) = seconds {
             if !(1..=86400).contains(&seconds) { return Err("秒數需為 1–86400 / Seconds must be 1–86400".into()); }
             (format!("Survive_{seconds}s"), seconds, vec![], 3)
@@ -1563,6 +1568,36 @@ impl ScenarioUi {
                 .ok_or("缺少原生 DATA 綁定快照 / Source DATA binding snapshot required")?)?;
         }
         Ok(())
+    }
+    /// 整批編譯驗證後才新增，失敗時保留原有事件與復原歷史。
+    pub(crate) fn add_objectives_atomic(&mut self, candidates: Vec<Event>) -> Result<usize> {
+        let events: Vec<_> = candidates
+            .into_iter()
+            .filter(|event| !self.has_objective(event))
+            .collect();
+        if events.is_empty() {
+            return Ok(0);
+        }
+        let source = self.source.as_ref().ok_or("請先載入劇本 / Load a scenario first")?;
+        if self.graph_ui.is_dirty() {
+            return Err("請先套用節點圖 / Apply the event graph first".into());
+        }
+        if events.len() > 256usize.saturating_sub(self.document.events.len()) {
+            return Err("事件上限為 256 / Event limit is 256".into());
+        }
+        let mut draft = self.document.clone();
+        draft.events.extend_from_slice(&events);
+        self.validate_draft(&draft)?;
+        scenario::compile_script_verified(
+            &source.bytes,
+            &draft,
+            Some(&self.camera),
+            if self.aliases.is_empty() { None } else { Some(&self.aliases) },
+            self.active_bindings.as_deref(),
+        )?;
+        let count = events.len();
+        self.selected = self.add_events(&events)?;
+        Ok(count)
     }
     /// 每次新增僅呼叫一次 add_events，重複與失敗不建立復原步驟。
     pub fn add_objective(&mut self, seconds: Option<i32>, target: Option<uuid::Uuid>, team: i32) -> Result<bool> {

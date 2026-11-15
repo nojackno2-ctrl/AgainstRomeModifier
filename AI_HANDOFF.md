@@ -1,3 +1,10 @@
+## 2026-11-15 Codex：環境來源與任務快速修正稽核
+- 環境面板載入後，外部更動 `boden.ini`、`soundscape.sndz` 或簡報，後續面板儲存可能覆寫較新的內容；已加入來源快照與交易前檢查，定向衝突及失敗重試測試通過。完整 lib 初次 2 項失敗：一項為快速修正復原步數預期，另一項交易回滾夾具在載入後新增簡報；調整測試後整合驗證通過。
+- 設計檢查「補齊勝敗」快速修正先後新增兩事件，255 事件時重現第二步失敗卻保留第一步；現整批驗證並單步復原，專項測試、`design_check_ui::tests` 36 項及 `scenario_ui::tests` 74 項通過。
+- 子代理重現載入時無 `emboss.bmp`、外部新增後修改高度仍成功存檔並保留未重算浮雕；已增加缺檔來源驗證，`cargo test -p against-rome-editor-app --locked --test emboss_external_probe -- --nocapture` 2 passed，確認拒絕、保留資料及移除外部檔後重試；`safe_save_` 53 passed。未做遊戲實測。
+- 整合驗證：獨立 `%TEMP%\arm-codex-20261115` target 與 `rust-lld`，依序 `cargo check --workspace --locked`、`cargo test --workspace --locked --no-fail-fast -- --quiet`、`cargo build --workspace --locked` 均 exit 0；編輯器 lib 1053 passed、6 ignored；`--smoke-test` 完成三次 UI 更新，`git diff --check` 通過。交易最後檢查至實際替換間仍可能有外部寫入競態；MSVC `link.exe` 仍不可用。
+- `quser` 仍為 `Disc`；桌面及遊戲內驗收未完成，未更動安裝版遊戲。
+
 ## 2026-11-15 Codex：存檔與劇本交錯編輯衝突稽核
 - 事件節點圖開啟後清單變更，套用舊圖可能覆蓋後續事件；已加入來源快照及衝突拒絕，`cargo test -p against-rome-editor-app --locked --lib scenario_ui::tests -- --quiet` 74 passed。新增測試初次因遊戲文字不支援中文被 Windows-1251 驗證拒絕，改用英文後通過。
 - 地形載入後遭外部修改，Safe Save 會以舊記憶體內容覆寫；子代理以附加 `boden.bmp` 尾端位元組重現，原流程仍回報成功。已加入來源位元組及提交前驗證，`safe_save_` 定向 52 passed、提交失敗後重試 1 passed；驗證後至實際替換期間仍有外部寫入競態。

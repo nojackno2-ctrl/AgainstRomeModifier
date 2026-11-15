@@ -1183,7 +1183,7 @@ impl EditorApp {
         Ok(count)
     }
 
-    /// 補齊劇本缺失的勝利與失敗目標事件，整批驗證後以單步或兩步復原套用並重新執行設計檢查。
+    /// 補齊劇本缺失的勝利與失敗目標事件，整批驗證後以單步復原套用並重新執行設計檢查。
     pub fn fix_missing_objectives(&mut self) -> Result<usize, String> {
         let (needs_victory, needs_defeat) = match self.design_check_report() {
             DesignCheckReport::Unavailable(e) => return Err(e),
@@ -1220,7 +1220,7 @@ impl EditorApp {
             ).into());
         }
 
-        let mut count = 0;
+        let mut candidates = Vec::new();
 
         // 1. 若缺少勝利事件：優先以消滅敵方主堡為勝利條件；若無敵方主堡則以存活 300 秒為勝利條件
         if needs_victory {
@@ -1229,14 +1229,12 @@ impl EditorApp {
                     && against_rome_maps::design_validator::MapDesignValidator::is_main_house(&s.alias)
             }).map(|s| (s.id, s.team));
 
-            let victory_added = if let Some((enemy_id, enemy_team)) = enemy_house {
-                self.scenario.add_objective(None, Some(enemy_id), enemy_team)?
+            let victory = if let Some((enemy_id, enemy_team)) = enemy_house {
+                self.scenario.objective_event(None, Some(enemy_id), enemy_team)?
             } else {
-                self.scenario.add_objective(Some(300), None, 0)?
+                self.scenario.objective_event(Some(300), None, 0)?
             };
-            if victory_added {
-                count += 1;
-            }
+            candidates.push(victory);
         }
 
         // 2. 若缺少失敗事件：以玩家主堡被摧毀為失敗條件；若無玩家主堡則以玩家首個部隊被消滅為失敗條件
@@ -1246,26 +1244,23 @@ impl EditorApp {
                     && against_rome_maps::design_validator::MapDesignValidator::is_main_house(&s.alias)
             }).map(|s| s.id);
 
-            let defeat_added = if let Some(house_id) = player_house {
-                self.scenario.add_objective(None, Some(house_id), 0)?
+            let defeat = if let Some(house_id) = player_house {
+                self.scenario.objective_event(None, Some(house_id), 0)?
             } else if let Some(unit_id) = self.scenario.document().spawns.iter().find(|s| s.team == 0 && against_rome_maps::design_validator::MapDesignValidator::is_unit_alias(&s.alias)).map(|s| s.id) {
-                let event = against_rome_scenario::Event {
+                against_rome_scenario::Event {
                     name: crate::scenario_ui::unused_event_name("Player_defeated", &self.scenario.document().events),
                     delay_seconds: 0,
                     conditions: vec![against_rome_scenario::Condition { kind: 1, target_id: unit_id, ..Default::default() }],
                     actions: vec![against_rome_scenario::Action { kind: 4, ..Default::default() }],
                     ..Default::default()
-                };
-                self.scenario.add_events(&[event])?;
-                true
+                }
             } else {
-                false
+                return Err(tr(self.lang(), "Cannot add Defeat objective: no player main house or unit found. Place one first.", "無法新增失敗目標：找不到玩家主堡或部隊，請先放置。").into());
             };
-            if defeat_added {
-                count += 1;
-            }
+            candidates.push(defeat);
         }
 
+        let count = self.scenario.add_objectives_atomic(candidates)?;
         self.run_design_check();
         Ok(count)
     }
@@ -2819,6 +2814,50 @@ mod tests {
         let ctx = egui::Context::default();
         let _ = ctx.run(egui::RawInput::default(), |ctx| app.show_design_check(ctx));
         assert!(app.design_check.open);
+    }
+
+    #[test]
+    fn missing_objectives_are_atomic_at_event_limit() {
+        let root = std::env::temp_dir().join(format!("arm_objectives_atomic_{}", Uuid::new_v4()));
+        let map = root.join("MAPS/ENDL_005");
+        std::fs::create_dir_all(map.join("SCRIPT")).unwrap();
+        std::fs::create_dir_all(root.join("SYSTEM/CLAK")).unwrap();
+        std::fs::write(root.join("SYSTEM/CLAK/cl_scint.ini"), "GER_INF01=FigGerInf01\n").unwrap();
+        std::fs::write(map.join(".arm_custom_map"), b"{}").unwrap();
+        std::fs::write(map.join("SCRIPT/ak_level.bci"), against_rome_scenario::BciImage::idle().serialize()).unwrap();
+        let mut app = EditorApp::default();
+        app.set_loaded_map(map.clone(), crate::TerrainSession::create_blank(5, 32)).unwrap();
+        app.scenario.load_session(&map).unwrap();
+        app.scenario.set_known_aliases(vec!["GER_INF01".into()]);
+        let spawn = against_rome_scenario::Spawn { id: Uuid::new_v4(), alias: "GER_INF01".into(), count: 1, ..Default::default() };
+        app.scenario.apply_spawns(vec![spawn]).unwrap();
+        let events = (0..255).map(|i| against_rome_scenario::Event {
+            name: format!("Event_{i}"),
+            actions: vec![against_rome_scenario::Action { text: "Message".into(), ..Default::default() }],
+            ..Default::default()
+        }).collect::<Vec<_>>();
+        app.scenario.add_events(&events).unwrap();
+        let before = app.scenario.document().events.clone();
+        let token = app.scenario.history_token();
+        assert!(app.fix_missing_objectives().is_err());
+        assert!(app.scenario.document().events == before);
+        assert_eq!(app.scenario.history_token(), token);
+        app.scenario.remove_event(254).unwrap();
+        let before = app.scenario.document().events.clone();
+        let token = app.scenario.history_token();
+        app.scenario.graph_ui_mut().mark_dirty();
+        assert!(app.fix_missing_objectives().is_err());
+        assert!(app.scenario.document().events == before);
+        assert_eq!(app.scenario.history_token(), token);
+        app.scenario.graph_ui_mut().discard_and_close();
+        assert_eq!(app.fix_missing_objectives().unwrap(), 2);
+        assert_eq!(app.scenario.document().events.len(), 256);
+        assert!(app.scenario.undo_events());
+        assert!(app.scenario.document().events == before);
+        assert_eq!(app.scenario.history_token(), token);
+        assert!(app.scenario.redo_events());
+        assert_eq!(app.scenario.document().events.len(), 256);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
