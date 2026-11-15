@@ -749,22 +749,39 @@ impl EditorApp {
     }
 
     fn check_team_no_presence_issues(doc: &against_rome_scenario::ScenarioDocument) -> Vec<MapIssue> {
-        let present_teams: std::collections::BTreeSet<i32> =
+        let mut present_teams: std::collections::BTreeSet<i32> =
             doc.spawns.iter().map(|s| s.team).collect();
+        // 編譯器只執行啟用的事件；生成動作也能提供隊伍物件。
+        for event in doc.events.iter().filter(|event| event.enabled) {
+            present_teams.extend(
+                event
+                    .actions
+                    .iter()
+                    .filter(|action| action.kind == 2)
+                    .map(|action| action.team),
+            );
+        }
         let mut reported_teams = std::collections::BTreeSet::new();
         let mut map_issues = Vec::new();
         for (idx, event) in doc.events.iter().enumerate() {
+            if !event.enabled {
+                continue;
+            }
             let name = if event.name.trim().is_empty() {
                 format!("Event #{}", idx + 1)
             } else {
                 event.name.clone()
             };
             for action in &event.actions {
+                // Message、Victory、Defeat 的 team 欄位不會輸出至遊戲腳本。
+                if action.kind != 1 {
+                    continue;
+                }
                 let mut teams_to_check = Vec::new();
                 if action.team >= 0 {
                     teams_to_check.push(action.team);
                 }
-                if action.kind == 1 && action.other_team >= 0 {
+                if action.other_team >= 0 {
                     teams_to_check.push(action.other_team);
                 }
                 for team in teams_to_check {
@@ -3246,9 +3263,9 @@ mod tests {
             name: "GhostTeam".into(),
             enabled: true,
             actions: vec![against_rome_scenario::Action {
-                kind: 0,
+                kind: 1,
                 team: 3,
-                text: "Ping".into(),
+                other_team: 4,
                 ..Default::default()
             }],
             ..Default::default()
@@ -3266,6 +3283,72 @@ mod tests {
         assert!(!issue.chinese.is_empty() && !issue.english.is_empty());
 
         let _ = std::fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn team_presence_uses_only_enabled_compiled_team_references() {
+        use against_rome_scenario::{Action, Event, ScenarioDocument};
+
+        let mut doc = ScenarioDocument::default();
+        doc.events = vec![
+            Event {
+                enabled: true,
+                actions: vec![
+                    Action {
+                        kind: 0,
+                        team: 7,
+                        ..Default::default()
+                    },
+                    Action {
+                        kind: 3,
+                        team: 6,
+                        ..Default::default()
+                    },
+                    Action {
+                        kind: 4,
+                        team: 5,
+                        ..Default::default()
+                    },
+                    Action {
+                        kind: 1,
+                        team: 1,
+                        other_team: 2,
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+            Event {
+                enabled: true,
+                actions: vec![Action {
+                    kind: 2,
+                    team: 1,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            Event {
+                enabled: false,
+                actions: vec![
+                    Action {
+                        kind: 2,
+                        team: 2,
+                        ..Default::default()
+                    },
+                    Action {
+                        kind: 1,
+                        team: 3,
+                        other_team: 4,
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+        ];
+        let issues = EditorApp::check_team_no_presence_issues(&doc);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].event_index, 0);
+        assert!(issues[0].chinese.contains("隊伍 2"));
     }
 
     #[test]

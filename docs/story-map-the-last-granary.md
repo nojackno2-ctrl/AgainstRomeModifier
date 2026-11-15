@@ -45,35 +45,25 @@
 
 ### 1. 備份原版 `MAPS\ENDL_005`
 
-若 `%TEMP%\arm-ENDL_005-backup-20261115` 尚未建立，請先完整備份：
+目前安裝的 `ENDL_005` 已是故事地圖；先前的原始備份是 `%TEMP%\arm-ENDL_005-backup-20261115`。請先確認備份內容，並另存到不會被系統清除的位置。不要將目前已安裝的故事地圖誤認為原始備份。
+
+若在其他電腦首次安裝，請在安裝之前備份原有地圖；以下指令拒絕覆寫既有備份：
 
 ```powershell
 $gameMap = "C:\Program Files (x86)\Against Rome\MAPS\ENDL_005"
 $backup  = Join-Path $env:TEMP "arm-ENDL_005-backup-manual"
-Copy-Item -Path $gameMap -Destination $backup -Recurse -Force
+if (-not (Test-Path -LiteralPath $gameMap -PathType Container)) { throw "找不到地圖：$gameMap" }
+if (Test-Path -LiteralPath $backup) { throw "備份已存在，請先檢查：$backup" }
+Copy-Item -LiteralPath $gameMap -Destination $backup -Recurse -ErrorAction Stop
 ```
 
 ### 2. 安裝故事地圖成品
 
-先移除或清空目標內的舊檔後，複製工作副本成品（可排除編輯器產生的 `.arm_backup.*` 備份檔，或直接整包複製）：
-
-```powershell
-$storyMap = Join-Path $env:TEMP "arm_story_20261115\Against Rome\MAPS\ENDL_005"
-$gameMap  = "C:\Program Files (x86)\Against Rome\MAPS\ENDL_005"
-Remove-Item -Path $gameMap -Recurse -Force
-Copy-Item -Path $storyMap -Destination $gameMap -Recurse -Force
-```
+先確認備份完整，再使用地圖編輯器或檔案總管將 `re_workspace\story-map-the-last-granary\ENDL_005` 的成品複製到目標。複製前確認來源與目標，並保留備份；不要先刪除目標資料夾。若目標原有額外檔案，先核對其用途，再決定如何處理。
 
 ### 3. 還原原版 `MAPS\ENDL_005`
 
-測試結束後，從唯讀備份完整還原：
-
-```powershell
-$backup  = Join-Path $env:TEMP "arm-ENDL_005-backup-20261115"
-$gameMap = "C:\Program Files (x86)\Against Rome\MAPS\ENDL_005"
-Remove-Item -Path $gameMap -Recurse -Force
-Copy-Item -Path $backup -Destination $gameMap -Recurse -Force
-```
+測試結束後，先確認選用的是安裝前的完整備份：本機先前的備份為 `%TEMP%\arm-ENDL_005-backup-20261115`；依上述步驟新建的備份則為 `%TEMP%\arm-ENDL_005-backup-manual`。先將目前地圖另存，再以檔案總管從正確備份覆蓋目標，並逐檔核對。額外檔案須與備份清單比對後個別處理，不要直接刪除整個目標資料夾。
 
 ---
 

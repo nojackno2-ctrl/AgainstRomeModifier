@@ -1616,6 +1616,20 @@ impl EditorApp {
         let mut loaded_camera = CampaignUi::default();
         loaded_camera.load_map_camera(&path)?;
         self.ambience.load_from_map(&path)?;
+        // 驗收勾選屬於地圖，不能帶到另一張地圖的報告；同圖重新載入則保留。
+        let same_map = self.loaded_map_path.as_ref().is_some_and(|previous| {
+            previous == &path
+                || match (
+                    std::fs::canonicalize(previous),
+                    std::fs::canonicalize(&path),
+                ) {
+                    (Ok(previous), Ok(next)) => previous == next,
+                    _ => false,
+                }
+        });
+        if !same_map {
+            self.ready_to_test.acceptance_checklist.reset();
+        }
         self.floor_atlas_source = None;
         self.viewport_3d.set_floor_atlas(None);
         self.reset_journal_epoch();
@@ -6349,6 +6363,38 @@ mod tests {
         let before = app.recent_maps.paths.clone();
         assert!(app.install_loaded_map(a, TerrainSession::create_blank(257, 32)).is_err());
         assert_eq!(app.recent_maps.paths, before);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn acceptance_checklist_follows_successfully_loaded_map() {
+        let root = temp_map_dir("acceptance_map");
+        let a = root.join("a");
+        let b = root.join("b");
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        let mut app = EditorApp::initial_state();
+        app.set_loaded_map(a.clone(), TerrainSession::create_blank(257, 32))
+            .unwrap();
+        app.ready_to_test.acceptance_checklist.saved = true;
+        app.ready_to_test.acceptance_checklist.events_fired = true;
+
+        // 同一地圖的重新載入是驗收流程的一部分，不應抹去勾選。
+        app.set_loaded_map(a.clone(), TerrainSession::create_blank(257, 32))
+            .unwrap();
+        assert!(app.ready_to_test.acceptance_checklist.saved);
+        assert!(app.ready_to_test.acceptance_checklist.events_fired);
+
+        // 載入失敗不得改變原地圖的驗收紀錄。
+        std::fs::write(b.join("daynight.bmp"), "invalid").unwrap();
+        assert!(app
+            .set_loaded_map(b.clone(), TerrainSession::create_blank(257, 32))
+            .is_err());
+        assert!(app.ready_to_test.acceptance_checklist.saved);
+        std::fs::remove_file(b.join("daynight.bmp")).unwrap();
+        app.set_loaded_map(b, TerrainSession::create_blank(257, 32))
+            .unwrap();
+        assert_eq!(app.ready_to_test.acceptance_checklist, Default::default());
         std::fs::remove_dir_all(root).unwrap();
     }
 

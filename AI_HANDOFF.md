@@ -1,3 +1,8 @@
+## 2026-11-15 Codex：接續地圖編輯器與備份文件安全
+- `quser` 再次顯示工作階段 `Disc`，桌面與遊戲內驗收仍未完成。唯讀稽核發現故事地圖文件的備份與還原路徑不一致，且範例先刪除目標；已改為明確辨識備份、拒絕覆寫既有備份並移除整目錄刪除指令。尚未執行安裝或還原，未更動遊戲檔案。
+- 子代理修正驗收勾選跨地圖沿用：同圖重載與載入失敗保留，成功切換地圖清除；定向測試 1 passed。設計檢查依劇本編譯器語意只檢查啟用事件的外交隊伍，並計入啟用事件的生成動作；定向 `team_` 測試 18 passed。初次測試因新測試誤用 `MapIssue` 方法編譯失敗，修正後重跑通過。
+- 驗證：獨立 `%TEMP%\arm-codex-20261115` target、`rust-lld` 與 Windows SDK 函式庫環境，依序執行 `cargo check --workspace --locked`、`cargo test --workspace --locked --no-fail-fast`、`cargo build --workspace --locked` 均成功；編輯器 lib 測試 1042 passed、6 ignored。新建執行檔 `--smoke-test` 成功執行三次 UI 更新，`git diff --check` 通過。MSVC 的 `link.exe` 仍缺失；未驗證桌面操作、遊戲內事件或故事地圖實際可玩性。
+
 ## 2026-11-15 Claude：劇情地圖遊戲內試跑再次受阻——桌面工作階段已中斷且鎖定（非地圖問題）
 - 乾淨重試（只啟動一次、不點任何東西）：computer-use 截圖回報 `desktopCapturer returned no screen sources`，遊戲未執行時也一樣；`quser` 顯示工作階段 `STATE=Disc`，`LogonUI` 執行中（鎖定畫面）。
 - `Against_Rome.exe` 直接啟動後約 20 秒以 ExitCode 0 結束、10 秒時 `Responding=False`、無當機傾印、無 Application 事件。A/B 對照：把 `ENDL_005` 暫時換回原備份再啟動，同樣 20 秒結束 → **與劇情地圖無關**，是沒有可用顯示時遊戲無法建立畫面。（同日稍早桌面未鎖定時，同一程序可存活數分鐘。）
