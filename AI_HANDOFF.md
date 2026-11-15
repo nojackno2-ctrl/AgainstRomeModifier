@@ -1,3 +1,9 @@
+## 2026-11-15 Claude：遊戲內驗收嘗試（已獲使用者授權）— 工具擷取不到遊戲畫面，未完成；ENDL_005 已還原
+- 使用者改為授權控制「Against Rome」視窗。流程：scratch 遊戲根目錄副本內以 `ingame_acceptance_save` 走編輯器 Safe Save（`Saved safely in one transaction (7 files, 0 cache deletions)`）→ 安裝版 `MAPS\ENDL_005` 備份到 `%TEMP%\arm-ENDL_005-backup-20261115`（55 檔 SHA-256 基準）→ 把存檔結果覆蓋進 `MAPS\ENDL_005` → 啟動 `Against_Rome.exe`。
+- 結果：遊戲程序啟動且 `Responding=True`、桌面解析度切到 1024×768，但 computer-use 截圖只擷取到桌面，**看不到遊戲的獨占全螢幕畫面**（等待約 2 分鐘、重新叫到前景皆同）。看不到畫面便未做任何選單操作；**地圖是否能在遊戲中載入、開局與事件行為仍未驗證**。（2026-10-27 的紀錄顯示 Codex 的 CUA 當時可擷取到主選單，差異在擷取工具。）
+- 收尾：已結束遊戲程序；刪除 4 個新增檔（3 個 `.arm_backup.*`、`soundscape.sndz`）並自備份還原，**55/55 SHA-256 與備份基準相符**；解析度已恢復。`%TEMP%` 備份保留。未動遊戲目錄其他檔案。
+- 下一步建議：由使用者親自驗收，或改以視窗化／dgVoodoo 視窗模式啟動遊戲後再讓代理擷取畫面。
+
 ## 2026-11-15 Claude：編輯器 Safe Save 實檔往返驗收工具與結果；遊戲內驗收被使用者拒絕
 - 新增 `apps/against-rome-editor/tests/ingame_acceptance_save.rs`（`#[ignore]`）：以 `AR_ACCEPT_MAP_DIR` 指向「遊戲根目錄副本內的 `MAPS\<自製地圖>`」，走 `EditorApp::set_loaded_map` → `safe_save_current` → 重新載入。拒絕路徑含 `program files` 的目標。
 - 實測（scratch 內複製 `SYSTEM` 與 `MAPS\ENDL_005` 的副本，測完已刪除）：`Saved safely in one transaction (7 files, 0 cache deletions)`，重新載入成功；原有 55 個檔案 SHA-256 全部不變，只新增 3 個 `.arm_backup.*` 與 `soundscape.sndz`。若工作副本不在遊戲根目錄結構內，Safe Save 會以 `alias-catalog-missing` 正確拒絕。
