@@ -49,6 +49,37 @@ pub enum MapsTab {
     Preflight,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CatalogOwnershipFilter {
+    #[default]
+    All,
+    CustomOnly,
+    RetailOnly,
+}
+
+pub fn matches_catalog_filter(
+    id: &str,
+    display_name: Option<&str>,
+    path: &Path,
+    is_custom: bool,
+    query: &str,
+    filter: CatalogOwnershipFilter,
+) -> bool {
+    match filter {
+        CatalogOwnershipFilter::All => {}
+        CatalogOwnershipFilter::CustomOnly if !is_custom => return false,
+        CatalogOwnershipFilter::RetailOnly if is_custom => return false,
+        _ => {}
+    }
+    let needle = query.trim().to_lowercase();
+    if needle.is_empty() {
+        return true;
+    }
+    id.to_lowercase().contains(&needle)
+        || display_name.unwrap_or("").to_lowercase().contains(&needle)
+        || path.to_string_lossy().to_lowercase().contains(&needle)
+}
+
 #[derive(Clone, Debug)]
 pub enum MapsPendingAction {
     DeleteCustom(i32),
@@ -95,6 +126,8 @@ pub struct MapsUi {
     pub selected_map_id: Option<String>,
     pub selected_map_path: Option<PathBuf>,
     pub selected_is_custom: bool,
+    pub catalog_search: String,
+    pub catalog_filter: CatalogOwnershipFilter,
 
     // Cloner inputs
     pub clone_source_slot: i32,
@@ -210,6 +243,8 @@ impl Default for MapsUi {
             selected_map_id: None,
             selected_map_path: None,
             selected_is_custom: false,
+            catalog_search: String::new(),
+            catalog_filter: CatalogOwnershipFilter::All,
             clone_source_slot: 0,
             clone_target_slot: 5,
             clone_new_name: "Custom Map".to_string(),
@@ -852,17 +887,65 @@ impl MapsUi {
 
         ui.separator();
 
+        ui.horizontal_wrapped(|ui| {
+            ui.label(tl(self.english, "搜尋：", "Search:"));
+            ui.add(
+                egui::TextEdit::singleline(&mut self.catalog_search)
+                    .desired_width(160.0)
+                    .hint_text(tl(self.english, "名稱、ID 或路徑", "Name, ID, or path")),
+            );
+            if !self.catalog_search.is_empty()
+                && ui.button(tl(self.english, "清除", "Clear")).clicked()
+            {
+                self.catalog_search.clear();
+            }
+            ui.separator();
+            ui.selectable_value(
+                &mut self.catalog_filter,
+                CatalogOwnershipFilter::All,
+                tl(self.english, "全部", "All"),
+            );
+            ui.selectable_value(
+                &mut self.catalog_filter,
+                CatalogOwnershipFilter::CustomOnly,
+                tl(self.english, "僅自訂", "Custom Only"),
+            );
+            ui.selectable_value(
+                &mut self.catalog_filter,
+                CatalogOwnershipFilter::RetailOnly,
+                tl(self.english, "僅原版", "Retail Only"),
+            );
+        });
+
+        ui.separator();
+
         egui::ScrollArea::vertical().max_height(340.0).show(ui, |ui| {
             ui.heading(tl(self.english, "無盡模式地圖", "Endless Maps"));
             if self.endless_maps.is_empty() {
                 ui.label(tl(self.english, "找不到無盡模式地圖或目錄尚未掃描。", "No endless maps found or catalog not yet scanned."));
             } else {
                 let maps = self.endless_maps.clone();
+                let mut shown = 0usize;
                 for map in &maps {
+                    if !matches_catalog_filter(
+                        &map.id(),
+                        map.display_name.as_deref(),
+                        &map.directory_path,
+                        map.is_custom,
+                        &self.catalog_search,
+                        self.catalog_filter,
+                    ) {
+                        continue;
+                    }
+                    shown += 1;
                     let is_selected = self.selected_map_id.as_deref() == Some(&map.id());
                     let label = format!(
                         "[{}] {} ({}) - {}",
-                        if map.is_custom { tl(self.english, "自訂", "Custom") } else { tl(self.english, "原版", "Retail") },
+                        if map.is_custom {
+                            tl(self.english, "自訂", "Custom")
+                        } else {
+                            tl(self.english, "原版・唯讀", "Retail · Read-only")
+                        },
                         map.id(),
                         map.display_name.as_deref().unwrap_or_else(|| tl(self.english, "未命名", "Unnamed")),
                         map.directory_path.display()
@@ -871,6 +954,9 @@ impl MapsUi {
                         self.select_endless_map(map);
                     }
                 }
+                if shown == 0 {
+                    ui.label(tl(self.english, "沒有符合搜尋條件的無盡模式地圖。", "No endless maps match the current filter."));
+                }
             }
 
             ui.separator();
@@ -878,11 +964,27 @@ impl MapsUi {
             if self.general_maps.is_empty() {
                 ui.label(tl(self.english, "未編錄一般地圖。", "No general maps catalogued."));
             } else {
+                let mut shown = 0usize;
                 for map in &self.general_maps {
+                    if !matches_catalog_filter(
+                        &map.id,
+                        map.display_name.as_deref(),
+                        &map.directory_path,
+                        map.is_custom,
+                        &self.catalog_search,
+                        self.catalog_filter,
+                    ) {
+                        continue;
+                    }
+                    shown += 1;
                     let is_selected = self.selected_map_id.as_deref() == Some(&map.id);
                     let label = format!(
                         "[{}] {} - {}",
-                        if map.is_custom { tl(self.english, "自訂", "Custom") } else { tl(self.english, "原版", "Retail") },
+                        if map.is_custom {
+                            tl(self.english, "自訂", "Custom")
+                        } else {
+                            tl(self.english, "原版・唯讀", "Retail · Read-only")
+                        },
                         map.id,
                         map.directory_path.display()
                     );
@@ -893,6 +995,9 @@ impl MapsUi {
                         self.clone_new_name =
                             Self::suggested_copy_name_for(map.display_name.as_deref(), &map.id);
                     }
+                }
+                if shown == 0 {
+                    ui.label(tl(self.english, "沒有符合搜尋條件的一般地圖。", "No general maps match the current filter."));
                 }
             }
         });
@@ -1841,5 +1946,59 @@ refpos=100.0,0.0,100.0
             let english = crate::batch20_localization_tests::render(|ctx| ui.show(ctx, &cx, None));
             assert!(english.contains(english_expected), "expected {english_expected:?} in {english}");
         }
+    }
+
+    #[test]
+    fn catalog_search_and_ownership_filter_work_for_endless_and_general_maps() {
+        let mut ui = MapsUi::default();
+        ui.open = true;
+        ui.current_tab = MapsTab::Catalog;
+        ui.endless_maps = vec![
+            EndlessMapInfo {
+                slot: 1,
+                display_name: Some("Danube Crossing".to_string()),
+                directory_path: PathBuf::from("C:/Game/MAPS/ENDL_001"),
+                is_custom: false,
+            },
+            EndlessMapInfo {
+                slot: 5,
+                display_name: Some("My Custom Arena".to_string()),
+                directory_path: PathBuf::from("C:/Game/MAPS/ENDL_005"),
+                is_custom: true,
+            },
+        ];
+        ui.general_maps = vec![GameMapInfo {
+            id: "CAMP_01".to_string(),
+            display_name: Some("Siege of Rome".to_string()),
+            directory_path: PathBuf::from("C:/Game/MAPS/CAMP_01"),
+            is_custom: false,
+            category: "Campaign".to_string(),
+        }];
+
+        let cx = MapsContext::default();
+        let all_zh = crate::batch20_localization_tests::render(|ctx| ui.show(ctx, &cx, None));
+        assert!(all_zh.contains("[原版・唯讀] ENDL_001"));
+        assert!(all_zh.contains("[自訂] ENDL_005"));
+        assert!(all_zh.contains("[原版・唯讀] CAMP_01"));
+
+        ui.catalog_filter = CatalogOwnershipFilter::CustomOnly;
+        let custom_only = crate::batch20_localization_tests::render(|ctx| ui.show(ctx, &cx, None));
+        assert!(!custom_only.contains("ENDL_001"));
+        assert!(custom_only.contains("ENDL_005"));
+        assert!(custom_only.contains("沒有符合搜尋條件的一般地圖。"));
+
+        ui.catalog_filter = CatalogOwnershipFilter::All;
+        ui.catalog_search = "danube".to_string();
+        let search_hit = crate::batch20_localization_tests::render(|ctx| ui.show(ctx, &cx, None));
+        assert!(search_hit.contains("ENDL_001"));
+        assert!(!search_hit.contains("ENDL_005"));
+        assert!(!search_hit.contains("CAMP_01"));
+
+        ui.english = true;
+        ui.catalog_filter = CatalogOwnershipFilter::RetailOnly;
+        ui.catalog_search = "CAMP_01".to_string();
+        let retail_en = crate::batch20_localization_tests::render(|ctx| ui.show(ctx, &cx, None));
+        assert!(retail_en.contains("[Retail · Read-only] CAMP_01"));
+        assert!(retail_en.contains("No endless maps match the current filter."));
     }
 }

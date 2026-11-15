@@ -215,13 +215,15 @@ fn create_synthetic_fixture_map(dir: &Path) {
 }
 
 fn temp_fixture_dir(label: &str) -> PathBuf {
+    static NEXT_TEMP_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let p = std::env::temp_dir().join(format!(
-        "ar-placement-test-{label}-{}-{}",
+        "ar-placement-test-{label}-{}-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_nanos()
+            .as_nanos(),
+        NEXT_TEMP_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     let _ = fs::remove_dir_all(&p);
     p

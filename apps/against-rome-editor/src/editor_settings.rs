@@ -64,6 +64,21 @@ impl EditorSettings {
         Ok(result)
     }
 
+    /// 載入設定檔；若失敗則退回預設狀態並回傳雙語警告訊息，避免靜默失敗。
+    pub fn load_with_fallback(file: PathBuf, english: bool) -> (Self, Option<String>) {
+        match Self::load(file) {
+            Ok(settings) => (settings, None),
+            Err(err) => {
+                let notice = if english {
+                    format!("Failed to load editor settings; using defaults: {err}")
+                } else {
+                    format!("無法載入編輯器設定，已退回預設值：{err}")
+                };
+                (Self::default(), Some(notice))
+            }
+        }
+    }
+
     /// 將目前面板狀態原子寫入設定檔；嚴格拒絕地圖目錄。
     pub fn save(&self) -> Result<(), String> {
         if let Some(file) = &self.file {
@@ -207,5 +222,31 @@ mod tests {
         assert!(EditorSettings::load(maps_settings).is_err());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn load_with_fallback_returns_bilingual_notice_and_defaults_on_error() {
+        let dir = std::env::temp_dir().join(format!("arm_settings_fallback_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("editor-panels.json");
+        std::fs::write(&file, "{corrupted").unwrap();
+
+        let (zh_settings, zh_notice) = EditorSettings::load_with_fallback(file.clone(), false);
+        assert!(zh_settings.open_panels.is_empty());
+        assert!(zh_settings.file.is_none());
+        let zh_msg = zh_notice.expect("expected zh fallback notice");
+        assert!(zh_msg.contains("無法載入編輯器設定"));
+
+        let (en_settings, en_notice) = EditorSettings::load_with_fallback(file.clone(), true);
+        assert!(en_settings.open_panels.is_empty());
+        let en_msg = en_notice.expect("expected en fallback notice");
+        assert!(en_msg.contains("Failed to load editor settings"));
+
+        std::fs::write(&file, r#"{"version":1,"open_panels":["maps"]}"#).unwrap();
+        let (ok_settings, ok_notice) = EditorSettings::load_with_fallback(file, false);
+        assert!(ok_notice.is_none());
+        assert!(ok_settings.is_panel_open("maps"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

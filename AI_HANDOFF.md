@@ -1,3 +1,17 @@
+## 2026-11-15 Claude（派工）＋ Agy／Codex 子代理：第二批 10 主題（存檔安全、設計檢查、文件、測試競態）
+- 派工：Codex 5 ＋ Agy 5（明確指定）。**Codex CLI 在本機幾乎每次都因 Windows 沙箱 `helper_unknown_error: setup refresh had errors` 無法啟動**（兩批共 15 個 Codex 任務只有 6 個成功），其餘由 Agy 備援。Agy 多次交回未編譯或重複貼上的程式碼，由 Claude 修正或還原。
+- 已整合（Claude 修正後通過測試）：
+  1. `app.rs`：`effective_map_settings`／`map_settings_warning`，把 `MapSettings::validate_bilingual` 接到 `save_transaction`（無效時以 `boden.ini validation` 阻擋存檔）、水位超過 255 顯示警告；未儲存變更對話框新增「儲存並繼續 / Save & Continue」（有設計警告時先走既有確認流程，存檔成功後才執行待辦動作）。
+  2. `design_check_ui.rs`：新增地圖層級規則 `check_team_no_presence_issues`（事件引用但無任何生成物的隊伍）與 `check_starting_buildings_too_close_issues`（Agy 重複貼上的兩份定義已刪除）。
+  3. `scenario_ui.rs`：`EventBrowser::indices` 限定測試建置（消除警告）；新增 `loaded_fixture_inline_errors_follow_edits_in_both_languages`（確認五類欄位旁雙語提示原本已存在）。
+  4. `ambience_ui.rs`：音效區域搜尋、`validate_soundscape_zone` 雙語驗證（座標 0..=16384、半徑、音量；Agy 貼了四份，已刪成一份）。
+  5. `maps_ui.rs`、`family_ui.rs`、`console.rs`、`editor_settings.rs`：地圖目錄／family 清單／主控台說明／設定載入的補強（細節見 diff；Agy 最終報告被截斷，Claude 只驗證了編譯與測試，未逐項人工審查行為）。
+  6. 測試暫存目錄競態：`install_integrity_regressions.rs`、`family_differential.rs`、`native_probe_cli.rs` 加入 `AtomicU64` 計數器。`apps/against-rome-editor/tests/editor_tests.rs`、`family_ui.rs` 有同樣寫法，尚未修。
+  7. `README.md`：地圖編輯器章節依實際介面文字更新，新增設計者工作流程與已知限制。
+- **已還原、未納入**：`viewport_3d.rs`（Agy 的 HUD／越界提示改動重複貼上、括號不成對、從未編譯）；`minimap_ui.rs`（圖例列使既有的視窗定位與點擊導覽測試失敗，屬行為退化）。兩項需求仍未完成。
+- 驗證：`cargo test --workspace --locked --no-fail-fast`（rust-lld 環境）**287 組、2873 passed、0 failed、23 ignored**。`against-rome-editor.exe --smoke-test` 通過；`--game "C:\Program Files (x86)\Against Rome" --validate-map --lang zh` 唯讀檢查 40 張地圖、0 張有錯誤（此兩項以第一批提交 8c2873c 的建置執行，未以第二批建置重跑）。
+- 未驗證：所有新介面的實際桌面視窗操作；遊戲內載入自製地圖、開局與事件行為；`is_water_above_max_height` 的 255 上限是否符合遊戲實際行為。未修改已安裝遊戲。
+
 ## 2026-11-15 Claude（派工）＋ Agy／Codex 子代理：10 主題並行的設計者功能補強
 - 派工：第一輪 10 個子代理並行（實際分配 Agy 9、Codex 1），每個只改自己的檔案；第二輪 5 個修正任務（Codex 4 成功、1 個因 Codex Windows 沙箱 `setup refresh had errors` 失敗後由 Agy 接手）。Claude 負責整合、修正與驗證。
 - **環境問題（重要）**：本機 Visual Studio 2026 安裝不完整（`vswhere` 回報 `isComplete=False`，`VC\Tools\MSVC\14.51.36231\bin` 為空），`link.exe` 不存在，所有 `cargo` 建置都會失敗。暫行作法（未更動系統）：PowerShell 先設定

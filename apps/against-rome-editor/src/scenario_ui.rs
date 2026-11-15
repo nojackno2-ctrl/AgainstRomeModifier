@@ -212,6 +212,7 @@ impl EventBrowser {
         let time_order = self.time_order;
         *self = Self { time_order, ..Default::default() };
     }
+    #[cfg(test)]
     fn indices(&self, events: &[Event]) -> Vec<usize> {
         self.indices_filtered(events, &[], &[])
     }
@@ -2894,6 +2895,68 @@ fn export_files(target: &Path, files: &[(&str, Vec<u8>)], fail_after: Option<usi
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn loaded_fixture_inline_errors_follow_edits_in_both_languages() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../native/against-rome-scenario/tests/fixtures/scenario_roundtrip_oracle.json");
+        let oracle: serde_json::Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let document = ScenarioDocument::from_json(
+            &serde_json::to_vec(&oracle["area_single_point"]["saved"]).unwrap(),
+        ).unwrap();
+        fn labels(event: &mut Event, en: bool) -> Vec<String> {
+            fn collect(shape: &egui::epaint::Shape, labels: &mut Vec<String>) {
+                match shape {
+                    egui::epaint::Shape::Text(text) => labels.push(text.galley.text().to_owned()),
+                    egui::epaint::Shape::Vec(shapes) => for shape in shapes { collect(shape, labels); },
+                    _ => {}
+                }
+            }
+            let ctx = egui::Context::default();
+            let output = ctx.run(egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(2400.0, 5000.0))),
+                ..Default::default()
+            }, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    event_editor(ui, event, &[], &[], en, &mut None, &mut None);
+                });
+            });
+            let mut result = Vec::new();
+            for shape in &output.shapes { collect(&shape.shape, &mut result); }
+            result
+        }
+        let checks = [
+            ("⚠ 矩形範圍無效 (min > max)", "⚠ Invalid bounds (min > max)"),
+            ("⚠ 重複事件延遲必須大於 0 秒", "⚠ Repeating event delay must be > 0"),
+            ("⚠ 隊伍與對方隊伍不可相同", "⚠ Team and other team must not be identical"),
+            ("⚠ 勝利／失敗動作必須置於單次事件最後", "⚠ Victory/Defeat must be the last action of a one-shot event"),
+            ("⚠ 包含無法以 Windows-1251 編碼的字元", "⚠ Contains non-Windows-1251 characters"),
+        ];
+        for (case, (zh, en)) in checks.into_iter().enumerate() {
+            let mut event = if case == 3 { document.events[2].clone() } else { document.events[0].clone() };
+            match case {
+                0 => event.conditions[2].min_x = event.conditions[2].max_x + 1,
+                1 => { event.repeat = true; event.delay_seconds = 0; },
+                2 => event.actions[1].other_team = event.actions[1].team,
+                3 => event.actions.swap(0, 1),
+                4 => event.actions[0].text = "中文".into(),
+                _ => unreachable!(),
+            }
+            for (language, expected) in [(false, zh), (true, en)] {
+                assert!(labels(&mut event, language).iter().any(|s| s == expected), "missing {expected}");
+            }
+            match case {
+                0 => event.conditions[2].min_x = event.conditions[2].max_x,
+                1 => event.delay_seconds = 1,
+                2 => event.actions[1].other_team = (event.actions[1].team + 1) % 8,
+                3 => event.actions.swap(0, 1),
+                4 => event.actions[0].text = "Hello".into(),
+                _ => unreachable!(),
+            }
+            for (language, expected) in [(false, zh), (true, en)] {
+                assert!(!labels(&mut event, language).iter().any(|s| s == expected), "unexpected {expected}");
+            }
+        }
+    }
     #[test]
     fn empty_state_hints_are_bilingual_and_follow_scenario_state() {
         let mut panel = super::ScenarioUi::default();

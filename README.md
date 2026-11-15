@@ -185,13 +185,44 @@
   - 在不破壞存檔進度的前提下，修復存檔內部內嵌的無盡 AI 排程與羅馬增援規則，並在修復前自動建立安全備份。
 
 ### 2. 🗺️ 地圖編輯器 (Map Editor)
-- **2D / 3D 即時視圖**：提供俯視圖與 3D 地形即時著色預覽。
-- **多 AI 製圖**：本機 Ollama 的地形／水系／材質三角色預設使用 `laguna-xs-2.1:latest`，依序執行、一次一個推論，可分別選模型，生成後先檢視方案與各角色診斷，再按「套用方案」。取消、修改描述或模型會使舊方案失效；套用後仍需儲存。
-- **地形與水面編輯**：檢視與修改地圖高度圖、水面高度、地表紋理分佈。
-- **場景物件管理**：檢視並配置地圖上的建築、樹木、裝飾與戰略資源。
-- **整圖安全儲存（Safe Save）**：物件（Objects）、自然地景（Nature）與預建生成物件可在同筆交易儲存；若合併候選與既有綁定家族衝突，或磁碟 DATA 已被外部變更，會拒絕儲存並保留待存編輯。合併流程已納入自動化回歸，桌面操作與遊戲內效果仍待驗收。
-- **事件編輯**：自訂地圖的「事件」分頁可新增或複製事件、以「上移／下移」調整動作順序，支援單次／重複執行，依序顯示訊息、改變隊伍外交、生成部隊，或結束遊戲為勝利／失敗。勝敗必須是單次事件的最後一個動作。編輯事件的「條件」分頁可選擇放置物件的存在、死亡或移除、位於指定矩形區域的條件（包含邊界；最多32個，全部成立且計時到期才執行；沒有條件時只依計時）。存在包含尚未移除的屍體；死亡／移除需要先確認存在，建立失敗不算死亡。部隊目標指部隊容器。刪除目標後須重新選擇或停用該事件才能儲存。按「儲存」套用；訊息需使用遊戲支援的文字。遊戲內效果與存讀檔相容性尚待實測。
-- **無盡地圖管理**：支援複製、自訂與管理無盡模式地圖（`ENDL_000` ～ `ENDL_004`）。
+
+支援 2D 俯視圖與 3D 即時地形著色預覽，並以整圖交易式安全儲存（Safe Save）寫回地圖與劇本資料：
+
+- **地圖管理與建立 (`maps_ui` / `skirmish_wizard_ui`)**：
+  - **無盡模式地圖 (Endless Maps)** 與 **一般戰役／任務地圖 (General Game Maps)** 瀏覽，支援「載入地圖至編輯器 (Load Map into Editor)」。
+  - **地圖複製器與安全刪除 (Map Cloner & Safe Deleter)**：可將原版無盡地圖（`ENDL_000` ～ `ENDL_004`）複製為自訂地圖（`複製地圖 / Clone Map`）或安全刪除自訂槽位（`刪除自訂地圖 / Delete Custom Map`），並即時檢查名稱重複與不合法字元。
+  - **新增對戰地圖… (New Skirmish Map Wizard…)**：四步驟精靈（`1. 範本 / Template` → `2. 簡報 / Briefing` → `3. 基地與規則 / Bases & Rules` → `4. 摘要 / Summary`），於第 1、2 步即驗證地圖名稱。
+  - **空白場景（實驗）(Empty Scene (Exp.))**：支援「建立平坦範本地圖 (Build Flat Template & Open)」與「建立並載入空白場景 (Build Empty Scene & Open)」，可勾選「配置起始聚落 (主城與初始部隊) (Starter Kit: Town Center & Initial Units)」。
+- **地形、水面與環境 (`landscape_ui` / `textures_ui` / `environment_ui` / `ambience_ui`)**：
+  - **地形規劃與雕刻**：提供「依高度圖建議水位 (Suggest water level from heightmap)」（含面板內單次復原）、懸崖邊緣偵測與崖壁規劃（`在高度圖上偵測懸崖 / Detect Cliffs on Heightmap`）、河流流向規劃器（`規劃水流路徑 / Plan River Stroke`）、道路與小徑折線規劃器（`規劃道路筆畫 / Plan Road Stroke`）、城牆與木柵規劃器（`規劃城牆筆畫 / Plan Wall Stroke`），以及侵蝕前唯讀選區摘要。
+  - **地表材質繪製**：支援「建議此範圍可用材質」唯讀試算、「自動選取並繪製可用材質」（單步復原），並在筆刷輸入無效時停用按鈕並顯示雙語原因。
+  - **環境與氛圍**：植被散布（未載入地形時明確拒絕）與重設預設值；環境氛圍與在地化工作室（`Ambience & Localization Studio`）提供大氣光照、原生場景光照計算、`boden.ini` 環境參數、環境音效區域工作室（SNDZ）與任務簡報多語言設定。
+- **物件放置、起始部隊與戰力摘要 (`placement_ui` / `spawn_placement_ui` / `balance_summary_ui`)**：
+  - 支援載入 `DATA` 後進行「全選 (Select all)」、「清除選取 (Clear selection)」、多選摘要、X／Z 對齊至基準物件（單步復原）、對齊圖格 (Snap to tile)、設定／增加旋轉角度、設定隊伍 (Set team)、批次編輯隊伍與旋轉角度、移動、複製與移除。
+  - 已放置物件清單上方顯示各隊物件數與小隊兵力合計；並提供唯讀的起始腳本兵力差異提示（註明未計入放置單位與資源）。
+- **劇本事件、戰役與多 AI 製圖 (`scenario_ui` / `campaign_ui` / `ai_planner_ui`)**：
+  - **劇本事件編輯**：支援「新增事件 (Add event)」、兩段式確認「刪除選取事件 (Delete selected event)」、視覺化節點圖 (Event Graph)、條件與動作搜尋／篩選（含「僅啟用 / Enabled only」、「僅停用 / Disabled only」、「僅問題事件 / Issues only」與條件種類篩選），以及「新增敵對外交預設 (Add hostile diplomacy preset)」、「新增開局提示訊息 (Add opening briefing message)」、「新增存活勝利 (Add survival victory)」等一鍵預設。
+  - 支援單次／週期重複 (Repeat) 執行、矩形區域「在地圖上框選 (Draw on map)」與「正規化範圍 (Normalize bounds)」，以及「驗證並編譯預覽 (Validate and compile preview)」與「輸出 JSON + BCI + 原版備份 (Export JSON + BCI + original backup)」。
+  - **戰役目標工作室 (Campaign Objectives Studio)**：提供戰役進攻波次與 AI 企劃、地圖起始相機與過場軌跡設定。
+  - **多角色 AI 製圖與筆刷執行器 (Multi-AI Map Planning & Brush Operator)**：本機 Ollama 的地形／水系／材質三角色依序執行，生成後先檢視企劃預覽與執行報告再套用。
+- **設計檢查、測試前檢查與模組匯出 (`design_check_ui` / `ready_to_test_ui` / `packaging_ui`)**：
+  - **設計檢查**：自動偵測並定位劇本與地圖問題，包含條件目標遺失（`scenario-missing-target`）、勝負動作非末位（`scenario-terminal-not-last`）、勝負事件重複（`scenario-terminal-repeat`）、矩形條件範圍顛倒（`scenario-inverted-rect`）、零延遲重複事件（`scenario-repeat-zero-delay`）與同隊外交（`scenario-diplomacy-same-team`），多數提供一鍵快速修正並納入單步復原。
+  - **測試前檢查 (Ready to Test)**：提供「重新整理檢查 (Refresh checks)」與遊戲內驗收四項勾選（「已儲存 / Saved」、「已重載 / Reloaded」、「已開戰 / Match started」、「事件已觸發 / Events fired」），並可納入可複製報告（不含本機路徑）。
+  - **模組套件匯出工具 (Mod Bundle Exporter)**：支援「發布前預檢驗收 (Preflight Verification)」與「匯出模組 ZIP 套件 (Export Mod ZIP Bundle)」，匯出前驗證目的地必須為 `.zip` 檔案而非資料夾，寫出後自動執行讀回與 SHA-256 驗證；另附「地圖版本比對引擎 (Map Version Diff Engine)」與預算效能分析。
+
+#### 🧭 設計者工作流程 (Designer Workflow)
+1. **建立／複製地圖**：在「地圖」分頁複製原版無盡地圖，或使用「新增對戰地圖… (New Skirmish Map Wizard…)」／空白平坦範本建立自訂地圖。
+2. **地形與材質**：調整高度圖、建議水位、規劃懸崖／河流／道路／城牆，並用材質筆刷試算與繪製地表紋理。
+3. **物件與起始部隊**：載入 `DATA` 放置建築、自然地景與各隊起始部隊，確認對齊、旋轉與各隊兵力合計。
+4. **劇本事件與勝負條件**：建立開局提示、外交預設與勝利／失敗事件，設定物件或矩形區域條件，並執行「驗證並編譯預覽」。
+5. **設計檢查**：執行設計檢查與預檢，利用快速修正處理勝負動作順序、矩形範圍或零延遲重複等問題。
+6. **測試前檢查清單**：確認所有檢查通過，於「測試前檢查」追蹤已儲存、已重載、已開戰、事件已觸發四項驗收。
+7. **匯出 ZIP**：執行「發布前預檢驗收」後匯出模組 ZIP 套件並確認讀回驗證通過。
+
+#### ⚠️ 已知限制與尚待實機驗證項目 (Known Limitations / Not Yet Verified in Game)
+- **桌面操作與遊戲內實測**：近期的介面補強（筆刷試算與驗證、兩段式刪除事件、多選對齊、侵蝕選區摘要、對戰地圖精靈名稱驗證、測試前四項勾選、匯出預檢警告與讀回驗證等）皆已通過單元與無頭 UI 測試，但**尚未在實際桌面視窗與《Against Rome》遊戲本體內完成完整實機驗收**；存讀檔相容性亦尚待實測。
+- **地圖設定驗證**：`MapSettings::validate_bilingual` 已接到安全儲存（高度步進或水位無效時阻擋存檔），水位超過高度上限時顯示警告；尚未在桌面視窗與遊戲內實測。
+- **編譯環境備註**：若本機 Visual Studio 2026 安裝不完整導致 `link.exe` 缺失，需在 PowerShell 設定 `CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER` 指向 `rust-lld.exe` 與 `LIB` 路徑後再執行 `cargo` 指令（詳見 `AI_HANDOFF.md`）。
 
 ### 3. 📖 技術文件 (Tech Doc)
 - 程式內嵌完整的技術文檔與逆向工程說明，涵蓋檔案格式結構、二進位補丁特徵碼、虛擬機字節碼（BCI）解析等深度細節。

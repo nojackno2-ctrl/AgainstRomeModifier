@@ -217,7 +217,12 @@ impl ConsoleUi {
                     self.context.log(format!("\n[{category}]"), LogLevel::Debug);
                 }
                 self.context.log(
-                    format!("  /{:<16} : {}", command.name(), command.description_zh()),
+                    format!(
+                        "  /{:<16} : {} / {}",
+                        command.name(),
+                        command.description_zh(),
+                        command.description_en()
+                    ),
                     LogLevel::Info,
                 );
             }
@@ -693,9 +698,10 @@ mod tests {
         assert_eq!(entries.len(), count);
         for command in console.runner.registry.get_all_commands() {
             assert!(entries.contains(&format!(
-                "  /{:<16} : {}",
+                "  /{:<16} : {} / {}",
                 command.name(),
-                command.description_zh()
+                command.description_zh(),
+                command.description_en()
             )));
         }
         assert!(console

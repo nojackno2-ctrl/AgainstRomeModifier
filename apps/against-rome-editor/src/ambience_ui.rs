@@ -177,6 +177,7 @@ pub struct AmbienceUi {
     // --- Soundscape Zones ---
     pub zones: Vec<SoundscapeZone>,
     pub selected_zone_index: Option<usize>,
+    pub zone_search: String,
     pub new_zone_name: String,
     pub new_zone_sound_id: String,
     pub new_zone_category: AudioCategory,
@@ -218,6 +219,7 @@ impl Default for AmbienceUi {
             last_computed_uniforms: None,
             zones: Vec::new(),
             selected_zone_index: None,
+            zone_search: String::new(),
             new_zone_name: "Zone 1".to_string(),
             new_zone_sound_id: "SND_FOREST_BIRDS".to_string(),
             new_zone_category: AudioCategory::Vegetation,
@@ -1255,13 +1257,23 @@ impl AmbienceUi {
         });
 
         ui.separator();
-        ui.label(format!("{} {}", tr(self.app_language, "Configured Sound Zones:", "已設定音效區域："), self.zones.len()));
+        ui.horizontal(|ui| {
+            ui.label(format!("{} {}", tr(self.app_language, "Configured Sound Zones:", "已設定音效區域："), self.zones.len()));
+            ui.separator();
+            ui.label(tr(self.app_language, "Search:", "搜尋："));
+            ui.text_edit_singleline(&mut self.zone_search);
+            if !self.zone_search.is_empty() && ui.small_button(tr(self.app_language, "Clear", "清除" )).clicked() {
+                self.zone_search.clear();
+            }
+        });
 
+        let query = self.zone_search.trim().to_ascii_lowercase();
         egui::ScrollArea::vertical()
             .max_height(200.0)
             .show(ui, |ui| {
                 let mut remove_idx = None;
                 for (i, zone) in self.zones.iter().enumerate() {
+                    if !query.is_empty() && !zone.name.to_ascii_lowercase().contains(&query) && !zone.sound_def_id.to_ascii_lowercase().contains(&query) { continue; }
                     let is_sel = self.selected_zone_index == Some(i);
                     ui.horizontal(|ui| {
                         if ui
@@ -1291,6 +1303,9 @@ impl AmbienceUi {
                 let zone = &mut self.zones[idx];
                 ui.separator();
                 ui.heading(format!("{} {}", tr(self.app_language, "Edit Zone:", "編輯區域："), zone.name));
+                for err in validate_soundscape_zone(zone, self.app_language) {
+                    ui.colored_label(Color32::from_rgb(235, 100, 100), err);
+                }
                 egui::Grid::new("zone_edit_grid")
                     .num_columns(2)
                     .spacing([12.0, 6.0])
@@ -1497,6 +1512,43 @@ impl AmbienceUi {
             }
         });
     }
+}
+
+pub fn validate_soundscape_zone(zone: &SoundscapeZone, lang: AppLanguage) -> Vec<String> {
+    let mut errors = Vec::new();
+    if !zone.center_world_x.is_finite()
+        || !zone.center_world_z.is_finite()
+        || zone.center_world_x < 0.0
+        || zone.center_world_x > 16384.0
+        || zone.center_world_z < 0.0
+        || zone.center_world_z > 16384.0
+    {
+        errors.push(tr(
+            lang,
+            "Zone center (X, Z) must be finite and within 0..=16384.",
+            "區域中心座標 (X, Z) 必須為有限數值且介於 0..=16384。",
+        ).to_string());
+    }
+    if !zone.inner_radius.is_finite()
+        || !zone.outer_radius.is_finite()
+        || zone.inner_radius < 0.0
+        || zone.outer_radius < 0.0
+        || zone.inner_radius > zone.outer_radius
+    {
+        errors.push(tr(
+            lang,
+            "Inner/outer radius must be finite, non-negative, and inner <= outer.",
+            "內徑／外徑半徑必須為有限非負數，且內徑 <= 外徑。",
+        ).to_string());
+    }
+    if !zone.base_volume.is_finite() || zone.base_volume < 0.0 || zone.base_volume > 2.0 {
+        errors.push(tr(
+            lang,
+            "Base volume must be finite and within 0.0..=2.0.",
+            "基礎音量必須為有限數值且介於 0.0..=2.0。",
+        ).to_string());
+    }
+    errors
 }
 
 #[cfg(test)]
@@ -2058,5 +2110,24 @@ mod batch20_tests {
                 assert_eq!(panel.zones[0].sound_def_id, "snd_test_id");
             }
         }
+    }
+
+    #[test]
+    fn test_soundscape_zone_validation_bilingual() {
+        let mut ui = AmbienceUi::default();
+        ui.add_sound_zone("Forest", "SND_FOREST", AudioCategory::Vegetation, SoundscapeShapeType::Circle);
+        assert!(validate_soundscape_zone(&ui.zones[0], AppLanguage::English).is_empty());
+
+        ui.zones[0].center_world_x = -10.0;
+        ui.zones[0].inner_radius = 500.0;
+        ui.zones[0].outer_radius = 100.0;
+        ui.zones[0].base_volume = f32::NAN;
+
+        let en = validate_soundscape_zone(&ui.zones[0], AppLanguage::English);
+        let zh = validate_soundscape_zone(&ui.zones[0], AppLanguage::TraditionalChinese);
+        assert_eq!(en.len(), 3);
+        assert_eq!(zh.len(), 3);
+        assert!(en[0].contains("0..=16384"));
+        assert!(zh[0].contains("區域中心座標"));
     }
 }

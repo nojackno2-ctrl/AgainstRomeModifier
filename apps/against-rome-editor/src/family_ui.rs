@@ -435,6 +435,7 @@ pub struct FamilyUi {
     /// Selected family root `(slot, uid)`.
     pub selected: Option<(usize, u32)>,
     pub only_effects: bool,
+    pub family_filter: String,
     pub filter: String,
     pub include_inactive_definitions: bool,
     pub copy_offset_x: f32,
@@ -460,6 +461,7 @@ impl Default for FamilyUi {
             tab: FamilyTab::Families,
             selected: None,
             only_effects: false,
+            family_filter: String::new(),
             filter: String::new(),
             include_inactive_definitions: false,
             copy_offset_x: WORLD_UNITS_PER_TILE,
@@ -485,6 +487,79 @@ fn tr(en: bool, english: &'static str, chinese: &'static str) -> &'static str {
     } else {
         chinese
     }
+}
+
+/// Returns whether a family root row matches the effects-only toggle and text filter
+/// (matching slot, UID, type_id, or team).
+pub fn matches_family_root(r: &RootRow, only_effects: bool, query: &str) -> bool {
+    if only_effects && r.light_count == 0 && r.particle_count == 0 {
+        return false;
+    }
+    let q = query.trim();
+    if q.is_empty() {
+        return true;
+    }
+    r.slot.to_string().contains(q)
+        || r.uid.to_string().contains(q)
+        || r.type_id.to_string().contains(q)
+        || r.team.to_string().contains(q)
+}
+
+/// Validates a native family copy request before mutating the store, returning the signed
+/// 16.16 displacement or a bilingual explanation of why the copy is refused.
+pub fn validate_copy_input(
+    store: Option<&ObjectStore>,
+    selected: Option<(usize, u32)>,
+    bound: &BTreeSet<usize>,
+    offset_x: f32,
+    offset_z: f32,
+    can_edit: bool,
+    english: bool,
+) -> Result<[i32; 3], String> {
+    if !can_edit {
+        return Err(tr(
+            english,
+            "Copying is only allowed on custom maps.",
+            "僅能在自製地圖上複製原生群組。",
+        )
+        .to_string());
+    }
+    let Some((slot, uid)) = selected else {
+        return Err(tr(
+            english,
+            "Select a family root above.",
+            "請在上方選擇群組根物件。",
+        )
+        .to_string());
+    };
+    if bound.contains(&slot) {
+        return Err(tr(
+            english,
+            "Selected root is bound to a scenario object and cannot be copied as a native family.",
+            "所選根物件已綁定劇本物件，無法作為原生群組複製。",
+        )
+        .to_string());
+    }
+    let delta = copy_delta(offset_x, 0.0, offset_z).map_err(|_| {
+        tr(
+            english,
+            "Offset X/Z must be finite numbers within 16.16 fixed-point range.",
+            "位移 X/Z 必須為有限數值且在 16.16 定點數範圍內。",
+        )
+        .to_string()
+    })?;
+    if let Some(s) = store {
+        let live = validate_native_source(s, slot, bound)?;
+        if live.uid != uid {
+            return Err(tr(
+                english,
+                "Source object UID changed or object was removed.",
+                "來源物件 UID 已變更或物件已被移除。",
+            )
+            .to_string());
+        }
+    }
+    Ok(delta)
 }
 
 impl FamilyUi {
@@ -751,8 +826,19 @@ impl FamilyUi {
             return;
         }
         let mut changed_filter = false;
+        let total_roots = self.roots.as_deref().map_or(0, |r| r.len());
+        let visible_roots = self
+            .roots
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .filter(|r| matches_family_root(r, self.only_effects, &self.family_filter))
+            .count();
         ui.horizontal(|ui| {
             changed_filter |= ui.checkbox(&mut self.only_effects, tr(en, "Only families with lights/particles", "只顯示含光源／粒子的群組")).changed();
+            ui.label(tr(en, "Filter", "篩選"));
+            ui.text_edit_singleline(&mut self.family_filter);
+            ui.small(format!("{visible_roots}/{total_roots}"));
         });
         if changed_filter {
             self.roots = None;
@@ -767,7 +853,7 @@ impl FamilyUi {
                 }
                 ui.end_row();
                 let roots = self.roots.as_deref().unwrap_or(&[]);
-                for r in roots.iter().filter(|r| !self.only_effects || r.light_count > 0 || r.particle_count > 0) {
+                for r in roots.iter().filter(|r| matches_family_root(r, self.only_effects, &self.family_filter)) {
                     let sel = self.selected == Some((r.slot, r.uid));
                     if ui.selectable_label(sel, "▶").clicked() {
                         pick = Some((r.slot, r.uid));
@@ -835,15 +921,26 @@ impl FamilyUi {
             .as_deref()
             .map(|s| (s.can_undo(), s.can_redo()))
             .unwrap_or((false, false));
+        let copy_validation = validate_copy_input(
+            ctx.store.as_deref(),
+            self.selected,
+            bound,
+            self.copy_offset_x,
+            self.copy_offset_z,
+            ctx.can_edit,
+            en,
+        );
+        if self.selected.is_some() {
+            if let Err(reason) = &copy_validation {
+                ui.colored_label(Color32::from_rgb(250, 180, 100), reason);
+            }
+        }
         ui.horizontal(|ui| {
-            let can_copy = ctx.can_edit && self.selected.is_some();
+            let can_copy = copy_validation.is_ok();
+            let disabled_reason = copy_validation.as_ref().err().map(String::as_str).unwrap_or("");
             do_copy = ui
                 .add_enabled(can_copy, egui::Button::new(tr(en, "Copy native family", "複製原生群組")))
-                .on_disabled_hover_text(tr(
-                    en,
-                    "Select a family root on a custom map.",
-                    "請在自製地圖上選擇群組根物件。",
-                ))
+                .on_disabled_hover_text(disabled_reason)
                 .clicked();
             do_undo = ui.add_enabled(ctx.can_edit && can_undo, egui::Button::new(tr(en, "Undo", "復原"))).clicked();
             do_redo = ui.add_enabled(ctx.can_edit && can_redo, egui::Button::new(tr(en, "Redo", "重做"))).clicked();
@@ -936,5 +1033,54 @@ mod definition_cache_tests {
         ui.load_definitions(None);
         assert!(ui.cached_definition_rows().is_empty());
         assert_eq!(ui.definition_rows_recompute_count, 5);
+    }
+
+    #[test]
+    fn matches_family_root_filters_by_effects_and_query() {
+        let row = RootRow {
+            slot: 12,
+            uid: 9045,
+            type_id: 301,
+            team: 2,
+            position: [0.0, 0.0, 0.0],
+            object_count: 3,
+            light_count: 1,
+            particle_count: 0,
+            lager_count: 0,
+        };
+        assert!(matches_family_root(&row, false, ""));
+        assert!(matches_family_root(&row, true, "  "));
+        assert!(matches_family_root(&row, true, "9045"));
+        assert!(matches_family_root(&row, true, "301"));
+        assert!(matches_family_root(&row, false, "12"));
+        assert!(!matches_family_root(&row, false, "999"));
+
+        let no_fx = RootRow { light_count: 0, particle_count: 0, ..row };
+        assert!(!matches_family_root(&no_fx, true, ""));
+        assert!(matches_family_root(&no_fx, false, "2"));
+    }
+
+    #[test]
+    fn validate_copy_input_rejects_invalid_states_bilingually_and_accepts_valid() {
+        let mut bound = BTreeSet::new();
+        bound.insert(7);
+
+        let err_ro = validate_copy_input(None, Some((1, 10)), &bound, 256.0, 256.0, false, false).unwrap_err();
+        assert!(err_ro.contains("自製地圖"));
+
+        let err_none = validate_copy_input(None, None, &bound, 256.0, 256.0, true, true).unwrap_err();
+        assert!(err_none.contains("Select a family root"));
+
+        let err_bound = validate_copy_input(None, Some((7, 10)), &bound, 256.0, 256.0, true, false).unwrap_err();
+        assert!(err_bound.contains("綁定劇本物件"));
+
+        let err_nan = validate_copy_input(None, Some((1, 10)), &bound, f32::NAN, 0.0, true, false).unwrap_err();
+        assert!(err_nan.contains("16.16"));
+
+        let err_range = validate_copy_input(None, Some((1, 10)), &bound, 1e12, 0.0, true, true).unwrap_err();
+        assert!(err_range.contains("16.16"));
+
+        let delta = validate_copy_input(None, Some((1, 10)), &bound, 256.0, -128.0, true, true).unwrap();
+        assert_eq!(delta, [256 * 65536, 0, -128 * 65536]);
     }
 }

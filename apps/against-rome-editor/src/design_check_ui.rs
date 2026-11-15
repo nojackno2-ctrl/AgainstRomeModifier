@@ -748,6 +748,92 @@ impl EditorApp {
         map_issues
     }
 
+    fn check_team_no_presence_issues(doc: &against_rome_scenario::ScenarioDocument) -> Vec<MapIssue> {
+        let present_teams: std::collections::BTreeSet<i32> =
+            doc.spawns.iter().map(|s| s.team).collect();
+        let mut reported_teams = std::collections::BTreeSet::new();
+        let mut map_issues = Vec::new();
+        for (idx, event) in doc.events.iter().enumerate() {
+            let name = if event.name.trim().is_empty() {
+                format!("Event #{}", idx + 1)
+            } else {
+                event.name.clone()
+            };
+            for action in &event.actions {
+                let mut teams_to_check = Vec::new();
+                if action.team >= 0 {
+                    teams_to_check.push(action.team);
+                }
+                if action.kind == 1 && action.other_team >= 0 {
+                    teams_to_check.push(action.other_team);
+                }
+                for team in teams_to_check {
+                    if !present_teams.contains(&team) && reported_teams.insert(team) {
+                        let mut issue = MapIssue::new(
+                            MapIssueSeverity::Warning,
+                            "scenario-team-no-presence",
+                            format!(
+                                "事件「{name}」（第 {} 項）參考了隊伍 {team}，但地圖上沒有任何該隊伍的出生點或配置物件。",
+                                idx + 1
+                            ),
+                            format!(
+                                "Event '{name}' (#{}) references team {team}, which has no spawns or placed objects on the map.",
+                                idx + 1
+                            ),
+                        );
+                        issue.event_index = idx as i32;
+                        map_issues.push(issue);
+                    }
+                }
+            }
+        }
+        map_issues
+    }
+
+    fn check_starting_buildings_too_close_issues(
+        spawns: &[against_rome_scenario::Spawn],
+    ) -> Vec<MapIssue> {
+        const MIN_STARTING_BUILDING_DISTANCE: f32 = 12.0;
+        let buildings: Vec<_> = spawns
+            .iter()
+            .filter(|s| {
+                s.x.is_finite()
+                    && s.z.is_finite()
+                    && !against_rome_maps::design_validator::MapDesignValidator::is_unit_alias(
+                        &s.alias,
+                    )
+            })
+            .collect();
+        let mut map_issues = Vec::new();
+        for (i, a) in buildings.iter().enumerate() {
+            for b in &buildings[i + 1..] {
+                if a.team == b.team {
+                    continue;
+                }
+                let dist = (a.x - b.x).hypot(a.z - b.z);
+                if dist < MIN_STARTING_BUILDING_DISTANCE {
+                    let mut issue = MapIssue::new(
+                        MapIssueSeverity::Warning,
+                        "map-starting-buildings-too-close",
+                        format!(
+                            "隊伍 {} 的起始建築「{}」與隊伍 {} 的「{}」距離過近（{:.1} < {:.0}）。",
+                            a.team, a.alias, b.team, b.alias, dist, MIN_STARTING_BUILDING_DISTANCE
+                        ),
+                        format!(
+                            "Team {} starting building '{}' is too close to team {} '{}' ({:.1} < {:.0}).",
+                            a.team, a.alias, b.team, b.alias, dist, MIN_STARTING_BUILDING_DISTANCE
+                        ),
+                    );
+                    issue.world_x = Some(a.x);
+                    issue.world_z = Some(a.z);
+                    issue.object_id = a.id;
+                    map_issues.push(issue);
+                }
+            }
+        }
+        map_issues
+    }
+
     fn check_inverted_rect_issues(events: &[against_rome_scenario::Event]) -> Vec<MapIssue> {
         let mut map_issues = Vec::new();
         for (idx, event) in events.iter().enumerate() {
@@ -1006,6 +1092,8 @@ impl EditorApp {
                     }
                     map_issues.extend(diplomacy_same_team_issues);
                 }
+                map_issues.extend(Self::check_team_no_presence_issues(&doc));
+                map_issues.extend(Self::check_starting_buildings_too_close_issues(&doc.spawns));
                 DesignCheckReport::Checked {
                     map_issues,
                     preflight_error,
@@ -3142,5 +3230,71 @@ mod tests {
         assert!(dip_issue.unwrap().is_locatable());
 
         let _ = std::fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_team_no_presence_warning_and_locatable() {
+        let temp_dir = std::env::temp_dir().join(format!("ar_team_no_presence_{}", Uuid::new_v4()));
+        let script_dir = temp_dir.join("SCRIPT");
+        std::fs::create_dir_all(&script_dir).unwrap();
+        std::fs::write(temp_dir.join(".arm_custom_map"), b"{}").unwrap();
+        std::fs::write(script_dir.join("ak_level.bci"), against_rome_scenario::BciImage::idle().serialize()).unwrap();
+        let mut app = EditorApp::default();
+        app.set_loaded_map(temp_dir.clone(), crate::TerrainSession::create_blank(5, 32)).unwrap();
+        app.scenario.load_session(&temp_dir).unwrap();
+        let event = against_rome_scenario::Event {
+            name: "GhostTeam".into(),
+            enabled: true,
+            actions: vec![against_rome_scenario::Action {
+                kind: 0,
+                team: 3,
+                text: "Ping".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        app.scenario.add_events(&[event]).unwrap();
+
+        let report = app.design_check_report();
+        let rows = report_rows(&report, &[], AppLanguage::English);
+        let issue = rows.iter().find(|r| r.code == "scenario-team-no-presence");
+        assert!(issue.is_some(), "Expected scenario-team-no-presence issue in {rows:?}");
+        let issue = issue.unwrap();
+        assert_eq!(issue.severity, MapIssueSeverity::Warning);
+        assert_eq!(issue.event_index, 0);
+        assert!(issue.is_locatable());
+        assert!(!issue.chinese.is_empty() && !issue.english.is_empty());
+
+        let _ = std::fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_starting_buildings_too_close_warning_and_locatable() {
+        let spawns = vec![
+            against_rome_scenario::Spawn {
+                id: Uuid::new_v4(),
+                alias: "Roman_TownCenter".into(),
+                team: 0,
+                x: 10.0,
+                z: 10.0,
+                ..Default::default()
+            },
+            against_rome_scenario::Spawn {
+                id: Uuid::new_v4(),
+                alias: "Barbarian_TownCenter".into(),
+                team: 1,
+                x: 15.0,
+                z: 10.0,
+                ..Default::default()
+            },
+        ];
+        let issues = EditorApp::check_starting_buildings_too_close_issues(&spawns);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].severity, MapIssueSeverity::Warning);
+        assert_eq!(issues[0].code, "map-starting-buildings-too-close");
+        assert_eq!(issues[0].world_x, Some(10.0));
+        assert_eq!(issues[0].world_z, Some(10.0));
+        assert_eq!(issues[0].object_id, spawns[0].id);
+        assert!(!issues[0].chinese.is_empty() && !issues[0].english.is_empty());
     }
 }

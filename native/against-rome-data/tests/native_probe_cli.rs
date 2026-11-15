@@ -54,13 +54,15 @@ fn explicit_dll_passes_actual_load_and_pixel_calls() {
         .expect("AR_NATIVE_PROBE_TEST_DLL is required; no fallback");
     assert!(Path::new(&dll).is_absolute());
     // Exercise UTF-16 argument handling and an explicitly selected, renamed DLL.
+    static NEXT_TEMP_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let dir = std::env::temp_dir().join(format!(
-        "Rust ABI probe 測試 {}-{}",
+        "Rust ABI probe 測試 {}-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_nanos()
+            .as_nanos(),
+        NEXT_TEMP_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     std::fs::create_dir_all(&dir).unwrap();
     let selected = dir.join("selected library.dll");

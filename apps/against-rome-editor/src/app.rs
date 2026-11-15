@@ -1203,6 +1203,40 @@ impl EditorApp {
         Ok(CandidateDiagnostics { map_issues, design })
     }
 
+    pub(crate) fn effective_map_settings(&self) -> MapSettings {
+        MapSettings {
+            height_step: self.height_step,
+            water_world: if self.ambience.is_dirty() {
+                self.ambience.profile.boden.waterlevel
+            } else {
+                self.water_surface * self.height_step
+            },
+        }
+    }
+
+    pub(crate) fn map_settings_warning(&self) -> Option<(bool, String)> {
+        let english = self.lang() == AppLanguage::English;
+        let settings = self.effective_map_settings();
+        if let Err(err) = settings.validate_bilingual(english) {
+            return Some((true, err));
+        }
+        if settings.is_water_above_max_height() {
+            let msg = if english {
+                format!(
+                    "Water level ({:.1}) exceeds max terrain height 255.0 (whole map submerged).",
+                    settings.water_surface()
+                )
+            } else {
+                format!(
+                    "水位高度 ({:.1}) 超過地形上限 255.0（全圖將被水淹沒）。",
+                    settings.water_surface()
+                )
+            };
+            return Some((false, msg));
+        }
+        None
+    }
+
     fn save_transaction(
         &mut self,
         confirm_design: impl FnOnce(&[against_rome_maps::design_validator::MapDesignIssue]) -> bool,
@@ -1229,6 +1263,9 @@ impl EditorApp {
         if path.as_os_str().is_empty() {
             return Err("Please specify target map directory path before saving".into());
         }
+        self.effective_map_settings()
+            .validate_bilingual(self.lang() == AppLanguage::English)
+            .map_err(|e| format!("boden.ini validation: {e}"))?;
         let (height, collision) = crate::storage::encode_terrain(session)?;
         let mut tx = against_rome_maps::MapSaveTransaction::new(&path).with_create_if_missing(true);
         tx.stage_file("boden.bmp", height.encode_bmp())?;
@@ -1618,6 +1655,11 @@ impl EditorApp {
         self.height_step = settings.height_step;
         self.water_surface = settings.water_surface();
         self.water_bed = settings.suggested_bed();
+        if !self.status_is_error && settings.is_water_above_max_height() {
+            if let Some((_, msg)) = self.map_settings_warning() {
+                self.status_message = msg;
+            }
+        }
 
         // Rebuild / reset derived panels in dependency order
         self.event_graph.reset_session();
@@ -1926,8 +1968,10 @@ impl EditorApp {
             self.perform_action(action, ctx);
             return;
         }
+        let mut save_and_continue = false;
         let mut discard = false;
         let mut cancel = false;
+        let can_save = self.post_commit_warning.is_none() && !self.current_map_is_original();
         egui::Window::new(tr(lang, "Unsaved changes", "未儲存的變更"))
             .collapsible(false)
             .resizable(false)
@@ -1939,6 +1983,9 @@ impl EditorApp {
                     ui.label(tr(lang, "Discard unsaved changes? Closing also discards pending DATA and scenario edits.", "要捨棄未儲存的變更嗎？關閉也會捨棄待儲存的 DATA 與劇本編輯。"));
                 }
                 ui.horizontal(|ui| {
+                    if can_save {
+                        save_and_continue = ui.button(tr(lang, "Save & Continue", "儲存並繼續")).clicked();
+                    }
                     discard = ui.button(if self.post_commit_warning.is_some() {
                         tr(lang, "Discard editor state", "捨棄編輯器狀態")
                     } else {
@@ -1947,7 +1994,13 @@ impl EditorApp {
                     cancel = ui.button(tr(lang, "Keep editing", "繼續編輯")).clicked();
                 });
             });
-        if discard {
+        if save_and_continue {
+            self.request_safe_save();
+            if !self.has_unsaved_changes() {
+                let action = self.pending_action.take().unwrap();
+                self.perform_action(action, ctx);
+            }
+        } else if discard {
             let action = self.pending_action.take().unwrap();
             self.discard_and_perform_action(action, ctx);
         } else if cancel {
@@ -2085,6 +2138,11 @@ impl EditorApp {
         let water_history = self.capture_water_control();
         let briefing_history = self.capture_briefing_control();
         self.ambience.show(ctx, map_path, water, self.current_map_is_original());
+        if self.ambience.is_dirty() {
+            if let Some((is_error, msg)) = self.map_settings_warning() {
+                self.set_status(msg, is_error);
+            }
+        }
         self.finish_control_edit(ctx, water_history);
         self.finish_control_edit(ctx, briefing_history);
         if let Some((wx, wz)) = self.ambience.take_focus_zone_request() {
@@ -9536,6 +9594,57 @@ angle=0.00
         let _ = std::fs::remove_dir_all(&dir_a);
         let _ = std::fs::remove_dir_all(&dir_b);
         let _ = std::fs::remove_dir_all(&retail_dir);
+    }
+
+    #[test]
+    fn map_settings_warning_and_save_blocking() {
+        let mut app = EditorApp::initial_state();
+        app.install_blank_map(65);
+        let dir = temp_map_dir("map_settings_block");
+        app.map_path_input = dir.display().to_string();
+        app.height_step = 0.0;
+        assert!(app.map_settings_warning().is_some_and(|(is_err, msg)| is_err && msg.contains("Heightmapstep")));
+        app.safe_save_current();
+        assert!(app.status_is_error, "{}", app.status_message);
+        assert!(app.status_message.contains("boden.ini validation"), "{}", app.status_message);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        app.height_step = 1.0;
+        app.water_surface = 300.0;
+        assert!(app.map_settings_warning().is_some_and(|(is_err, msg)| !is_err && msg.contains("255.0")));
+    }
+
+    #[test]
+    fn pending_action_save_and_continue_saves_and_closes() {
+        let dir = temp_map_dir("pending_save_continue");
+        let mut app = EditorApp::initial_state();
+        app.install_blank_map(65);
+        app.map_path_input = dir.display().to_string();
+        app.ambience.profile.boden.waterlevel = 61.0;
+        app.ambience.mark_dirty();
+        assert!(app.has_unsaved_changes());
+        app.pending_action = Some(PendingAction::Close);
+
+        // Simulate Save & Continue: request_safe_save clears dirty state and allows PendingAction::Close.
+        app.request_safe_save();
+        // 空白地圖有設計警告：先保留未儲存變更與待執行動作，確認警告後才真正儲存。
+        if let Some(pending) = app.pending_save_warnings.take() {
+            assert!(app.has_unsaved_changes());
+            assert!(app.pending_action.is_some());
+            app.confirm_safe_save(Some(pending));
+        }
+        assert!(
+            !app.has_unsaved_changes(),
+            "status={} pending={:?}",
+            app.status_message,
+            app.pending_save_warnings.as_ref().map(|p| p.1.len())
+        );
+        let ctx = egui::Context::default();
+        app.handle_pending_action(&ctx);
+        assert!(app.pending_action.is_none());
+        assert!(app.close_allowed);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
