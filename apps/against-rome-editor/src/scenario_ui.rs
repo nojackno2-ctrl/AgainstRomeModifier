@@ -710,7 +710,7 @@ impl ScenarioUi {
         Ok(())
     }
     /// 驗證並整批取代事件；所有動作共用一步復原，失敗時保留原狀。
-    pub(crate) fn replace_events(&mut self, items: Vec<Event>) -> Result<()> {
+    pub fn replace_events(&mut self, items: Vec<Event>) -> Result<()> {
         if !self.is_loaded() {
             return Err("劇本尚未載入。".into());
         }
@@ -1546,7 +1546,7 @@ impl ScenarioUi {
         Ok(())
     }
     /// 每次新增僅呼叫一次 add_events，重複與失敗不建立復原步驟。
-    pub(crate) fn add_objective(&mut self, seconds: Option<i32>, target: Option<uuid::Uuid>, team: i32) -> Result<bool> {
+    pub fn add_objective(&mut self, seconds: Option<i32>, target: Option<uuid::Uuid>, team: i32) -> Result<bool> {
         let event = self.objective_event(seconds, target, team)?;
         if self.has_objective(&event) { return Ok(false); }
         self.check_objective(&event)?;
@@ -1560,7 +1560,7 @@ impl ScenarioUi {
         Ok(true)
     }
     /// 新增「對指定隊伍設為敵對」的遭遇戰預設事件（若已存在同隊敵對外交則回傳 Ok(false)）。
-    pub(crate) fn add_skirmish_hostile_preset(&mut self, team: i32) -> Result<bool> {
+    pub fn add_skirmish_hostile_preset(&mut self, team: i32) -> Result<bool> {
         if !(1..=7).contains(&team) {
             return Err("隊伍需為 1–7 / Team must be 1–7".into());
         }

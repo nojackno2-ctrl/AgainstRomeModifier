@@ -1,3 +1,11 @@
+## 2026-11-15 Claude（派工）＋ Agy：可遊玩劇情地圖〈The Last Granary〉已製作並安裝到 ENDL_005；視窗化包裝診斷
+- 使用者要求「真的做出一個可以玩的劇情地圖」並指示都交給子代理。Agy 以編輯器公開 API 寫出 `apps/against-rome-editor/tests/story_map_builder.rs`（`#[ignore]`，`AR_STORY_MAP_DIR`，拒絕含 `program files` 的路徑），在 `%TEMP%\arm_story_20261115\Against Rome`（SYSTEM 與 ENDL_005 副本）建置並 Safe Save。為此把 `EditorApp::design_check`、`effective_map_settings`、`ScenarioUi::replace_events`／`add_objective`／`add_skirmish_hostile_preset` 改為 `pub`。
+- 劇本（7 事件，取代 ENDL_005 原有 6 個測試事件）：0:00 簡報＋隊伍 0/1 敵對；1:00／3:00／5:00 三波匈人（`HUN_KAVINF00` 5／6／8、`HUN_KAVSCH00` 0／3／5）自 `(1280,1280)` 進攻主屋 `(10624,10112)`；`GER_INF01` 進入 `(7680,7680)..=(8192,8192)` 的偵察提示；8:00 勝利；主屋 `GER_HAU00` 被毀則失敗。事件表與安裝／還原步驟見 `docs/story-map-the-last-granary.md`。
+- Claude 親自核對：`arm_scenario.json` 7 事件；與原檔相比只有 `arm_scenario.json`、`SCRIPT\ak_level.bci`（28,804→141,666 位元組）變更與新增 `arm_start_camera.json`；`against-rome-editor.exe --game <副本> --map ENDL_005 --validate-map --lang zh` 0 錯誤、1 警告（`scenario-team-no-presence`：隊伍 1 只由事件生成，屬預期）；`cargo test --workspace --locked --no-fail-fast` **289 組、2875 passed、0 failed、25 ignored**。
+- **安裝狀態**：成品（不含 `.arm_backup.*`，56 檔）已覆蓋到安裝版 `MAPS\ENDL_005`，逐檔 SHA-256 相符；成品另存 `re_workspace\story-map-the-last-granary\ENDL_005`；原 `ENDL_005` 備份在 `%TEMP%\arm-ENDL_005-backup-20261115`（55 檔）。**ENDL_005 目前是劇情地圖、尚未還原**（使用者要玩）。還原需覆蓋 55 檔並刪除 `arm_start_camera.json`。
+- **未驗證**：遊戲內載入、訊息顯示、敵軍生成與尋路、勝負結算、難度平衡——全部尚未在執行中的遊戲觀察到。
+- 視窗化包裝診斷（Agy，已獲使用者同意安裝；Claude 事後核對還原）：專案內建 `ThirdParty\dgVoodoo2` 以 `FullScreenMode=false` 裝入遊戲根目錄後，`Against_Rome.exe` 於 6～14 秒內自行結束、無視窗（只留 DDraw：6 秒、ExitCode -1；只留 D3D8：14 秒、ExitCode 0，兩種解析度設定皆同）。包裝檔已全部移除，根目錄檔案清單與測試前一致。代理仍無法擷取遊戲畫面。
+
 ## 2026-11-15 Claude：遊戲內驗收嘗試（已獲使用者授權）— 工具擷取不到遊戲畫面，未完成；ENDL_005 已還原
 - 使用者改為授權控制「Against Rome」視窗。流程：scratch 遊戲根目錄副本內以 `ingame_acceptance_save` 走編輯器 Safe Save（`Saved safely in one transaction (7 files, 0 cache deletions)`）→ 安裝版 `MAPS\ENDL_005` 備份到 `%TEMP%\arm-ENDL_005-backup-20261115`（55 檔 SHA-256 基準）→ 把存檔結果覆蓋進 `MAPS\ENDL_005` → 啟動 `Against_Rome.exe`。
 - 結果：遊戲程序啟動且 `Responding=True`、桌面解析度切到 1024×768，但 computer-use 截圖只擷取到桌面，**看不到遊戲的獨占全螢幕畫面**（等待約 2 分鐘、重新叫到前景皆同）。看不到畫面便未做任何選單操作；**地圖是否能在遊戲中載入、開局與事件行為仍未驗證**。（2026-10-27 的紀錄顯示 Codex 的 CUA 當時可擷取到主選單，差異在擷取工具。）

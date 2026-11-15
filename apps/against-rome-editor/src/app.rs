@@ -273,7 +273,7 @@ pub struct EditorApp {
     floor_atlas_gl_capability: FloorAtlasGlCapability,
     pub tech_doc: TechDocUi,
     pub minimap: MinimapUi,
-    pub(crate) design_check: crate::design_check_ui::DesignCheckUi,
+    pub design_check: crate::design_check_ui::DesignCheckUi,
     pub(crate) balance_summary: crate::balance_summary_ui::BalanceSummaryUi,
     pub ready_to_test: crate::ready_to_test_ui::ReadyToTestUi,
     pub editor_settings: crate::editor_settings::EditorSettings,
@@ -1203,7 +1203,7 @@ impl EditorApp {
         Ok(CandidateDiagnostics { map_issues, design })
     }
 
-    pub(crate) fn effective_map_settings(&self) -> MapSettings {
+    pub fn effective_map_settings(&self) -> MapSettings {
         MapSettings {
             height_step: self.height_step,
             water_world: if self.ambience.is_dirty() {
