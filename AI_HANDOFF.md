@@ -1,3 +1,9 @@
+## 2026-11-15 Claude：編輯器 Safe Save 實檔往返驗收工具與結果；遊戲內驗收被使用者拒絕
+- 新增 `apps/against-rome-editor/tests/ingame_acceptance_save.rs`（`#[ignore]`）：以 `AR_ACCEPT_MAP_DIR` 指向「遊戲根目錄副本內的 `MAPS\<自製地圖>`」，走 `EditorApp::set_loaded_map` → `safe_save_current` → 重新載入。拒絕路徑含 `program files` 的目標。
+- 實測（scratch 內複製 `SYSTEM` 與 `MAPS\ENDL_005` 的副本，測完已刪除）：`Saved safely in one transaction (7 files, 0 cache deletions)`，重新載入成功；原有 55 個檔案 SHA-256 全部不變，只新增 3 個 `.arm_backup.*` 與 `soundscape.sndz`。若工作副本不在遊戲根目錄結構內，Safe Save 會以 `alias-catalog-missing` 正確拒絕。
+- **遊戲內驗收未執行**：請求控制「Against Rome」視窗時使用者拒絕（`user_denied`）。未修改已安裝遊戲的任何檔案（`ENDL_005` 未被覆寫）。此項需由使用者親自進行：把編輯器存過的自製地圖放入 `MAPS\ENDL_005`（先備份），進遊戲開局並確認事件。
+- 已知待辦：Codex CLI Windows 沙箱 `setup refresh had errors`；Visual Studio 2026 缺 `link.exe`；新介面的桌面視窗操作未驗證。
+
 ## 2026-11-15 Claude＋Agy：補回 3D 視圖提示、小地圖提示與測試競態（第三批）
 - `viewport_3d.rs`：抽出 `hud_controls_hint`，新增 `terrain_pick_mode` 的雙語操作提示；HUD 狀態列附加游標所在地塊座標。未動點擊／拖曳處理。新增 `terrain_pick_mode_hud_controls_hint_is_bilingual`。
 - `minimap_ui.rs`：地圖影像上以 tooltip 顯示游標所在圖塊座標，標記圖例放進既有核取方塊的 hover 說明；未改視窗尺寸、影像矩形與點擊映射（前一次嘗試因此退化而還原）。新增 `format_hovered_tile_readout_supports_both_languages`。
