@@ -212,9 +212,13 @@ pub fn load_map(dir: &Path) -> Result<TerrainSession, String> {
     }
     let vertex_size = raw.width;
     let path = dir.join("collision.bmp");
-    let (size, collision, col) = if path.exists() {
-        let bytes = fs::read(path).map_err(|e| e.to_string())?;
-        let col = BmpImage::parse(&bytes).map_err(|e| e.to_string())?;
+    let collision_bytes = match fs::read(&path) {
+        Ok(bytes) => Some(bytes),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+        Err(e) => return Err(format!("{}: {e}", path.display())),
+    };
+    let (size, collision, col) = if let Some(bytes) = &collision_bytes {
+        let col = BmpImage::parse(bytes).map_err(|e| e.to_string())?;
         if col.width != col.height {
             return Err("collision.bmp must be square".into());
         }
@@ -223,7 +227,7 @@ pub fn load_map(dir: &Path) -> Result<TerrainSession, String> {
         let size = vertex_size.checked_sub(1).ok_or("height size is zero")?;
         (size, vec![0; size * size], None)
     };
-    TerrainSession::try_new(
+    let mut session = TerrainSession::try_new(
         vertex_size,
         raw.extract_green_channel(),
         size,
@@ -231,7 +235,35 @@ pub fn load_map(dir: &Path) -> Result<TerrainSession, String> {
         Some(raw),
         col,
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    session.source_files = Some(crate::terrain::TerrainSourceFiles {
+        path: dir.to_path_buf(),
+        height: Some(bytes),
+        collision: collision_bytes,
+    });
+    Ok(session)
+}
+
+pub(crate) fn require_unchanged_source(
+    path: &Path,
+    expected: Option<&[u8]>,
+) -> Result<(), String> {
+    let current = read_optional_source(path)?;
+    if current.as_deref() != expected {
+        return Err(format!(
+            "地圖來源已由外部變更，請重新載入 / Map source changed externally: {}",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn read_optional_source(path: &Path) -> Result<Option<Vec<u8>>, String> {
+    Ok(match fs::read(path) {
+        Ok(bytes) => Some(bytes),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+        Err(e) => return Err(format!("{}: {e}", path.display())),
+    })
 }
 struct Lock {
     file: Option<fs::File>,

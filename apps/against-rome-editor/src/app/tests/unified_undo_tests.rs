@@ -76,6 +76,7 @@ fn blank_terrain_toolbar_restores_heights_materials_and_auxiliary_together() {
     app.textures.load_session(&map).unwrap();
     app.emboss = Some(EmbossBaseline {
         raw: crate::bmp::BmpImage::new_solid(5, 5, 100, 100, 100),
+        source_bytes: crate::bmp::BmpImage::new_solid(5, 5, 100, 100, 100).encode_bmp(),
         session: against_rome_editor::emboss::EmbossSession::new(5, vec![32; 25], Some(vec![100; 25])).unwrap(),
     });
     let heights = app.session.as_ref().unwrap().heights().to_vec();

@@ -590,7 +590,7 @@ mod tests {
         let raw = crate::bmp::BmpImage::parse(&std::fs::read(map.join("boden.bmp")).unwrap()).unwrap();
         let mut session = against_rome_editor::emboss::EmbossSession::new(5, vec![32; 25], Some(vec![128; 25])).unwrap();
         session.set_flat_relight_base(Some(80));
-        a.emboss = Some(EmbossBaseline { raw, session });
+        a.emboss = Some(EmbossBaseline { source_bytes: raw.encode_bmp(), raw, session });
         assert!(a.has_unsaved_changes());
         let p = a.recovery_pending();
         assert!(p["omitted_panels"].as_array().unwrap().iter().any(|v| v.as_str().unwrap().contains("Emboss")));

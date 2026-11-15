@@ -13,6 +13,7 @@ pub struct TerrainSession {
     pub collision_size: usize,
     pub raw_boden_bmp: Option<BmpImage>,
     pub raw_collision_bmp: Option<BmpImage>,
+    pub(crate) source_files: Option<TerrainSourceFiles>,
     core: CoreSession,
     history: against_rome_textures::history::HistoryTokens,
     recovery_history: Option<against_rome_textures::history::HistoryTokens>,
@@ -21,6 +22,14 @@ pub struct TerrainSession {
     recovery_applied: bool,
     original_heights: Vec<u8>,
     original_collision: Vec<u8>,
+}
+
+/// 解析時讀取的精確位元組；`None` 表示當時碰撞檔不存在。
+#[derive(Clone)]
+pub(crate) struct TerrainSourceFiles {
+    pub path: std::path::PathBuf,
+    pub height: Option<Vec<u8>>,
+    pub collision: Option<Vec<u8>>,
 }
 
 impl TerrainSession {
@@ -69,6 +78,7 @@ impl TerrainSession {
             collision_size,
             raw_boden_bmp,
             raw_collision_bmp,
+            source_files: None,
             core,
             history: Default::default(),
             recovery_history: None,

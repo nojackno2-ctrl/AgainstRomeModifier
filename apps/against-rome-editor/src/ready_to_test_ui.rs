@@ -95,6 +95,13 @@ pub struct ReadyToTestUi {
     checked_at: Option<std::time::Instant>,
 }
 
+impl ReadyToTestUi {
+    pub(crate) fn reset_acceptance(&mut self) {
+        self.acceptance_checklist.reset();
+        self.cached_preview.clear();
+    }
+}
+
 const READINESS_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 impl EditorApp {
     /// 評估目前地圖的實機測試就緒狀態（只讀取記憶體候選資料，不寫入檔案）。
@@ -487,6 +494,9 @@ impl EditorApp {
                 let checklist = self.ready_to_test.acceptance_checklist;
                 let mark = |checked: bool| if checked { "x" } else { " " };
                 out.push_str("## 實機驗收勾選\n");
+                if readiness.unsaved_changes {
+                    out.push_str("> 目前有未儲存變更，下列舊驗收紀錄不適用於目前的編輯內容。\n");
+                }
                 out.push_str(&format!("- [{}] 已安全儲存地圖 (Save)\n", mark(checklist.saved)));
                 out.push_str(&format!("- [{}] 已重新載入驗證 (Reload)\n", mark(checklist.reloaded)));
                 out.push_str(&format!("- [{}] 已進入對戰測試 (Start match)\n", mark(checklist.match_started)));
@@ -594,6 +604,9 @@ impl EditorApp {
                 let checklist = self.ready_to_test.acceptance_checklist;
                 let mark = |checked: bool| if checked { "x" } else { " " };
                 out.push_str("## In-Game Acceptance Status\n");
+                if readiness.unsaved_changes {
+                    out.push_str("> Unsaved changes exist; the previous acceptance results below do not apply to the current edits.\n");
+                }
                 out.push_str(&format!("- [{}] Map saved safely (Save)\n", mark(checklist.saved)));
                 out.push_str(&format!("- [{}] Map reloaded cleanly (Reload)\n", mark(checklist.reloaded)));
                 out.push_str(&format!("- [{}] Match started in game (Start match)\n", mark(checklist.match_started)));
@@ -779,8 +792,7 @@ impl EditorApp {
                             "遊戲內驗收勾選",
                         )).strong());
                         if ui.small_button(tr(lang, "Reset", "重設")).clicked() {
-                            self.ready_to_test.acceptance_checklist.reset();
-                            self.ready_to_test.cached_preview.clear();
+                            self.ready_to_test.reset_acceptance();
                         }
                     });
                     ui.horizontal_wrapped(|ui| {
@@ -794,6 +806,11 @@ impl EditorApp {
                             self.ready_to_test.cached_preview.clear();
                         }
                     });
+                    if report.unsaved_changes {
+                        ui.label(tr(lang,
+                            "Unsaved changes: previous acceptance results do not apply to the current edits.",
+                            "目前有未儲存變更，舊驗收紀錄不適用於目前的編輯內容。"));
+                    }
                 });
                 // 1. 總體就緒評級狀態橫幅
                 ui.group(|ui| {
@@ -1398,6 +1415,12 @@ mod tests {
         assert!(en.contains("[ ] Match started in game"));
         assert!(en.contains("[x] Scenario events fired"));
         assert!(!en.contains("secret_user"));
+
+        app.ambience.mark_dirty();
+        let zh_dirty = app.generate_test_instructions(AppLanguage::TraditionalChinese);
+        assert!(zh_dirty.contains("舊驗收紀錄不適用於目前的編輯內容"));
+        let en_dirty = app.generate_test_instructions(AppLanguage::English);
+        assert!(en_dirty.contains("previous acceptance results below do not apply"));
 
         app.ready_to_test.acceptance_checklist.reset();
         let reset_en = app.generate_test_instructions(AppLanguage::English);

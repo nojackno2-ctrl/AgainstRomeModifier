@@ -86,6 +86,7 @@ pub enum PendingAction {
 #[derive(Clone)]
 struct EmbossBaseline {
     raw: crate::bmp::BmpImage,
+    source_bytes: Vec<u8>,
     session: against_rome_editor::emboss::EmbossSession,
 }
 
@@ -1267,9 +1268,25 @@ impl EditorApp {
             .validate_bilingual(self.lang() == AppLanguage::English)
             .map_err(|e| format!("boden.ini validation: {e}"))?;
         let (height, collision) = crate::storage::encode_terrain(session)?;
+        let height_bytes = height.encode_bmp();
+        let collision_bytes = collision.encode_bmp();
         let mut tx = against_rome_maps::MapSaveTransaction::new(&path).with_create_if_missing(true);
-        tx.stage_file("boden.bmp", height.encode_bmp())?;
-        tx.stage_file("collision.bmp", collision.encode_bmp())?;
+        tx.stage_file("boden.bmp", height_bytes.clone())?;
+        tx.stage_file("collision.bmp", collision_bytes.clone())?;
+        if let Some(source) = &session.source_files {
+            let source_path = std::fs::canonicalize(&source.path)
+                .map_err(|e| format!("地形來源無法解析 / Cannot resolve terrain source: {e}"))?;
+            let target_path = std::fs::canonicalize(&path)
+                .map_err(|e| format!("儲存目標無法解析 / Cannot resolve save target: {e}"))?;
+            if source_path != target_path {
+                return Err("地形來源與儲存目標不同 / Terrain source and save target differ".into());
+            }
+            let source = source.clone();
+            tx.add_preflight_validator(move |dir, _| {
+                crate::storage::require_unchanged_source(&dir.join("boden.bmp"), source.height.as_deref())?;
+                crate::storage::require_unchanged_source(&dir.join("collision.bmp"), source.collision.as_deref())
+            });
+        }
         // C# parity: emboss.bmp is rebuilt only when heights changed and an original layer exists.
         let staged_emboss = match &self.emboss {
             Some(emboss) if emboss.session.is_dirty(session.heights()) => emboss
@@ -1285,6 +1302,10 @@ impl EditorApp {
         };
         if let Some((image, _)) = &staged_emboss {
             tx.stage_file("emboss.bmp", image.encode_bmp())?;
+            let source = self.emboss.as_ref().expect("staged emboss has a baseline").source_bytes.clone();
+            tx.add_preflight_validator(move |dir, _| {
+                crate::storage::require_unchanged_source(&dir.join("emboss.bmp"), Some(&source))
+            });
         }
         // C# `_resetAuxiliaryLayers`: Flat Terrain resets vertex colours and the smoothing mask.
         let aux_reset = self.reset_auxiliary_layers;
@@ -1405,6 +1426,25 @@ impl EditorApp {
             });
         crate::storage::preflight_transaction_tree_opt(&path, staged_marker)?;
         let entries = tx.staged_entries().to_vec();
+        // 僅比較實際地圖項目，排除稍後建立的備份；無法讀取時保守視為已變更。
+        let map_changed = entries.iter().any(|entry| {
+            let target = path.join(entry.relative_path());
+            match entry.action() {
+                against_rome_maps::StagedAction::WriteBytes(bytes) => {
+                    std::fs::read(&target).map_or(true, |old| old != *bytes)
+                }
+                against_rome_maps::StagedAction::CopyFromPath(source) => {
+                    match (std::fs::read(&target), std::fs::read(source)) {
+                        (Ok(old), Ok(new)) => old != new,
+                        _ => true,
+                    }
+                }
+                against_rome_maps::StagedAction::Delete => match std::fs::metadata(&target) {
+                    Ok(_) => true,
+                    Err(error) => error.kind() != std::io::ErrorKind::NotFound,
+                },
+            }
+        });
         for entry in &entries {
             let target = path.join(entry.relative_path());
             crate::storage::preflight_transaction_target_opt(&target, staged_marker)?;
@@ -1440,10 +1480,19 @@ impl EditorApp {
         // 包含未改寫的 DATA、SCRIPT、SDL 等 baseline dependencies；擷取失敗就不提交。
         let mut sync = PostCommitSync::prepare(self, &path, &tx, panels)?;
         let report = commit(&mut tx)?;
+        if map_changed {
+            self.ready_to_test.reset_acceptance();
+        }
         let session = self.session.as_mut().expect("session validated above");
         session.raw_boden_bmp = Some(height);
         session.raw_collision_bmp = Some(collision);
+        session.source_files = Some(crate::terrain::TerrainSourceFiles {
+            path: path.clone(),
+            height: Some(height_bytes),
+            collision: Some(collision_bytes),
+        });
         if let (Some(emboss), Some((image, _))) = (self.emboss.as_mut(), staged_emboss) {
+            emboss.source_bytes = image.encode_bmp();
             emboss.raw = image;
         }
         session.commit_baseline();
@@ -1600,13 +1649,20 @@ impl EditorApp {
             Some(raw.extract_green_channel()),
         )
         .map_err(|e| format!("{}: {e}", file.display()))?;
-        Ok(Some(EmbossBaseline { raw, session }))
+        Ok(Some(EmbossBaseline { raw, source_bytes: bytes, session }))
     }
 
     // Only called after a clean-state check or the UI's explicit discard confirmation.
-    fn install_loaded_map(&mut self, path: PathBuf, session: TerrainSession) -> Result<(), String> {
+    fn install_loaded_map(&mut self, path: PathBuf, mut session: TerrainSession) -> Result<(), String> {
         Self::prevalidate_map_load(&path)?;
         let emboss = Self::load_emboss_baseline(&path, &session)?;
+        if session.source_files.is_none() {
+            session.source_files = Some(crate::terrain::TerrainSourceFiles {
+                path: path.clone(),
+                height: crate::storage::read_optional_source(&path.join("boden.bmp"))?,
+                collision: crate::storage::read_optional_source(&path.join("collision.bmp"))?,
+            });
+        }
 
         // Keep map-bound documents unloaded until their panels explicitly load them.
         // Retail DATA pools and editor ObjectStore documents are different formats; map
@@ -1616,20 +1672,8 @@ impl EditorApp {
         let mut loaded_camera = CampaignUi::default();
         loaded_camera.load_map_camera(&path)?;
         self.ambience.load_from_map(&path)?;
-        // 驗收勾選屬於地圖，不能帶到另一張地圖的報告；同圖重新載入則保留。
-        let same_map = self.loaded_map_path.as_ref().is_some_and(|previous| {
-            previous == &path
-                || match (
-                    std::fs::canonicalize(previous),
-                    std::fs::canonicalize(&path),
-                ) {
-                    (Ok(previous), Ok(next)) => previous == next,
-                    _ => false,
-                }
-        });
-        if !same_map {
-            self.ready_to_test.acceptance_checklist.reset();
-        }
+        // 同圖亦可能遭外部修改；成功重載後不沿用舊驗收。
+        self.ready_to_test.reset_acceptance();
         self.floor_atlas_source = None;
         self.viewport_3d.set_floor_atlas(None);
         self.reset_journal_epoch();
@@ -1702,6 +1746,7 @@ impl EditorApp {
     }
 
     fn install_blank_map(&mut self, size: usize) {
+        self.ready_to_test.reset_acceptance();
         self.floor_atlas_source = None;
         self.viewport_3d.set_floor_atlas(None);
         self.reset_journal_epoch();
@@ -6379,11 +6424,11 @@ mod tests {
         app.ready_to_test.acceptance_checklist.saved = true;
         app.ready_to_test.acceptance_checklist.events_fired = true;
 
-        // 同一地圖的重新載入是驗收流程的一部分，不應抹去勾選。
+        // 同圖可能已在外部修改，成功重載時必須清除舊驗收。
         app.set_loaded_map(a.clone(), TerrainSession::create_blank(257, 32))
             .unwrap();
-        assert!(app.ready_to_test.acceptance_checklist.saved);
-        assert!(app.ready_to_test.acceptance_checklist.events_fired);
+        assert_eq!(app.ready_to_test.acceptance_checklist, Default::default());
+        app.ready_to_test.acceptance_checklist.saved = true;
 
         // 載入失敗不得改變原地圖的驗收紀錄。
         std::fs::write(b.join("daynight.bmp"), "invalid").unwrap();
@@ -6394,6 +6439,9 @@ mod tests {
         std::fs::remove_file(b.join("daynight.bmp")).unwrap();
         app.set_loaded_map(b, TerrainSession::create_blank(257, 32))
             .unwrap();
+        assert_eq!(app.ready_to_test.acceptance_checklist, Default::default());
+        app.ready_to_test.acceptance_checklist.events_fired = true;
+        app.install_blank_map(33);
         assert_eq!(app.ready_to_test.acceptance_checklist, Default::default());
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -8737,6 +8785,104 @@ HUN_KAVINF00=FigHunKav00
             after: 120,
         }]);
         terrain.commit_stroke();
+    }
+
+    #[test]
+    fn acceptance_checklist_is_cleared_only_after_changed_save_commits() {
+        use against_rome_maps::TransactionFailurePoint;
+        let (dir, _) = emboss_fixture_dir("acceptance_save", true);
+        let mut app = emboss_app(&dir);
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        app.ready_to_test.acceptance_checklist.events_fired = true;
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(app.ready_to_test.acceptance_checklist.events_fired);
+
+        edit_center_height(&mut app);
+        app.safe_save_current_using(|tx| {
+            let mut injected =
+                std::mem::replace(tx, against_rome_maps::MapSaveTransaction::new("unused"))
+                    .with_injected_failure(TransactionFailurePoint::BeforeFinalCommit, "注入失敗");
+            injected.commit().map_err(|e| e.to_string())
+        });
+        assert!(app.status_is_error);
+        assert!(app.ready_to_test.acceptance_checklist.events_fired);
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert_eq!(app.ready_to_test.acceptance_checklist, Default::default());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn safe_save_rejects_externally_changed_terrain_source() {
+        let (dir, _) = emboss_fixture_dir("external_terrain", true);
+        let mut app = emboss_app(&dir);
+        let path = dir.join("boden.bmp");
+        let mut changed = std::fs::read(&path).unwrap();
+        changed.push(42);
+        std::fs::write(&path, &changed).unwrap();
+        let before = save_file_snapshot(&dir);
+        app.safe_save_current();
+        assert!(app.status_is_error, "{}", app.status_message);
+        assert_eq!(save_file_snapshot(&dir), before);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn safe_save_guards_missing_deleted_and_relit_sources_and_retains_draft() {
+        for case in ["deleted_height", "created_collision", "changed_emboss"] {
+            let (dir, _) = emboss_fixture_dir(case, true);
+            let mut app = emboss_app(&dir);
+            edit_center_height(&mut app);
+            match case {
+                "deleted_height" => std::fs::remove_file(dir.join("boden.bmp")).unwrap(),
+                "created_collision" => std::fs::write(dir.join("collision.bmp"), b"external").unwrap(),
+                _ => std::fs::write(dir.join("emboss.bmp"), b"external").unwrap(),
+            }
+            let before = save_file_snapshot(&dir);
+            app.safe_save_current();
+            assert!(app.status_is_error, "{case}: {}", app.status_message);
+            assert!(app.session.as_ref().unwrap().is_dirty(), "{case}");
+            assert_eq!(save_file_snapshot(&dir), before, "{case}");
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn safe_save_updates_source_after_first_write_and_after_edits() {
+        let (dir, _) = emboss_fixture_dir("terrain_source_update", true);
+        let mut app = emboss_app(&dir);
+        assert!(!dir.join("collision.bmp").exists());
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        assert!(dir.join("collision.bmp").is_file());
+        edit_center_height(&mut app);
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn failed_terrain_commit_keeps_source_and_draft_for_retry() {
+        use against_rome_maps::TransactionFailurePoint;
+        let (dir, _) = emboss_fixture_dir("terrain_source_retry", true);
+        let mut app = emboss_app(&dir);
+        edit_center_height(&mut app);
+        let before = save_file_snapshot(&dir);
+        app.safe_save_current_using(|tx| {
+            let mut injected = std::mem::replace(tx, against_rome_maps::MapSaveTransaction::new("unused"))
+                .with_injected_failure(TransactionFailurePoint::BeforeFinalCommit, "注入失敗");
+            injected.commit().map_err(|e| e.to_string())
+        });
+        assert!(app.status_is_error);
+        assert!(app.session.as_ref().unwrap().is_dirty());
+        assert_eq!(save_file_snapshot(&dir), before);
+        app.safe_save_current();
+        assert!(!app.status_is_error, "{}", app.status_message);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

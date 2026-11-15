@@ -1,3 +1,10 @@
+## 2026-11-15 Codex：存檔與劇本交錯編輯衝突稽核
+- 事件節點圖開啟後清單變更，套用舊圖可能覆蓋後續事件；已加入來源快照及衝突拒絕，`cargo test -p against-rome-editor-app --locked --lib scenario_ui::tests -- --quiet` 74 passed。新增測試初次因遊戲文字不支援中文被 Windows-1251 驗證拒絕，改用英文後通過。
+- 地形載入後遭外部修改，Safe Save 會以舊記憶體內容覆寫；子代理以附加 `boden.bmp` 尾端位元組重現，原流程仍回報成功。已加入來源位元組及提交前驗證，`safe_save_` 定向 52 passed、提交失敗後重試 1 passed；驗證後至實際替換期間仍有外部寫入競態。
+- 驗收勾選在建立空白地圖、同圖外部修改後重載或改圖後存檔可能過期；已改為成功載入／建立空白時重設，成功儲存實際變更後重設，失敗或無變更保留，未儲存時明示舊驗收不適用。`cargo test -p against-rome-editor-app --locked --lib acceptance_checklist -- --nocapture` 3 passed；尚不會偵測未重載的外部修改。
+- 整合驗證：獨立 `%TEMP%\arm-codex-20261115` target 與 `rust-lld`，依序 `cargo check --workspace --locked`、`cargo test --workspace --locked --no-fail-fast -- --quiet`、`cargo build --workspace --locked` 均 exit 0；編輯器 lib 1049 passed、6 ignored；新執行檔 `--smoke-test` 完成三次 UI 更新，`git diff --check` 通過。既有測試未使用變數／匯入警告仍在；未做桌面操作或遊戲內驗收。
+- `quser` 仍為 `Disc`，無法進行桌面及遊戲內驗收；未更動安裝版遊戲。
+
 ## 2026-11-15 Codex：接續地圖編輯器與備份文件安全
 - `quser` 再次顯示工作階段 `Disc`，桌面與遊戲內驗收仍未完成。唯讀稽核發現故事地圖文件的備份與還原路徑不一致，且範例先刪除目標；已改為明確辨識備份、拒絕覆寫既有備份並移除整目錄刪除指令。尚未執行安裝或還原，未更動遊戲檔案。
 - 子代理修正驗收勾選跨地圖沿用：同圖重載與載入失敗保留，成功切換地圖清除；定向測試 1 passed。設計檢查依劇本編譯器語意只檢查啟用事件的外交隊伍，並計入啟用事件的生成動作；定向 `team_` 測試 18 passed。初次測試因新測試誤用 `MapIssue` 方法編譯失敗，修正後重跑通過。

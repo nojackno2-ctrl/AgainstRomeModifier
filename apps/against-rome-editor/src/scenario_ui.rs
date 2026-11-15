@@ -707,6 +707,7 @@ impl ScenarioUi {
         self.record_event_commit(&before);
         self.recovery_redo = None;
         self.document.events = self.events.capture();
+        self.refresh_graph_after_event_change();
         Ok(())
     }
     /// 驗證並整批取代事件；所有動作共用一步復原，失敗時保留原狀。
@@ -1124,6 +1125,14 @@ impl ScenarioUi {
     /// Compiles and validates the embedded event graph, applying it to the scenario document.
     /// Fails closed without mutating `self.document` if validation, link checks, or binding checks fail.
     pub fn apply_graph(&mut self) -> Result<()> {
+        if !self.graph_ui.source_matches(&self.document.events) {
+            let msg = tl(self.english,
+                "劇本事件在節點圖載入後已變更；已保留兩邊修改。請先復原事件變更，或放棄節點圖草稿並重新開啟。",
+                "Scenario events changed since the graph was loaded; both drafts were kept. Undo the event changes, or discard the graph draft and reopen it.").to_string();
+            self.error = Some(msg.clone());
+            self.graph_ui.status_message = msg.clone();
+            return Err(msg);
+        }
         let compiled_events = match self
             .graph_ui
             .compile_to_scenario_events_checked(&self.document, &self.aliases)
@@ -1157,6 +1166,7 @@ impl ScenarioUi {
 
         self.commit_events(draft);
         self.graph_ui.is_dirty = false;
+        self.graph_ui.record_source(&self.document.events);
         self.report = "已成功從節點圖更新劇本事件。".into();
         self.error = None;
         Ok(())
@@ -1165,6 +1175,14 @@ impl ScenarioUi {
     /// Compiles and validates an external event graph instance, applying it to this scenario document.
     /// Fails closed without mutating `self.document` if validation or constraints fail.
     pub fn apply_from_graph_ui(&mut self, graph_ui: &mut EventGraphUi) -> Result<()> {
+        if !graph_ui.source_matches(&self.document.events) {
+            let msg = tl(self.english,
+                "劇本事件在節點圖載入後已變更；已保留兩邊修改。請先復原事件變更，或放棄節點圖草稿並重新開啟。",
+                "Scenario events changed since the graph was loaded; both drafts were kept. Undo the event changes, or discard the graph draft and reopen it.").to_string();
+            self.error = Some(msg.clone());
+            graph_ui.status_message = msg.clone();
+            return Err(msg);
+        }
         let compiled_events = match graph_ui
             .compile_to_scenario_events_checked(&self.document, &self.aliases)
         {
@@ -1197,6 +1215,7 @@ impl ScenarioUi {
 
         self.commit_events(draft);
         graph_ui.is_dirty = false;
+        graph_ui.record_source(&self.document.events);
         self.report = "已成功從外部節點圖更新劇本事件。".into();
         self.error = None;
         Ok(())
@@ -3777,6 +3796,82 @@ mod tests {
         assert_eq!(ui.document.events.len(), 2);
         assert!(ui.graph_ui.is_dirty());
         assert_eq!(ui.graph_ui.compile_to_scenario_events(), graph_before);
+    }
+    #[test]
+    fn graph_rejects_stale_event_draft_and_preserves_both_sides() {
+        let p = source();
+        let mut ui = ScenarioUi::default();
+        ui.load_now(&p).unwrap();
+        ui.add_events(&[ev("原事件")]).unwrap();
+        ui.open_graph();
+
+        // 乾淨節點圖隨事件面板更新，之後開始編輯不會套用舊內容。
+        let mut edited = ui.document.events[0].clone();
+        edited.actions[0].text = "panel first".into();
+        ui.replace_event(0, edited).unwrap();
+        assert_eq!(ui.graph_ui.compile_to_scenario_events(), ui.document.events);
+        for node in &mut ui.graph_ui.graph.nodes {
+            if let crate::event_graph::model::NodeKind::MessageAction { message_text } = &mut node.kind {
+                *message_text = "graph draft".into();
+            }
+        }
+        ui.graph_ui.mark_dirty();
+        let graph_draft = ui.graph_ui.compile_to_scenario_events();
+        let mut edited = ui.document.events[0].clone();
+        edited.actions[0].text = "panel second".into();
+        ui.replace_event(0, edited).unwrap();
+        let panel_draft = ui.document.events.clone();
+        for english in [false, true] {
+            ui.english = english;
+            let error = ui.apply_graph().unwrap_err();
+            assert!(error.contains(if english { "both drafts were kept" } else { "已保留兩邊修改" }));
+            assert_eq!(ui.document.events, panel_draft);
+            assert_eq!(ui.graph_ui.compile_to_scenario_events(), graph_draft);
+            assert!(ui.graph_ui.is_dirty());
+        }
+
+        // 復原面板變更回到節點圖來源後，可以保留草稿並套用。
+        assert!(ui.undo_events());
+        assert!(ui.graph_ui.source_matches(&ui.document.events));
+        assert!(ui.redo_events());
+        assert!(ui.apply_graph().is_err());
+        assert!(ui.undo_events());
+        ui.apply_graph().unwrap();
+        assert_eq!(ui.document.events, graph_draft);
+        assert!(!ui.graph_ui.is_dirty());
+
+        // 另一個來源衝突可選擇放棄圖草稿，重新開啟後載入最新事件。
+        ui.graph_ui.mark_dirty();
+        ui.add_events(&[ev("新增事件")]).unwrap();
+        assert!(ui.apply_graph().is_err());
+        ui.graph_ui.discard_and_close();
+        ui.open_graph();
+        assert_eq!(ui.graph_ui.compile_to_scenario_events(), ui.document.events);
+        assert!(!ui.graph_ui.is_dirty());
+        ui.reset_session(None);
+        assert!(!ui.graph_ui.is_dirty());
+        ui.load_now(&p).unwrap();
+        assert!(ui.graph_ui.source_matches(&ui.document.events));
+        fs::remove_dir_all(p).unwrap();
+    }
+
+    #[test]
+    fn external_graph_rejects_stale_scenario_without_discarding_draft() {
+        let p = source();
+        let mut ui = ScenarioUi::default();
+        ui.load_now(&p).unwrap();
+        ui.add_events(&[ev("原事件")]).unwrap();
+        let mut graph = EventGraphUi::default();
+        ui.sync_to_graph_ui(&mut graph);
+        graph.mark_dirty();
+        let graph_draft = graph.compile_to_scenario_events();
+        ui.add_events(&[ev("新增事件")]).unwrap();
+        let panel_draft = ui.document.events.clone();
+        assert!(ui.apply_from_graph_ui(&mut graph).is_err());
+        assert_eq!(ui.document.events, panel_draft);
+        assert_eq!(graph.compile_to_scenario_events(), graph_draft);
+        assert!(graph.is_dirty());
+        fs::remove_dir_all(p).unwrap();
     }
     #[test]
     fn duplicate_event_rejects_bad_index_and_limit_without_changing_history() {

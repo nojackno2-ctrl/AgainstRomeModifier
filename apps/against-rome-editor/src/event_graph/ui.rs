@@ -46,6 +46,7 @@ pub struct EventGraphUi {
     pub last_canvas_size: Vec2,
     pub english: bool,
     draft_undo: Option<(EventGraph, EventGraph, bool)>,
+    source_events: Option<Vec<against_rome_scenario::Event>>,
     #[cfg(test)]
     validation_count: usize,
 }
@@ -72,6 +73,7 @@ impl Default for EventGraphUi {
             last_canvas_size: Vec2::new(800.0, 500.0),
             english: false,
             draft_undo: None,
+            source_events: None,
             #[cfg(test)]
             validation_count: 0,
         }
@@ -488,6 +490,7 @@ impl EventGraphUi {
 
     pub fn load_from_scenario_events(&mut self, events: &[against_rome_scenario::Event]) {
         self.graph = converter::from_scenario_events(events, None);
+        self.source_events = None;
         self.selected_nodes.clear();
         self.is_dirty = false;
         self.clear_transient();
@@ -521,6 +524,7 @@ impl EventGraphUi {
     /// 清除地圖相關狀態，保留視角與使用者偏好。
     pub fn reset_session(&mut self) {
         self.graph = EventGraph::new();
+        self.source_events = None;
         self.selected_nodes.clear();
         self.diagnostics.clear();
         self.is_dirty = false;
@@ -553,6 +557,16 @@ impl EventGraphUi {
             self.clear_transient();
             self.validate();
         }
+        self.source_events = Some(scenario.events.clone());
+    }
+
+    /// 檢查以劇本建立的節點圖是否仍以目前事件為來源。
+    pub(crate) fn source_matches(&self, events: &[against_rome_scenario::Event]) -> bool {
+        self.source_events.as_deref().is_none_or(|source| source == events)
+    }
+
+    pub(crate) fn record_source(&mut self, events: &[against_rome_scenario::Event]) {
+        self.source_events = Some(events.to_vec());
     }
 
     pub fn compile_to_scenario_events(&self) -> Vec<against_rome_scenario::Event> {
